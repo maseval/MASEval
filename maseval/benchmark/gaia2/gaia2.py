@@ -45,7 +45,9 @@ Default Agent Implementation:
 """
 
 import json
+import re
 from abc import abstractmethod
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
@@ -260,30 +262,174 @@ class Gaia2Benchmark(Benchmark):
 # Default Agent Implementation
 # =============================================================================
 
-# System prompt for Gaia2 agent
-_GAIA2_SYSTEM_PROMPT = """
-You are an AI assistant helping a user with tasks in a mobile environment.
-You have access to various apps including Calendar, Email, Messaging, Contacts,
-Shopping, Cab, Browser, and a FileSystem.
+# Prompt templates directory
+_PROMPT_TEMPLATES_DIR = Path(__file__).parent / "prompt_templates"
 
-Key behaviors:
-1. Use get_current_time() to check the current time when relevant.
-2. For tasks requiring waiting (e.g., "wait for response"), use wait_for_notification(timeout_seconds).
-3. Execute tasks step by step, using the appropriate tools.
-4. When the task is complete, provide a final response summarizing what was done.
+# ARE default parameters
+_DEFAULT_MAX_ITERATIONS = 80
+_DEFAULT_TEMPERATURE = 0.5
+_DEFAULT_MAX_TOKENS = 16384
+_DEFAULT_INVALID_FORMAT_RETRIES = 10
 
-Available tools will be provided to you. Use them to accomplish the user's task.
-""".strip()
+# Stop sequences for text-based action parsing
+_STOP_SEQUENCES = ["<end_action>", "Observation:"]
+
+# Termination tool names - agent terminates when these are called
+_TERMINATION_TOOLS = frozenset(
+    {
+        "AgentUserInterface__send_message_to_user",
+        "SystemApp__wait_for_notification",
+    }
+)
+
+
+def _load_prompt_template(name: str) -> str:
+    """Load a prompt template from file.
+
+    Args:
+        name: Template filename (without .txt extension)
+
+    Returns:
+        Template content as string
+    """
+    path = _PROMPT_TEMPLATES_DIR / f"{name}.txt"
+    return path.read_text()
+
+
+def _build_tool_descriptions(tools: Dict[str, Callable]) -> str:
+    """Build tool descriptions for embedding in system prompt.
+
+    Args:
+        tools: Dict of tool name -> callable
+
+    Returns:
+        Formatted tool descriptions string
+    """
+    descriptions = []
+    for name, tool in tools.items():
+        desc = getattr(tool, "description", "") or ""
+        inputs = getattr(tool, "inputs", {}) or {}
+
+        # Format parameters
+        params = []
+        properties = inputs.get("properties", {})
+        required = set(inputs.get("required", []))
+
+        for param_name, param_info in properties.items():
+            param_type = param_info.get("type", "any")
+            param_desc = param_info.get("description", "")
+            req_marker = " (required)" if param_name in required else " (optional)"
+            params.append(f"    - {param_name}: {param_type}{req_marker} - {param_desc}")
+
+        params_str = "\n".join(params) if params else "    (no parameters)"
+
+        descriptions.append(f"Tool: {name}\nDescription: {desc}\nParameters:\n{params_str}")
+
+    return "\n\n".join(descriptions)
+
+
+def _build_system_prompt(tools: Dict[str, Callable]) -> str:
+    """Build the full system prompt with tool descriptions.
+
+    Args:
+        tools: Dict of tool name -> callable
+
+    Returns:
+        Complete system prompt string
+    """
+    # Load templates
+    general = _load_prompt_template("general_instructions")
+    agent = _load_prompt_template("agent_instructions")
+    environment = _load_prompt_template("environment_instructions")
+    template = _load_prompt_template("system_prompt")
+
+    # Build tool descriptions
+    tool_descriptions = _build_tool_descriptions(tools)
+
+    # Format environment instructions with tool descriptions
+    environment_formatted = environment.format(tool_descriptions=tool_descriptions)
+
+    # Assemble full prompt
+    return template.format(
+        general_instructions=general,
+        agent_instructions=agent,
+        environment_instructions=environment_formatted,
+    )
+
+
+def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+    """Parse Thought and Action from LLM text output.
+
+    Expected format:
+        Thought: [reasoning]
+
+        Action:
+        {
+          "action": "tool_name",
+          "action_input": {...}
+        }<end_action>
+
+    Args:
+        text: Raw LLM output text
+
+    Returns:
+        Tuple of (thought, tool_name, tool_args) or None if parsing fails
+    """
+    # Extract thought (everything before "Action:")
+    thought = ""
+    if "Thought:" in text:
+        thought_match = re.search(r"Thought:\s*(.*?)(?=\n\s*Action:|$)", text, re.DOTALL)
+        if thought_match:
+            thought = thought_match.group(1).strip()
+
+    # Extract action JSON
+    action_match = re.search(r"Action:\s*(\{.*?\})(?:<end_action>|$)", text, re.DOTALL)
+    if not action_match:
+        return None
+
+    json_str = action_match.group(1).strip()
+
+    try:
+        # Parse JSON with lenient settings
+        action_data = json.loads(json_str)
+    except json.JSONDecodeError:
+        # Try to fix common issues
+        try:
+            # Remove trailing commas
+            fixed = re.sub(r",\s*}", "}", json_str)
+            fixed = re.sub(r",\s*]", "]", fixed)
+            action_data = json.loads(fixed)
+        except json.JSONDecodeError:
+            return None
+
+    tool_name = action_data.get("action", "")
+    tool_args = action_data.get("action_input", {})
+
+    # Handle string action_input (some models output as string)
+    if isinstance(tool_args, str):
+        try:
+            tool_args = json.loads(tool_args)
+        except json.JSONDecodeError:
+            tool_args = {}
+
+    return (thought, tool_name, tool_args)
 
 
 class DefaultGaia2Agent:
     """Default agent implementation for Gaia2 benchmark.
 
-    ReAct-style agent that interacts with ARE's simulation through tool calls.
-    Supports temporal reasoning via SystemApp tools.
+    ReAct-style agent matching ARE's reference implementation. Uses text-based
+    action parsing (Thought/Action/Observation cycle) rather than native
+    function calling.
 
-    This agent follows the pattern from ARE's reference implementation,
-    using a simple ReAct loop with tool calling.
+    Key characteristics matching ARE:
+        - Text-based JSON action format with <end_action> token
+        - Stop sequences: ["<end_action>", "Observation:"]
+        - Default temperature: 0.5
+        - Default max_tokens: 16384
+        - Default max_iterations: 80
+        - Invalid format retry: up to 10 times
+        - Terminates on send_message_to_user or wait_for_notification
     """
 
     def __init__(
@@ -291,7 +437,8 @@ class DefaultGaia2Agent:
         tools: Dict[str, Callable],
         model: ModelAdapter,
         llm_args: Optional[Dict[str, Any]] = None,
-        max_tool_calls: int = 100,
+        max_iterations: int = _DEFAULT_MAX_ITERATIONS,
+        invalid_format_retries: int = _DEFAULT_INVALID_FORMAT_RETRIES,
         verbose: int = 0,
     ):
         """Initialize the agent.
@@ -299,24 +446,43 @@ class DefaultGaia2Agent:
         Args:
             tools: Dict of tool name -> callable
             model: ModelAdapter for LLM interactions
-            llm_args: Additional arguments for model calls
-            max_tool_calls: Maximum tool calls before stopping
+            llm_args: Additional arguments for model calls. Defaults are applied
+                for temperature (0.5), max_tokens (16384), and stop sequences.
+            max_iterations: Maximum iterations before stopping. Default 80.
+            invalid_format_retries: Max retries for invalid format. Default 10.
             verbose: Verbosity level (0=quiet, 1=basic, 2=detailed)
         """
         self.tools = tools
         self.model = model
-        self.llm_args = llm_args or {}
-        self.max_tool_calls = max_tool_calls
+        self.max_iterations = max_iterations
+        self.invalid_format_retries = invalid_format_retries
         self.verbose = verbose
-        self.system_prompt = _GAIA2_SYSTEM_PROMPT
 
+        # Build system prompt with tool descriptions
+        self.system_prompt = _build_system_prompt(tools)
+
+        # Apply default LLM args, allowing user overrides
+        self.llm_args = {
+            "temperature": _DEFAULT_TEMPERATURE,
+            "max_tokens": _DEFAULT_MAX_TOKENS,
+            "stop": _STOP_SEQUENCES,
+            **(llm_args or {}),
+        }
+
+        # State
         self._messages: List[Dict[str, Any]] = []
-        self._tool_call_count = 0
+        self._iteration_count = 0
+        self._format_retry_count = 0
+        self._terminated = False
+        self._final_message: Optional[str] = None
 
     def reset(self) -> None:
         """Reset agent state."""
         self._messages = []
-        self._tool_call_count = 0
+        self._iteration_count = 0
+        self._format_retry_count = 0
+        self._terminated = False
+        self._final_message = None
 
     def run(self, query: str) -> str:
         """Execute task and return final response.
@@ -328,123 +494,100 @@ class DefaultGaia2Agent:
             Final text response from agent
         """
         self._messages.append({"role": "user", "content": query})
-        return self._generate_with_tools()
+        return self._react_loop()
 
-    def _generate_with_tools(self) -> str:
-        """ReAct loop: generate -> execute tools -> repeat or return.
+    def _react_loop(self) -> str:
+        """ReAct loop: Thought -> Action -> Observation -> repeat.
 
         Returns:
             Final text response
         """
-        while self._tool_call_count < self.max_tool_calls:
+        while self._iteration_count < self.max_iterations and not self._terminated:
+            # Build messages for LLM
             messages = [{"role": "system", "content": self.system_prompt}] + self._messages
 
-            response = self.model.chat(
-                messages=messages,
-                tools=self._get_tool_definitions(),
-                **self.llm_args,
-            )
-
+            # Call LLM (text completion, no tools parameter)
+            response = self.model.chat(messages=messages, **self.llm_args)
             content = response.content or ""
-            tool_calls = response.tool_calls or []
 
-            if tool_calls:
-                # Add assistant message with tool calls
-                self._messages.append(
-                    {
-                        "role": "assistant",
-                        "content": content,
-                        "tool_calls": tool_calls,
-                    }
+            if self.verbose >= 2:
+                print(f"[Iteration {self._iteration_count + 1}] LLM output:\n{content}\n")
+
+            # Parse action from text
+            parsed = _parse_action_from_text(content)
+
+            if parsed is None:
+                # Invalid format - retry
+                self._format_retry_count += 1
+                if self._format_retry_count >= self.invalid_format_retries:
+                    self._messages.append({"role": "assistant", "content": content})
+                    return f"Failed to parse action after {self.invalid_format_retries} retries. Last output: {content}"
+
+                # Add error observation and retry
+                error_msg = (
+                    "Error: Invalid action format. Please use the correct format:\n"
+                    "Thought: [your reasoning]\n\n"
+                    "Action:\n"
+                    '{"action": "tool_name", "action_input": {...}}<end_action>'
                 )
-
-                # Execute each tool call
-                for tool_call in tool_calls:
-                    self._tool_call_count += 1
-                    tool_result = self._execute_tool_call(tool_call)
-
-                    self._messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.get("id", ""),
-                            "content": str(tool_result),
-                        }
-                    )
-
-                continue
-            else:
-                # Text response - done
                 self._messages.append({"role": "assistant", "content": content})
-                return content
+                self._messages.append({"role": "user", "content": f"Observation: {error_msg}"})
+                continue
 
-        return "Max tool calls reached."
+            thought, tool_name, tool_args = parsed
+            self._iteration_count += 1
+            self._format_retry_count = 0  # Reset on successful parse
 
-    def _execute_tool_call(self, tool_call: Dict[str, Any]) -> Any:
-        """Execute a single tool call.
+            # Add assistant message (Thought + Action)
+            self._messages.append({"role": "assistant", "content": content})
+
+            if self.verbose >= 1:
+                print(f"[Iteration {self._iteration_count}] Tool: {tool_name}")
+
+            # Check for termination tools
+            if tool_name in _TERMINATION_TOOLS:
+                self._terminated = True
+
+                # Execute the termination tool
+                observation = self._execute_tool(tool_name, tool_args)
+
+                # For send_message_to_user, capture the message
+                if tool_name == "AgentUserInterface__send_message_to_user":
+                    self._final_message = tool_args.get("content", str(observation))
+                    return self._final_message
+
+                # For wait_for_notification, return the observation
+                return str(observation)
+
+            # Execute tool
+            observation = self._execute_tool(tool_name, tool_args)
+
+            # Add observation
+            self._messages.append({"role": "user", "content": f"Observation: {observation}"})
+
+        if self._iteration_count >= self.max_iterations:
+            return f"Max iterations ({self.max_iterations}) reached."
+
+        return self._final_message or "Agent terminated without final message."
+
+    def _execute_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
+        """Execute a tool call.
 
         Args:
-            tool_call: Tool call dict with name and arguments
+            tool_name: Name of the tool to call
+            tool_args: Arguments for the tool
 
         Returns:
-            Tool execution result
+            Tool execution result as string
         """
-        # Handle both function format and direct format
-        if "function" in tool_call:
-            name = tool_call["function"].get("name", "")
-            arguments = tool_call["function"].get("arguments", {})
-        else:
-            name = tool_call.get("name", "")
-            arguments = tool_call.get("arguments", {})
-
-        # Parse arguments if string
-        if isinstance(arguments, str):
-            try:
-                arguments = json.loads(arguments)
-            except json.JSONDecodeError:
-                arguments = {}
-
-        if name not in self.tools:
-            return f"Error: Tool '{name}' not found"
+        if tool_name not in self.tools:
+            return f"Error: Tool '{tool_name}' not found. Available tools: {list(self.tools.keys())}"
 
         try:
-            return self.tools[name](**arguments)
+            result = self.tools[tool_name](**tool_args)
+            return str(result)
         except Exception as e:
-            return f"Error executing tool '{name}': {e}"
-
-    def _get_tool_definitions(self) -> List[Dict[str, Any]]:
-        """Generate tool definitions in OpenAI format.
-
-        Returns:
-            List of tool definitions
-        """
-        definitions = []
-
-        for name, tool in self.tools.items():
-            # Try to get schema from tool wrapper
-            schema: Dict[str, Any] = {}
-            description = ""
-
-            if hasattr(tool, "inputs"):
-                schema = tool.inputs or {}
-            if hasattr(tool, "description"):
-                description = tool.description or ""
-
-            definitions.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "description": description,
-                        "parameters": {
-                            "type": "object",
-                            "properties": schema.get("properties", {}),
-                            "required": schema.get("required", []),
-                        },
-                    },
-                }
-            )
-
-        return definitions
+            return f"Error executing tool '{tool_name}': {e}"
 
     def get_messages(self) -> List[Dict[str, Any]]:
         """Get message history.
@@ -453,6 +596,11 @@ class DefaultGaia2Agent:
             List of messages
         """
         return list(self._messages)
+
+    @property
+    def iteration_count(self) -> int:
+        """Get current iteration count."""
+        return self._iteration_count
 
 
 class DefaultGaia2AgentAdapter(AgentAdapter):
@@ -499,7 +647,8 @@ class DefaultGaia2AgentAdapter(AgentAdapter):
             "name": self.name,
             "message_count": len(history),
             "messages": history,
-            "tool_call_count": self._agent._tool_call_count,
+            "iteration_count": self._agent.iteration_count,
+            "terminated": self._agent._terminated,
         }
 
 
@@ -507,6 +656,13 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
     """Gaia2 benchmark with default agent implementation.
 
     Provides a ready-to-use benchmark matching ARE's reference agent behavior.
+    Uses text-based ReAct format with JSON actions, matching ARE's implementation.
+
+    Default parameters (matching ARE):
+        - max_iterations: 80
+        - temperature: 0.5
+        - max_tokens: 16384
+        - invalid_format_retries: 10
 
     Example:
         from maseval.benchmark.gaia2 import DefaultAgentGaia2Benchmark, load_tasks
@@ -525,8 +681,9 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
         Args:
             agent_data: Agent configuration with:
                 - model_id: Required model identifier
-                - llm_args: Optional model call arguments
-                - max_tool_calls: Max tool calls per task (default: 100)
+                - llm_args: Optional model call arguments (temperature, max_tokens, etc.)
+                - max_iterations: Max iterations per task (default: 80)
+                - invalid_format_retries: Max retries for invalid format (default: 10)
                 - verbose: Verbosity level (default: 0)
             **kwargs: Additional Benchmark arguments
         """
@@ -578,7 +735,8 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
 
         model_id = self._get_agent_model_id(merged_data)
         llm_args = merged_data.get("llm_args", {})
-        max_tool_calls = merged_data.get("max_tool_calls", 100)
+        max_iterations = merged_data.get("max_iterations", _DEFAULT_MAX_ITERATIONS)
+        invalid_format_retries = merged_data.get("invalid_format_retries", _DEFAULT_INVALID_FORMAT_RETRIES)
         verbose = merged_data.get("verbose", 0)
 
         tools = environment.create_tools()
@@ -588,7 +746,8 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
             tools=tools,
             model=model,
             llm_args=llm_args,
-            max_tool_calls=max_tool_calls,
+            max_iterations=max_iterations,
+            invalid_format_retries=invalid_format_retries,
             verbose=verbose,
         )
 

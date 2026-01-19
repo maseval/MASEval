@@ -113,19 +113,9 @@ class Gaia2Evaluator(Evaluator):
                 - event_results: Per-event evaluation results
                 - capability: Task capability type
         """
-        # Import ARE judge (optional dependency)
-        try:
-            from are.simulation.validation import JudgeFactory
-            from are.simulation.validation.config import GraphPerEventJudgeConfig
-        except ImportError as e:
-            # Return failure if ARE is not available
-            return {
-                "gsr": 0.0,
-                "partial_gsr": 0.0,
-                "passed": False,
-                "error": f"ARE evaluation not available: {e}",
-                "capability": self.task.metadata.get("capability"),
-            }
+        # Import ARE judge (required dependency for Gaia2)
+        from are.simulation.validation import JudgeFactory
+        from are.simulation.validation.config import GraphPerEventJudgeConfig
 
         # Create ARE judge
         judge_config = GraphPerEventJudgeConfig()
