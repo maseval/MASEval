@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Benchmarks**
+
+- Gaia2 Benchmark: Integration with Meta's ARE (Agent Research Environments) platform for evaluating LLM-based agents on dynamic, multi-step scenarios (PR: #PR_NUMBER_PLACEHOLDER)
+- `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator` components for framework-agnostic evaluation with ARE simulation (PR: #PR_NUMBER_PLACEHOLDER)
+- `DefaultAgentGaia2Benchmark` with ReAct-style agent for direct comparison with ARE reference implementation (PR: #PR_NUMBER_PLACEHOLDER)
+- Tool wrapper (`AREToolWrapper`) for MASEval tracing of ARE tools with simulation time tracking (PR: #PR_NUMBER_PLACEHOLDER)
+- Data loading utilities: `load_tasks()`, `configure_model_ids()` for loading scenarios from HuggingFace (PR: #PR_NUMBER_PLACEHOLDER)
+- Metrics: `compute_gaia2_metrics()` for GSR (Goal Success Rate) computation by capability type (PR: #PR_NUMBER_PLACEHOLDER)
+- Support for 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, noise (PR: #PR_NUMBER_PLACEHOLDER)
+- Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #PR_NUMBER_PLACEHOLDER)
+
+**Examples**
+
+- Gaia2 benchmark example with Google GenAI and OpenAI model support (PR: #PR_NUMBER_PLACEHOLDER)
+
 ### Changed
 
 ### Fixed
