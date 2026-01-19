@@ -8,6 +8,21 @@ This plan implements **Option C (Hybrid Wrapper)** from STRATEGY.md to integrate
 
 ---
 
+## Scientific Integrity and Reproducibility
+
+> **WARNING: This is a scientific benchmark.**
+>
+> The primary purpose of this integration is to enable rigorous, reproducible evaluation of agent systems against the Gaia2 benchmark. Results produced by this implementation must be **semantically equivalent** to those produced by ARE's reference implementation. Deviations that affect benchmark scores invalidate scientific comparisons.
+
+### Core Principle
+
+**Preserve Benchmark Semantics**
+
+- The benchmark measures specific agent capabilities (execution, search, adaptability, time, ambiguity, agent2agent, noise)
+- Any implementation choice that changes what is being measured corrupts the benchmark
+
+---
+
 ## Directory Structure
 
 ```
@@ -85,6 +100,7 @@ class AREToolWrapper(TraceableMixin, ConfigurableMixin):
 ```
 
 **Design decisions**:
+
 - Records both wall clock time and simulation time
 - Captures simulation time delta for temporal scenario analysis
 - Preserves ARE's native return types (no forced string conversion)
@@ -189,6 +205,7 @@ class Gaia2Environment(Environment):
 ```
 
 **Design decisions**:
+
 - `cleanup()` method ensures ARE simulation is stopped after task completion
 - Exposes `get_simulation_time()` for evaluator access
 - Exposes `get_are_environment()` for evaluator to use ARE's judge
@@ -345,6 +362,7 @@ def configure_model_ids(
 ```
 
 **Design decisions**:
+
 - Uses HuggingFace datasets library for loading (already a MASEval dependency)
 - Imports ARE's `JsonScenarioImporter` for scenario parsing
 - Scenario object is passed directly in `environment_data` (no serialization)
@@ -456,6 +474,7 @@ class Gaia2Evaluator(Evaluator):
 ```
 
 **Design decisions**:
+
 - Delegates to ARE's `JudgeFactory` for evaluation fidelity
 - Extracts `completed_events` from ARE environment after agent execution
 - Preserves ARE's event-level results for debugging
@@ -1020,7 +1039,7 @@ __all__ = [
 2. **Phase 2**: Benchmark Implementation (evaluator.py, gaia2.py base classes)
 3. **Phase 3**: Default Agent (DefaultGaia2Agent, DefaultAgentGaia2Benchmark)
 4. **Phase 4**: Example Script (gaia2_benchmark.py)
-5. **Phase 5**: Package Integration (pyproject.toml, __init__.py)
+5. **Phase 5**: Package Integration (pyproject.toml)
 
 ---
 
