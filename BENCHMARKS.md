@@ -27,9 +27,22 @@ $\tau^2$-bench is a benchmark for evaluating agentic systems in realistic, multi
 
 ---
 
-## 3. [Name of Next Benchmark]
+## 3. Gaia2 (ARE)
 
-(Description for the third benchmark...)
+Gaia2 is a benchmark for evaluating LLM-based agents on dynamic, multi-step scenarios using Meta's ARE (Agent Research Environments) platform. It tests agents across 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, and noise.
+
+### Source and License
+
+- **Original Repository:** [https://github.com/facebookresearch/agent-research-environments](https://github.com/facebookresearch/agent-research-environments)
+- **Dataset:** [https://huggingface.co/datasets/meta-agents-research-environments/gaia2](https://huggingface.co/datasets/meta-agents-research-environments/gaia2)
+- **Code License:** MIT
+- **Data License:** Subject to Meta's data usage terms (see HuggingFace dataset page)
+
+---
+
+## 4. [Name of Next Benchmark]
+
+(Description for the next benchmark...)
 
 ### Source and License
 
