@@ -31,19 +31,19 @@ Reproducibility is essential for evaluation. Researchers need to:
 
 MASEval has no systematic seeding. Components that require seeding:
 
-| Component       | Why                                                                 |
-| --------------- | ------------------------------------------------------------------- |
-| Evaluators      | LLM-as-judge evaluators are non-deterministic                       |
-| Environments    | May randomize task parameters, initial state, or dynamics           |
+| Component       | Why                                                                   |
+| --------------- | --------------------------------------------------------------------- |
+| Evaluators      | LLM-as-judge evaluators are non-deterministic                         |
+| Environments    | May randomize task parameters, initial state, or dynamics             |
 | Tool Simulators | LLM-simulated responses vary; real tools may have stochastic behavior |
-| User Simulators | LLM-simulated user responses vary                                   |
-| Agents          | Agent LLM calls are non-deterministic                               |
+| User Simulators | LLM-simulated user responses vary                                     |
+| Agents          | Agent LLM calls are non-deterministic                                 |
 
 Currently, users cannot reproduce runs. The only workaround is `temperature=0`, which doesn't guarantee determinism and isn't supported by all providers.
 
 ## 4. Design Requirements
 
-- **Opt-in** — Users who don't need seeding shouldn't be affected
+- **Opt-in** — Users who don't need seeding or bring their own shouldn't be affected
 - **Derive by name, not index** — Seeds must be derived from identifiers (task.id, tool name, agent name), never from indices. This ensures adding/removing a component doesn't shift seeds for other components.
 - **Support repetitions** — Each repetition of a task should get a different seed
 - **Selective variance** — Users should be able to keep some components constant across repetitions while varying others
