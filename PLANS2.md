@@ -63,10 +63,10 @@ benchmark = Benchmark(seed=42)
 
 Question: "Should we support keeping some components seeded during repetition and others not?"
 
-**Use case:** "Measure LLM variance while keeping tool responses deterministic"
+**Use case:** "Keep tools, user, and evaluator constant across 5 repetitions. Only vary agent X to measure its specific contribution to outcome variance."
 
 ```python
-# Hypothetical
+# Hypothetical config-based approach (rejected - too complex)
 benchmark = Benchmark(
     seed=42,
     vary_per_repetition=["agent"],  # Re-seed agent each rep
@@ -80,13 +80,26 @@ benchmark = Benchmark(
 | **B: All constant** | `seed = derive(global, task_id, component)` - same across reps |
 | **C: Configurable** | User specifies which components vary                           |
 
-**Analysis:**
+**The problem with single-seed approach:**
 
-- Option A is the natural default - each repetition is independent
-- Option B is odd - why repeat if everything is identical?
-- Option C is powerful but complex
+Once `rep_index` is baked into a seed, all children vary together. You can't selectively "undo" it for specific components.
 
-**Recommendation:** Default to **A** (all vary per repetition). For advanced use case C, users can manually set seeds in task data. Not worth the API complexity for a niche use case.
+**Solution: Two seeds**
+
+Benchmark computes and passes both:
+- `task_seed` = derived from `task.id` only → **constant across repetitions**
+- `rep_seed` = derived from `task.id + rep_index` → **varies per repetition**
+
+```python
+def setup_agents(self, ..., task_seed=None, rep_seed=None):
+    for agent in agents:
+        if agent.name == "varying_agent":
+            seed = derive_seed(rep_seed, agent.name)   # varies per rep
+        else:
+            seed = derive_seed(task_seed, agent.name)  # constant across reps
+```
+
+**Recommendation:** Pass both `task_seed` and `rep_seed` to all setup methods. The common case uses `rep_seed` (all vary), but developers can selectively use `task_seed` for components that should remain constant across repetitions.
 
 ### Workflow 4: Who manages seeds?
 
@@ -125,8 +138,8 @@ tool_seed = derive(env_seed, tool_name)
 
 **Recommendation:** Hybrid of A and C.
 
-- Benchmark derives a seed per task+repetition
-- Benchmark passes this seed to `setup_environment(task, seed=X)`
+- Benchmark derives two seeds per task: `task_seed` (constant) and `rep_seed` (varies per rep)
+- Benchmark passes both to `setup_environment(task, task_seed=X, rep_seed=Y)`
 - Environment owns derivation for its children (tools)
 - Same pattern for user simulator
 
@@ -298,13 +311,14 @@ model = AnthropicAdapter(..., generation_params={"temperature": 0})
 ## Summary: Recommended Design
 
 1. **Benchmark-level seed** that derives per task using `task.id` (not index)
-2. **Per-repetition derivation** using `task.id + rep_index` - all components vary
-3. **Hierarchical ownership**: Benchmark → Environment → Tools
-4. **Same seed for all LLM calls** within a component
-5. **Utility function + internal registry** - simple API, automatic logging
-6. **Path-based derivation** internally, invisible to users
-7. **Seeds recorded** in run metadata and per-task results
-8. **Explicit failure** for unsupported providers
+2. **Two seeds per task**: `task_seed` (constant across reps) and `rep_seed` (varies per rep)
+3. **Selective variance**: Developers choose which seed to use per component for variance attribution studies
+4. **Hierarchical ownership**: Benchmark → Environment → Tools
+5. **Same seed for all LLM calls** within a component
+6. **Utility function + internal registry** - simple API, automatic logging
+7. **Path-based derivation** internally, invisible to users
+8. **Seeds recorded** in run metadata and per-task results
+9. **Explicit failure** for unsupported providers
 
 ---
 
@@ -322,40 +336,55 @@ results = benchmark.run(tasks, agent_data)
 
 Internally, the benchmark:
 
-1. Derives a task seed: `task_seed = derive_seed(global_seed, f"{task.id}/{rep_index}")`
-2. Passes this seed to all setup methods via parameter
-3. Each component derives seeds for its children using the same utility
+1. Derives two seeds per task:
+   - `task_seed = derive_seed(global_seed, task.id)` → constant across repetitions
+   - `rep_seed = derive_seed(global_seed, f"{task.id}/{rep_index}")` → varies per repetition
+2. Passes both seeds to all setup methods via parameters
+3. Each component chooses which seed to use (or derives children from either)
 
 ### The Interface
 
 ```python
-# Benchmark passes seed to all setup methods
-def setup_environment(self, agent_data, task, seed=None) -> Environment:
+# Benchmark passes both seeds to all setup methods
+def setup_environment(self, agent_data, task, task_seed=None, rep_seed=None) -> Environment:
     ...
 
-def setup_user(self, agent_data, environment, task, seed=None) -> User:
+def setup_user(self, agent_data, environment, task, task_seed=None, rep_seed=None) -> User:
     ...
 
-def setup_evaluators(self, environment, task, agents, user, seed=None) -> List[Evaluator]:
+def setup_evaluators(self, environment, task, agents, user, task_seed=None, rep_seed=None) -> List[Evaluator]:
     ...
 ```
 
 ### Component Responsibility
 
-Each component that receives a seed owns derivation for its children:
+Each component that receives seeds owns derivation for its children. The developer chooses which seed to use based on whether the component should vary per repetition:
 
 ```python
-def setup_environment(self, agent_data, task, seed=None):
+def setup_environment(self, agent_data, task, task_seed=None, rep_seed=None):
     env = MyEnvironment(task)
 
+    # Common case: use rep_seed so tools vary per repetition
+    seed = rep_seed
+
     if seed is not None:
-        # Environment derives seeds for its tools
         for tool_name in task.environment_data["tools"]:
             tool_seed = derive_seed(seed, tool_name)
             simulator = ToolLLMSimulator(model, seed=tool_seed)
             env.add_tool(tool_name, simulator)
 
     return env
+
+def setup_agents(self, agent_data, environment, task, user, task_seed=None, rep_seed=None):
+    # Advanced: keep some agents constant, vary others
+    for agent in agents:
+        if agent.name == "experimental_agent":
+            # This agent varies per repetition - measure its variance contribution
+            seed = derive_seed(rep_seed, agent.name)
+        else:
+            # These agents stay constant across repetitions
+            seed = derive_seed(task_seed, agent.name)
+        ...
 ```
 
 ### The Utility Function
@@ -399,6 +428,7 @@ class ToolLLMSimulator:
 | **Testable** | Any component can be tested with a specific seed |
 | **Opt-in everywhere** | `seed=None` is the default at every level |
 | **Composable** | Components don't know about Benchmark, just their own seed |
+| **Variance attribution** | Two seeds (`task_seed`, `rep_seed`) enable isolating variance sources |
 
 ### Logging
 
@@ -410,13 +440,18 @@ class Benchmark:
         self._global_seed = seed
         self._seed_log = {}  # Populated during run
 
-    def _get_task_seed(self, task, rep_index):
+    def _get_seeds(self, task, rep_index):
         if self._global_seed is None:
-            return None
-        path = f"{task.id}/rep/{rep_index}"
-        seed = derive_seed(self._global_seed, path)
-        self._seed_log[path] = seed
-        return seed
+            return None, None
+
+        task_seed = derive_seed(self._global_seed, task.id)
+        rep_seed = derive_seed(self._global_seed, f"{task.id}/{rep_index}")
+
+        # Log both
+        self._seed_log[f"{task.id}/task_seed"] = task_seed
+        self._seed_log[f"{task.id}/rep/{rep_index}"] = rep_seed
+
+        return task_seed, rep_seed
 ```
 
 Results include the seed log:
@@ -426,9 +461,10 @@ results = benchmark.run(tasks, agent_data)
 # results includes:
 {
     "global_seed": 42,
-    "task_seeds": {
-        "task_001/rep/0": 8273645,
-        "task_001/rep/1": 1928374,
+    "seeds": {
+        "task_001/task_seed": 7382910,      # constant across reps
+        "task_001/rep/0": 8273645,          # rep 0
+        "task_001/rep/1": 1928374,          # rep 1
         ...
     }
 }
@@ -436,9 +472,10 @@ results = benchmark.run(tasks, agent_data)
 
 ### What Components Don't Need to Do
 
-- No calling `benchmark.get_seed()` - they receive seeds
+- No calling `benchmark.get_seed()` - they receive seeds via parameters
 - No managing registries - benchmark handles logging
 - No knowing about paths - they just use names for derivation
+- No complex configuration - just choose `task_seed` or `rep_seed` per component
 
 ### Edge Cases
 
@@ -459,9 +496,10 @@ def generate(self, prompt, generation_params=None):
 {"task_id": "task_001", "environment_seed": 99999, ...}
 
 # In setup_environment
-def setup_environment(self, agent_data, task, seed=None):
+def setup_environment(self, agent_data, task, task_seed=None, rep_seed=None):
     # Task-level override takes precedence
-    seed = task.environment_data.get("environment_seed", seed)
+    override = task.environment_data.get("environment_seed")
+    seed = override if override is not None else rep_seed
     ...
 ```
 
@@ -469,21 +507,36 @@ def setup_environment(self, agent_data, task, seed=None):
 
 ## Pattern Summary
 
-The pattern is: **"Receive seed, derive for children, pass to simulators."**
+The pattern is: **"Receive both seeds, choose based on variance needs, derive for children."**
 
 ```
 Benchmark(seed=42)
     │
-    ├─► setup_environment(seed=X)
-    │       └─► derive_seed(X, "tool_name") → ToolSimulator(seed=Y)
+    │  Computes per task+rep:
+    │    task_seed = derive(42, task.id)           # constant across reps
+    │    rep_seed = derive(42, task.id/rep_index)  # varies per rep
     │
-    ├─► setup_user(seed=X)
-    │       └─► derive_seed(X, "simulator") → UserSimulator(seed=Y)
+    ├─► setup_environment(task_seed=T, rep_seed=R)
+    │       │
+    │       │  Developer chooses: use T (constant) or R (varying)
+    │       │
+    │       └─► derive_seed(chosen, "tool_name") → ToolSimulator(seed=Y)
     │
-    └─► setup_evaluators(seed=X)
-            └─► derive_seed(X, "llm_judge") → LLMJudge(seed=Y)
+    ├─► setup_user(task_seed=T, rep_seed=R)
+    │       └─► derive_seed(chosen, "simulator") → UserSimulator(seed=Y)
+    │
+    ├─► setup_agents(task_seed=T, rep_seed=R)
+    │       ├─► derive_seed(R, "experimental_agent")  # varies - measure its variance
+    │       └─► derive_seed(T, "baseline_agent")      # constant - control
+    │
+    └─► setup_evaluators(task_seed=T, rep_seed=R)
+            └─► derive_seed(chosen, "llm_judge") → LLMJudge(seed=Y)
 ```
 
+**Key properties:**
 - No magic, no global state, just explicit parameter passing
+- Two seeds enable selective variance attribution studies
+- Common case: just use `rep_seed` everywhere (all vary)
+- Advanced case: mix `task_seed` and `rep_seed` to isolate variance sources
 - Works with existing architecture, minimal API changes
 - Fully opt-in at every level
