@@ -17,15 +17,31 @@ The same problem applies to agents, evaluators, any ordered collection. A robust
 
 ## 2. User Workflows
 
-Reproducibility is essential for evaluation. Researchers need to:
+### Technical Workflows
 
-1. **Reproduce a full benchmark run** — Run the same evaluation twice and get identical results.
+Fundamental capabilities any seeding system must enable:
 
-2. **Reproduce a single task** — Debug or analyze one specific task with the same conditions.
+1. **Full Benchmark Reproduction** — Run a benchmark with global seed 42, get results A. Run again with seed 42, get identical results A. Run with seed 43, get different but internally consistent results B. The global seed cascades: global → task → component, so changing the global seed changes everything downstream.
 
-3. **Measure variance** — Run the same task N times with different seeds to quantify outcome variance.
+2. **Single Task Reproduction** — Re-run task T in isolation with the same seed it received during a full benchmark run. Debug or analyze a specific failure without re-running the entire benchmark.
 
-4. **Attribute variance to components** — Keep some components constant (e.g., tools, user simulator) while varying others (e.g., one agent) to isolate which component contributes to outcome variance.
+3. **Checkpoint Resumption** — Benchmark crashes at task 50. Resume from task 51 with correct seeds—tasks 51+ receive the same seeds they would have in a complete run. Requires seeds to derive from task.id, not execution order.
+
+4. **Variance Quantification** — Run task T with K different repetition seeds to measure outcome distribution. Answers: "How reliable is my system on this task?"
+
+### Research Questions
+
+Research questions and methodologies that proper seeding infrastructure enables:
+
+1. **Component Variance Attribution** — Vary one component's seed across repetitions while holding others constant. Isolates which component (agent, tool simulator, evaluator) drives outcome variance.
+
+2. **Regression Detection** — Same tasks, same seeds, before and after a code change. Outcome differences indicate behavioral changes, not random noise. Useful for CI pipelines.
+
+3. **Failure Mode Analysis** — Run many seeds, cluster the failures. Systematic bugs fail across all seeds; edge cases fail only on specific seeds. Separates "broken" from "flaky."
+
+4. **Determinism Verification** — Run seed X twice, assert identical traces. Validates that seeding actually works end-to-end. Useful for CI and for catching components that ignore seeds.
+
+5. **Model Version Drift Detection** — Same code, same seeds, different results months later. Indicates the provider silently updated the model. Seeding enables detection (you can prove something changed externally) but cannot prevent it.
 
 ## 3. Current State
 
