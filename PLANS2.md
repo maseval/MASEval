@@ -305,3 +305,185 @@ model = AnthropicAdapter(..., generation_params={"temperature": 0})
 6. **Path-based derivation** internally, invisible to users
 7. **Seeds recorded** in run metadata and per-task results
 8. **Explicit failure** for unsupported providers
+
+---
+
+## Final Recommendation: Seed Injection with Hierarchical Derivation
+
+### Core Principle
+
+**Seeds flow down through method parameters, not through global state or registries.**
+
+```python
+# User API - single entry point
+benchmark = Benchmark(seed=42)
+results = benchmark.run(tasks, agent_data)
+```
+
+Internally, the benchmark:
+
+1. Derives a task seed: `task_seed = derive_seed(global_seed, f"{task.id}/{rep_index}")`
+2. Passes this seed to all setup methods via parameter
+3. Each component derives seeds for its children using the same utility
+
+### The Interface
+
+```python
+# Benchmark passes seed to all setup methods
+def setup_environment(self, agent_data, task, seed=None) -> Environment:
+    ...
+
+def setup_user(self, agent_data, environment, task, seed=None) -> User:
+    ...
+
+def setup_evaluators(self, environment, task, agents, user, seed=None) -> List[Evaluator]:
+    ...
+```
+
+### Component Responsibility
+
+Each component that receives a seed owns derivation for its children:
+
+```python
+def setup_environment(self, agent_data, task, seed=None):
+    env = MyEnvironment(task)
+
+    if seed is not None:
+        # Environment derives seeds for its tools
+        for tool_name in task.environment_data["tools"]:
+            tool_seed = derive_seed(seed, tool_name)
+            simulator = ToolLLMSimulator(model, seed=tool_seed)
+            env.add_tool(tool_name, simulator)
+
+    return env
+```
+
+### The Utility Function
+
+Single stateless function, usable anywhere:
+
+```python
+from maseval.core.seed import derive_seed
+
+def derive_seed(parent_seed: int, child_name: str) -> int:
+    """Deterministically derive a child seed from parent seed and name."""
+    import hashlib
+    combined = f"{parent_seed}:{child_name}"
+    return int(hashlib.sha256(combined.encode()).digest()[:4].hex(), 16)
+```
+
+### Simulator/Model Interface
+
+Simulators and models receive their seed at construction:
+
+```python
+class ToolLLMSimulator:
+    def __init__(self, model, prompt_template, seed=None):
+        self._seed = seed
+
+    def __call__(self, **inputs):
+        return self.model.generate(
+            prompt,
+            generation_params={"seed": self._seed}
+        )
+```
+
+### Why This Pattern is Clean
+
+| Property | How It's Achieved |
+|----------|-------------------|
+| **Single entry point** | Just `Benchmark(seed=42)` |
+| **Explicit propagation** | Seeds flow through method signatures |
+| **No global state** | Stateless utility function |
+| **Follows ownership** | Environment seeds its tools, User seeds its simulator |
+| **Testable** | Any component can be tested with a specific seed |
+| **Opt-in everywhere** | `seed=None` is the default at every level |
+| **Composable** | Components don't know about Benchmark, just their own seed |
+
+### Logging
+
+The benchmark internally tracks what seeds it computed:
+
+```python
+class Benchmark:
+    def __init__(self, seed=None):
+        self._global_seed = seed
+        self._seed_log = {}  # Populated during run
+
+    def _get_task_seed(self, task, rep_index):
+        if self._global_seed is None:
+            return None
+        path = f"{task.id}/rep/{rep_index}"
+        seed = derive_seed(self._global_seed, path)
+        self._seed_log[path] = seed
+        return seed
+```
+
+Results include the seed log:
+
+```python
+results = benchmark.run(tasks, agent_data)
+# results includes:
+{
+    "global_seed": 42,
+    "task_seeds": {
+        "task_001/rep/0": 8273645,
+        "task_001/rep/1": 1928374,
+        ...
+    }
+}
+```
+
+### What Components Don't Need to Do
+
+- No calling `benchmark.get_seed()` - they receive seeds
+- No managing registries - benchmark handles logging
+- No knowing about paths - they just use names for derivation
+
+### Edge Cases
+
+**Provider doesn't support seeding:**
+
+```python
+# In ModelAdapter
+def generate(self, prompt, generation_params=None):
+    seed = generation_params.get("seed") if generation_params else None
+    if seed is not None and not self._supports_seeding:
+        raise SeedingNotSupportedError(...)
+```
+
+**User wants to override a specific component's seed:**
+
+```python
+# In task data
+{"task_id": "task_001", "environment_seed": 99999, ...}
+
+# In setup_environment
+def setup_environment(self, agent_data, task, seed=None):
+    # Task-level override takes precedence
+    seed = task.environment_data.get("environment_seed", seed)
+    ...
+```
+
+---
+
+## Pattern Summary
+
+The pattern is: **"Receive seed, derive for children, pass to simulators."**
+
+```
+Benchmark(seed=42)
+    │
+    ├─► setup_environment(seed=X)
+    │       └─► derive_seed(X, "tool_name") → ToolSimulator(seed=Y)
+    │
+    ├─► setup_user(seed=X)
+    │       └─► derive_seed(X, "simulator") → UserSimulator(seed=Y)
+    │
+    └─► setup_evaluators(seed=X)
+            └─► derive_seed(X, "llm_judge") → LLMJudge(seed=Y)
+```
+
+- No magic, no global state, just explicit parameter passing
+- Works with existing architecture, minimal API changes
+- Fully opt-in at every level
