@@ -605,6 +605,7 @@ Analysis of the three example benchmarks reveals different approaches to seeding
 #### 1. MACS Benchmark (`examples/macs_benchmark/`)
 
 **Current CLI:**
+
 ```bash
 uv run python examples/macs_benchmark.py \
     --framework smolagents \
@@ -618,6 +619,7 @@ uv run python examples/macs_benchmark.py \
 #### 2. Tau2 Benchmark (`examples/tau2_benchmark/`)
 
 **Current CLI:**
+
 ```bash
 uv run python examples/tau2_benchmark/tau2_benchmark.py \
     --framework default \
@@ -630,6 +632,7 @@ uv run python examples/tau2_benchmark/tau2_benchmark.py \
 #### 3. Five-A-Day Benchmark (`examples/five_a_day_benchmark/`)
 
 **Current CLI:**
+
 ```bash
 uv run python examples/five_a_day_benchmark/five_a_day_benchmark.py \
     --framework smolagents \
@@ -637,12 +640,14 @@ uv run python examples/five_a_day_benchmark/five_a_day_benchmark.py \
 ```
 
 **Workflow:** Manually implements seeding:
+
 - Accepts `--seed` CLI argument
 - Uses custom `derive_seed(base_seed, task_id, agent_id)` in `utils.py`
 - Passes seeds to model factory per-agent
 - Seeds stored in agent specs during data loading
 
 **Code Pattern (five_a_day):**
+
 ```python
 # In data loading (line 892-894):
 for agent_spec in config["agents"]:
@@ -680,15 +685,18 @@ benchmark = MACSBenchmark(seed=args.seed, ...)
 ```
 
 **Pros:**
+
 - Minimal API change (one new parameter)
 - Automatic propagation - users don't manage child seeds
 - Backward compatible (seed=None means non-deterministic)
 
 **Cons:**
+
 - Less control over individual components
 - Benchmark subclasses must call `super().__init__()` correctly
 
 **Example Workflow:**
+
 ```bash
 # Reproducible run
 uv run python examples/macs_benchmark.py --domain travel --seed 42
@@ -712,11 +720,13 @@ results2 = benchmark.run(tasks, agent_data=config, seed=43)
 ```
 
 **Pros:**
+
 - More flexible for variance studies
 - Single benchmark instance, multiple seeded runs
 - Natural for hyperparameter sweeps
 
 **Cons:**
+
 - Seed not visible in benchmark config
 - Could be confusing: is benchmark stateful?
 - Harder to reason about reproducibility
@@ -735,11 +745,13 @@ with seed_context(42):
 ```
 
 **Pros:**
+
 - Affects all operations uniformly
 - No API changes to existing functions
 - Familiar pattern from numpy/torch
 
 **Cons:**
+
 - Implicit behavior - harder to debug
 - Global state can cause issues in concurrent code
 - Doesn't match MASEval's explicit design philosophy
@@ -765,11 +777,13 @@ results = benchmark.run(tasks, agent_data=config)
 ```
 
 **Pros:**
+
 - Maximum flexibility
 - Clear separation of concerns
 - Supports advanced reproducibility studies
 
 **Cons:**
+
 - More complex API
 - Users must understand seed hierarchy
 - More ways to make mistakes
@@ -793,11 +807,13 @@ results = benchmark.run(tasks, agent_data=config)
 ```
 
 **Pros:**
+
 - All seed settings in one place
 - Self-documenting
 - Easy to serialize/deserialize for reproducibility
 
 **Cons:**
+
 - New class to learn
 - Overkill for simple cases
 - Breaking change if made required
@@ -867,14 +883,14 @@ uv run python examples/macs_benchmark.py --domain travel --seed 42 --task-id tas
 
 ## Workflow Comparison Table
 
-| Design | API Complexity | User Effort | Flexibility | Debuggability | Recommended For |
-|--------|---------------|-------------|-------------|---------------|-----------------|
-| A: Benchmark-level | Low | Minimal | Medium | Good | Most users |
-| B: Run-level | Low | Minimal | High | Medium | Sweep studies |
-| C: Context | Medium | Low | Medium | Poor | NumPy users |
-| D: Layered | High | High | Very High | Excellent | Researchers |
-| E: Config object | Medium | Medium | Very High | Excellent | Large projects |
-| **Hybrid A+D** | Low-Medium | Minimal-Medium | High | Excellent | **All users** |
+| Design             | API Complexity | User Effort    | Flexibility | Debuggability | Recommended For |
+| ------------------ | -------------- | -------------- | ----------- | ------------- | --------------- |
+| A: Benchmark-level | Low            | Minimal        | Medium      | Good          | Most users      |
+| B: Run-level       | Low            | Minimal        | High        | Medium        | Sweep studies   |
+| C: Context         | Medium         | Low            | Medium      | Poor          | NumPy users     |
+| D: Layered         | High           | High           | Very High   | Excellent     | Researchers     |
+| E: Config object   | Medium         | Medium         | Very High   | Excellent     | Large projects  |
+| **Hybrid A+D**     | Low-Medium     | Minimal-Medium | High        | Excellent     | **All users**   |
 
 ---
 
@@ -903,3 +919,5 @@ uv run python examples/macs_benchmark.py --domain travel --seed 42 --task-id tas
 6. **How to handle existing five_a_day seeding pattern?**
    - Proposal: Migrate to new system, deprecate custom `derive_seed`
    - Alternative: Support both patterns during transition
+
+## My Comments about this Plan
