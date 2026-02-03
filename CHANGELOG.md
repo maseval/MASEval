@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+**Interface**
+
+- Renamed framework-specific `LLMUser` subclasses for clarity (PR: #22):
+  - `SmolAgentUser` → `SmolAgentLLMUser`
+  - `LangGraphUser` → `LangGraphLLMUser`
+  - `LlamaIndexUser` → `LlamaIndexLLMUser`
+
 ### Fixed
 
 ### Removed
