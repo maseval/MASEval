@@ -23,4 +23,4 @@ pip install llama-index-core
 
 ::: maseval.interface.agents.llamaindex.LlamaIndexAgentAdapter
 
-::: maseval.interface.agents.llamaindex.LlamaIndexUser
+::: maseval.interface.agents.llamaindex.LlamaIndexLLMUser

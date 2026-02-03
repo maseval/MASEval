@@ -294,19 +294,23 @@ def create_mock_camel_agent(
     else:
         mock_agent.system_message = None
 
-    # Model
+    # Model - set both model and model_backend
     if model_type:
         mock_model = Mock()
         mock_model.model_type = model_type
         mock_agent.model = mock_model
+        mock_agent.model_backend = mock_model  # CAMEL uses model_backend in newer versions
     else:
         mock_agent.model = None
+        mock_agent.model_backend = None
 
-    # Tools
+    # Tools - set both tools and tool_list
     if tools:
         mock_agent.tools = tools
+        mock_agent.tool_list = tools  # CAMEL uses tool_list in newer versions
     else:
         mock_agent.tools = None
+        mock_agent.tool_list = None
 
     # Step method
     def step_impl(user_msg):

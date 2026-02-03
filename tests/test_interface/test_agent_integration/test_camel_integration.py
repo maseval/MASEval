@@ -24,10 +24,10 @@ pytestmark = [pytest.mark.interface, pytest.mark.camel]
 
 def test_camel_adapter_import():
     """Test that CamelAgentAdapter can be imported when camel-ai is installed."""
-    from maseval.interface.agents.camel import CamelAgentAdapter, CamelUser
+    from maseval.interface.agents.camel import CamelAgentAdapter, CamelLLMUser
 
     assert CamelAgentAdapter is not None
-    assert CamelUser is not None
+    assert CamelLLMUser is not None
 
 
 def test_camel_in_agents_all():
@@ -35,7 +35,7 @@ def test_camel_in_agents_all():
     import maseval.interface.agents
 
     assert "CamelAgentAdapter" in maseval.interface.agents.__all__
-    assert "CamelUser" in maseval.interface.agents.__all__
+    assert "CamelLLMUser" in maseval.interface.agents.__all__
 
 
 def test_check_camel_installed_function():
@@ -58,13 +58,13 @@ def test_camel_adapter_creation():
 
 
 def test_camel_user_creation():
-    """Test that CamelUser can be created."""
-    from maseval.interface.agents.camel import CamelUser
+    """Test that CamelLLMUser can be created."""
+    from maseval.interface.agents.camel import CamelLLMUser
     from unittest.mock import Mock
 
     # Create user with required parameters
     mock_model = Mock()
-    user = CamelUser(
+    user = CamelLLMUser(
         name="test_user",
         model=mock_model,
         user_profile={"role": "tester"},
@@ -101,15 +101,23 @@ def test_camel_adapter_gather_traces_with_response():
     mock_agent = create_mock_camel_agent()
     adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test_agent")
 
-    # Simulate a response being cached
-    mock_response = MockCamelResponse(content="Response", terminated=True, info={"key": "value"})
-    adapter._last_response = mock_response
+    # Simulate a response being stored (new API uses _responses list)
+    mock_response = MockCamelResponse(
+        content="Response",
+        terminated=True,
+        info={"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+    )
+    adapter._responses.append(mock_response)
 
     traces = adapter.gather_traces()
 
-    assert "last_response_terminated" in traces
-    assert traces["last_response_terminated"] is True
-    assert "last_response_info" in traces
+    # New API uses last_terminated and aggregated stats
+    assert "last_terminated" in traces
+    assert traces["last_terminated"] is True
+    assert "total_steps" in traces
+    assert traces["total_steps"] == 1
+    assert "total_tokens" in traces
+    assert traces["total_tokens"] == 15
 
 
 def test_camel_adapter_gather_config_basic():
@@ -148,14 +156,18 @@ def test_camel_adapter_gather_config_with_tools():
     """Test that gather_config captures tool information."""
     from maseval.interface.agents.camel import CamelAgentAdapter
 
-    # Create mock tools
+    # Create mock tools with both name attribute and get_function_name method
     mock_tool1 = Mock()
     mock_tool1.name = "search"
     mock_tool1.description = "Search the web"
+    mock_tool1.get_function_name = Mock(return_value="search")
+    mock_tool1.get_function_description = Mock(return_value="Search the web")
 
     mock_tool2 = Mock()
     mock_tool2.name = "calculator"
     mock_tool2.description = "Perform calculations"
+    mock_tool2.get_function_name = Mock(return_value="calculator")
+    mock_tool2.get_function_description = Mock(return_value="Perform calculations")
 
     mock_agent = create_mock_camel_agent(tools=[mock_tool1, mock_tool2])
     adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test_agent")
@@ -221,8 +233,8 @@ def test_camel_adapter_logs_initially_empty():
 
 
 def test_camel_user_get_tool():
-    """Test that CamelUser.get_tool() returns a CAMEL FunctionTool."""
-    from maseval.interface.agents.camel import CamelUser
+    """Test that CamelLLMUser.get_tool() returns a CAMEL FunctionTool."""
+    from maseval.interface.agents.camel import CamelLLMUser
     from camel.toolkits import FunctionTool
     from unittest.mock import Mock
 
@@ -230,7 +242,7 @@ def test_camel_user_get_tool():
     mock_model = Mock()
 
     # Create user
-    user = CamelUser(
+    user = CamelLLMUser(
         name="test_user",
         model=mock_model,
         user_profile={"role": "customer"},
@@ -869,26 +881,28 @@ def test_camel_adapter_convert_memory_messages_with_base_message():
 
 
 def test_camel_adapter_gather_traces_with_non_serializable_info():
-    """Test gather_traces handles non-serializable response info."""
+    """Test gather_traces handles response with minimal/unusual info gracefully."""
     from maseval.interface.agents.camel import CamelAgentAdapter
 
     mock_agent = create_mock_camel_agent()
     adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test_agent")
 
-    # Create a response with non-serializable info
+    # Create a response with non-standard info that might not be dict-like
     mock_response = Mock()
     mock_response.terminated = True
-    # Mock info that raises TypeError when converted to dict
-    mock_response.info = Mock()
-    mock_response.info.__iter__ = Mock(side_effect=TypeError("Not iterable"))
+    mock_response.msgs = []
+    # Mock info that is not a dict (edge case)
+    mock_response.info = "not a dict"
 
-    adapter._last_response = mock_response
+    adapter._responses.append(mock_response)
 
     traces = adapter.gather_traces()
 
-    assert "last_response_info" in traces
-    assert "last_response_terminated" in traces
-    assert traces["last_response_terminated"] is True
+    # Should still work and capture the terminated status
+    assert "last_terminated" in traces
+    assert traces["last_terminated"] is True
+    assert "total_steps" in traces
+    assert traces["total_steps"] == 1
 
 
 def test_camel_adapter_get_messages_memory_access_failure():
@@ -921,14 +935,14 @@ def test_camel_adapter_gather_config_with_model():
 
 
 def test_camel_user_get_tool_invocation():
-    """Test CamelUser.get_tool() returns a working tool."""
-    from maseval.interface.agents.camel import CamelUser
+    """Test CamelLLMUser.get_tool() returns a working tool."""
+    from maseval.interface.agents.camel import CamelLLMUser
     from camel.toolkits import FunctionTool
     from unittest.mock import Mock
 
     mock_model = Mock()
 
-    user = CamelUser(
+    user = CamelLLMUser(
         name="test_user",
         model=mock_model,
         user_profile={"role": "customer"},

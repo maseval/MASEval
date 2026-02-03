@@ -110,7 +110,7 @@ Basic CAMEL-AI integration supporting the core `ChatAgent` class. Implementation
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Create `maseval/interface/agents/camel.py` | Done | `CamelAgentAdapter` and `CamelUser` |
+| Create `maseval/interface/agents/camel.py` | Done | `CamelAgentAdapter` and `CamelLLMUser` |
 | Update `maseval/interface/agents/__init__.py` | Done | Conditional import added |
 | Add `camel` optional dependency to `pyproject.toml` | Done | `camel-ai>=0.2.0` |
 | Add `camel` pytest marker | Done | In `pyproject.toml` |
@@ -133,7 +133,7 @@ Basic CAMEL-AI integration supporting the core `ChatAgent` class. Implementation
 - Captures response metadata (`terminated`, `info`) in traces
 - Extracts tool and model configuration in `gather_config()`
 
-**CamelUser**:
+**CamelLLMUser**:
 - Extends `LLMUser` class
 - `get_tool()` returns CAMEL `FunctionTool` wrapping `respond()`
 
@@ -292,10 +292,10 @@ class AgenticLLMUser(LLMUser):
 - `tests/test_core/test_user.py` - Update tests for new structure
 
 *Interface (framework-specific users now extend `LLMUser` and override `get_tool()`):*
-- `maseval/interface/agents/smolagents.py` - `SmolAgentUser(LLMUser)` overrides `get_tool()`
-- `maseval/interface/agents/langgraph.py` - `LangGraphUser(LLMUser)` overrides `get_tool()`
-- `maseval/interface/agents/llamaindex.py` - `LlamaIndexUser(LLMUser)` overrides `get_tool()`
-- `maseval/interface/agents/camel.py` - `CamelUser(LLMUser)` overrides `get_tool()`
+- `maseval/interface/agents/smolagents.py` - `SmolAgentLLMUser(LLMUser)` overrides `get_tool()`
+- `maseval/interface/agents/langgraph.py` - `LangGraphLLMUser(LLMUser)` overrides `get_tool()`
+- `maseval/interface/agents/llamaindex.py` - `LlamaIndexLLMUser(LLMUser)` overrides `get_tool()`
+- `maseval/interface/agents/camel.py` - `CamelLLMUser(LLMUser)` overrides `get_tool()`
 
 ---
 
@@ -664,7 +664,7 @@ class MyBenchmark(Benchmark):
 ### Completed (Phase 1 + Phase 2)
 - `maseval/interface/agents/camel.py` - All CAMEL components:
   - `CamelAgentAdapter` - Wraps CAMEL ChatAgent
-  - `CamelUser` - LLM-simulated user with CAMEL tool
+  - `CamelLLMUser` - LLM-simulated user with CAMEL tool
   - `CamelAgentUser` - User backed by CAMEL ChatAgent (Phase 2.2)
   - `camel_role_playing_execution_loop` - Execution loop for RolePlaying (Phase 2.4)
   - `CamelRolePlayingTracer` - RolePlaying orchestration tracer (Phase 2.5)
@@ -730,10 +730,10 @@ The contract tests (`tests/test_contract/test_agent_adapter_contract.py`) valida
 - `tests/test_core/test_user.py` - Update tests for new structure and method names
 
 **Interface updates** (existing users extend `LLMUser` and override `get_tool()`):
-- `maseval/interface/agents/smolagents.py` - `SmolAgentUser(LLMUser)` overrides `get_tool()`
-- `maseval/interface/agents/langgraph.py` - `LangGraphUser(LLMUser)` overrides `get_tool()`
-- `maseval/interface/agents/llamaindex.py` - `LlamaIndexUser(LLMUser)` overrides `get_tool()`
-- `maseval/interface/agents/camel.py` - `CamelUser(LLMUser)` overrides `get_tool()`
+- `maseval/interface/agents/smolagents.py` - `SmolAgentLLMUser(LLMUser)` overrides `get_tool()`
+- `maseval/interface/agents/langgraph.py` - `LangGraphLLMUser(LLMUser)` overrides `get_tool()`
+- `maseval/interface/agents/llamaindex.py` - `LlamaIndexLLMUser(LLMUser)` overrides `get_tool()`
+- `maseval/interface/agents/camel.py` - `CamelLLMUser(LLMUser)` overrides `get_tool()`
 
 ---
 

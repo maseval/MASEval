@@ -5,7 +5,7 @@ This module requires camel-ai to be installed:
 
 Components:
     CamelAgentAdapter: Wraps CAMEL ChatAgent for MASEval evaluation
-    CamelUser: LLM-simulated user with CAMEL-compatible tool
+    CamelLLMUser: LLM-simulated user with CAMEL-compatible tool
     CamelAgentUser: User backed by a CAMEL ChatAgent (for agent-to-agent evaluation)
     camel_role_playing_execution_loop: Execution loop using CAMEL RolePlaying semantics
     CamelRolePlayingTracer: Collects orchestration traces from RolePlaying
@@ -22,7 +22,7 @@ from maseval.core.config import ConfigurableMixin
 
 __all__ = [
     "CamelAgentAdapter",
-    "CamelUser",
+    "CamelLLMUser",
     "CamelAgentUser",
     "camel_role_playing_execution_loop",
     "CamelRolePlayingTracer",
@@ -33,9 +33,11 @@ __all__ = [
 if TYPE_CHECKING:
     from camel.agents import ChatAgent
     from camel.messages import BaseMessage
+    from camel.responses import ChatAgentResponse
 else:
     ChatAgent = None
     BaseMessage = None
+    ChatAgentResponse = None
 
 
 def _check_camel_installed():
@@ -51,8 +53,9 @@ class CamelAgentAdapter(AgentAdapter):
 
     This adapter integrates CAMEL-AI's ChatAgent with MASEval's benchmarking framework,
     converting CAMEL's message format to OpenAI-compatible MessageHistory format.
-    It leverages CAMEL's native memory system as the source of truth for conversation
-    history, ensuring accurate tracking of multi-turn interactions.
+    It leverages CAMEL's native memory system and response info as the source of truth
+    for conversation history and execution traces, ensuring accurate tracking of
+    multi-turn interactions without duplicating CAMEL's internal state.
 
     CAMEL-AI is a modular framework for building intelligent multi-agent systems.
     The ChatAgent is its core component for single-agent interactions, supporting
@@ -93,9 +96,10 @@ class CamelAgentAdapter(AgentAdapter):
             for msg in agent_adapter.get_messages():
                 print(f"{msg['role']}: {msg['content']}")
 
-            # Gather execution traces
+            # Gather execution traces with token usage and tool calls
             traces = agent_adapter.gather_traces()
-            print(f"Messages: {traces['message_count']}")
+            print(f"Total tokens: {traces['total_tokens']}")
+            print(f"Tool calls: {traces['total_tool_calls']}")
 
             # Gather configuration
             config = agent_adapter.gather_config()
@@ -112,15 +116,17 @@ class CamelAgentAdapter(AgentAdapter):
         memory system, which already provides messages in a compatible structure.
 
     Memory as Source of Truth:
-        Following MASEval's adapter pattern, this adapter uses CAMEL's native
-        memory storage as the single source of truth. Messages are dynamically
-        fetched from `agent.memory.get_context()` rather than being cached,
-        ensuring consistency with the agent's internal state.
+        Following MASEval's adapter pattern (similar to SmolAgentAdapter), this adapter
+        uses CAMEL's native memory and ChatAgentResponse info as the single source of
+        truth. The `logs` property dynamically extracts execution data from stored
+        responses rather than manually tracking metrics.
 
     Execution Model:
         CAMEL's ChatAgent uses a `step()` method for execution, which processes
-        one turn of conversation and returns a ChatAgentResponse. The adapter
-        handles this automatically, extracting the final answer from the response.
+        one turn of conversation and returns a ChatAgentResponse containing:
+        - msgs: Response messages
+        - terminated: Whether the conversation should end
+        - info: Dict with usage stats, tool_calls, termination_reasons, etc.
 
     Requires:
         camel-ai to be installed: `pip install maseval[camel]`
@@ -129,13 +135,114 @@ class CamelAgentAdapter(AgentAdapter):
     def __init__(self, agent_instance, name: str, callbacks=None):
         """Initialize the CAMEL adapter.
 
+        Note: We don't call super().__init__() to avoid initializing self.logs as a list,
+        since we override it as a property that dynamically fetches from stored responses.
+
         Args:
             agent_instance: CAMEL ChatAgent instance
             name: Agent name for identification
             callbacks: Optional list of AgentCallback instances
         """
-        super().__init__(agent_instance, name, callbacks)
-        self._last_response = None
+        self.agent = agent_instance
+        self.name = name
+        self.callbacks = callbacks or []
+        self.messages = None
+        # Store responses from each step() call
+        self._responses: List[Any] = []
+        # Store errors that occur during execution (for comprehensive logging)
+        self._errors: List[Dict[str, Any]] = []
+
+    @property
+    def logs(self) -> List[Dict[str, Any]]:  # type: ignore[override]
+        """Dynamically generate logs from CAMEL's ChatAgentResponse info.
+
+        Extracts execution data from stored ChatAgentResponse objects,
+        including token usage, tool calls, and termination reasons.
+        This follows the same pattern as SmolAgentAdapter.
+
+        Returns:
+            List of log dictionaries with comprehensive step information
+        """
+        _check_camel_installed()
+
+        logs_list: List[Dict[str, Any]] = []
+
+        for step_num, response in enumerate(self._responses, start=1):
+            log_entry: Dict[str, Any] = {
+                "step_number": step_num,
+                "status": "success",
+            }
+
+            # Extract termination status
+            if hasattr(response, "terminated"):
+                log_entry["terminated"] = response.terminated
+
+            # Extract response message count
+            if hasattr(response, "msgs") and response.msgs:
+                log_entry["response_count"] = len(response.msgs)
+                # Include response content preview
+                if response.msgs[0] and hasattr(response.msgs[0], "content"):
+                    content = str(response.msgs[0].content)
+                    log_entry["response_preview"] = content[:200] if len(content) > 200 else content
+
+            # Extract info dict (contains usage, tool_calls, termination_reasons, etc.)
+            if hasattr(response, "info") and response.info:
+                info = response.info
+
+                # Token usage
+                if "usage" in info and isinstance(info["usage"], dict):
+                    usage = info["usage"]
+                    log_entry["input_tokens"] = usage.get("prompt_tokens", 0)
+                    log_entry["output_tokens"] = usage.get("completion_tokens", 0)
+                    log_entry["total_tokens"] = usage.get("total_tokens", 0)
+
+                # Context tokens
+                if "num_tokens" in info:
+                    log_entry["context_tokens"] = info["num_tokens"]
+
+                # Termination reasons
+                if "termination_reasons" in info:
+                    log_entry["termination_reasons"] = info["termination_reasons"]
+
+                # Response/session ID
+                if "id" in info:
+                    log_entry["response_id"] = info["id"]
+
+                # Tool calls - extract from ToolCallingRecord objects
+                if "tool_calls" in info and info["tool_calls"]:
+                    tool_calls_data = []
+                    for tc in info["tool_calls"]:
+                        tc_entry: Dict[str, Any] = {}
+                        # ToolCallingRecord has: tool_name, args, result, tool_call_id, images
+                        if hasattr(tc, "tool_name"):
+                            tc_entry["name"] = tc.tool_name
+                        if hasattr(tc, "args"):
+                            tc_entry["arguments"] = tc.args
+                        if hasattr(tc, "result"):
+                            # Truncate large results
+                            result_str = str(tc.result)
+                            tc_entry["result"] = result_str[:500] if len(result_str) > 500 else result_str
+                        if hasattr(tc, "tool_call_id"):
+                            tc_entry["id"] = tc.tool_call_id
+                        if hasattr(tc, "images") and tc.images:
+                            tc_entry["images_count"] = len(tc.images)
+                        if tc_entry:
+                            tool_calls_data.append(tc_entry)
+                    if tool_calls_data:
+                        log_entry["tool_calls"] = tool_calls_data
+
+                # External tool call requests
+                if "external_tool_call_requests" in info and info["external_tool_call_requests"]:
+                    log_entry["external_tool_call_requests"] = [
+                        str(req) for req in info["external_tool_call_requests"]
+                    ]
+
+            logs_list.append(log_entry)
+
+        # Also include any errors that occurred during execution
+        logs_list.extend(self._errors)
+
+        return logs_list
 
     def get_messages(self) -> MessageHistory:
         """Get message history from CAMEL's memory system.
@@ -257,28 +364,53 @@ class CamelAgentAdapter(AgentAdapter):
         """Gather execution traces from this CAMEL agent.
 
         Extends the base class to include CAMEL-specific execution data
-        such as response metadata and termination status.
+        with aggregated statistics from all responses.
 
         Returns:
             Dictionary containing:
             - Base traces (type, gathered_at, name, messages, logs, etc.)
-            - last_response_terminated: Whether the last response indicated termination
-            - last_response_info: Additional info from the last response
+            - total_steps: Number of step() calls made
+            - total_input_tokens: Aggregated input tokens
+            - total_output_tokens: Aggregated output tokens
+            - total_tokens: Aggregated total tokens
+            - total_tool_calls: Total number of tool calls made
+            - last_terminated: Whether the last response indicated termination
         """
         base_traces = super().gather_traces()
         _check_camel_installed()
 
-        # Add CAMEL-specific trace data
-        if self._last_response is not None:
-            if hasattr(self._last_response, "terminated"):
-                base_traces["last_response_terminated"] = self._last_response.terminated
+        # Calculate aggregated statistics from responses
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_tool_calls = 0
+        last_terminated = False
 
-            if hasattr(self._last_response, "info") and self._last_response.info:
-                # Include response info, filtering out non-serializable items
-                try:
-                    base_traces["last_response_info"] = dict(self._last_response.info)
-                except (TypeError, ValueError):
-                    base_traces["last_response_info"] = str(self._last_response.info)
+        for response in self._responses:
+            if hasattr(response, "terminated"):
+                last_terminated = response.terminated
+
+            if hasattr(response, "info") and response.info:
+                info = response.info
+
+                # Aggregate token usage
+                if "usage" in info and isinstance(info["usage"], dict):
+                    usage = info["usage"]
+                    total_input_tokens += usage.get("prompt_tokens", 0)
+                    total_output_tokens += usage.get("completion_tokens", 0)
+
+                # Count tool calls
+                if "tool_calls" in info and info["tool_calls"]:
+                    total_tool_calls += len(info["tool_calls"])
+
+        # Add aggregated statistics
+        base_traces.update({
+            "total_steps": len(self._responses),
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "total_tokens": total_input_tokens + total_output_tokens,
+            "total_tool_calls": total_tool_calls,
+            "last_terminated": last_terminated,
+        })
 
         return base_traces
 
@@ -308,7 +440,18 @@ class CamelAgentAdapter(AgentAdapter):
                 camel_config["system_message"] = sys_msg
 
         # Get model information
-        if hasattr(self.agent, "model"):
+        if hasattr(self.agent, "model_backend"):
+            model = self.agent.model_backend
+            if hasattr(model, "model_type"):
+                model_type = model.model_type
+                if hasattr(model_type, "value"):
+                    camel_config["model_type"] = model_type.value
+                else:
+                    camel_config["model_type"] = str(model_type)
+            if hasattr(model, "model_config_dict"):
+                camel_config["model_config"] = model.model_config_dict
+        elif hasattr(self.agent, "model"):
+            # Fallback for older CAMEL versions
             model = self.agent.model
             if hasattr(model, "model_type"):
                 model_type = model.model_type
@@ -319,19 +462,29 @@ class CamelAgentAdapter(AgentAdapter):
             if hasattr(model, "model_config_dict"):
                 camel_config["model_config"] = model.model_config_dict
 
-        # Get tools information
-        if hasattr(self.agent, "tools") and self.agent.tools:
+        # Get tools information from tool_list or tools attribute
+        tool_list = None
+        if hasattr(self.agent, "tool_list"):
+            tl = self.agent.tool_list
+            if isinstance(tl, (list, tuple)):
+                tool_list = tl
+        if tool_list is None and hasattr(self.agent, "tools"):
+            tl = self.agent.tools
+            if isinstance(tl, (list, tuple)):
+                tool_list = tl
+
+        if tool_list:
             tools_info = []
-            for tool in self.agent.tools:
+            for tool in tool_list:
                 tool_info: Dict[str, Any] = {}
-                if hasattr(tool, "name"):
-                    tool_info["name"] = tool.name
-                elif hasattr(tool, "get_function_name"):
+                if hasattr(tool, "get_function_name"):
                     tool_info["name"] = tool.get_function_name()
-                if hasattr(tool, "description"):
-                    tool_info["description"] = tool.description
-                elif hasattr(tool, "get_function_description"):
+                elif hasattr(tool, "name"):
+                    tool_info["name"] = tool.name
+                if hasattr(tool, "get_function_description"):
                     tool_info["description"] = tool.get_function_description()
+                elif hasattr(tool, "description"):
+                    tool_info["description"] = tool.description
                 if tool_info:
                     tools_info.append(tool_info)
             if tools_info:
@@ -349,8 +502,8 @@ class CamelAgentAdapter(AgentAdapter):
     def _run_agent(self, query: str) -> str:
         """Execute the CAMEL agent with the given query.
 
-        Uses CAMEL's step() method to process one turn of conversation,
-        extracting the final answer from the response.
+        Uses CAMEL's step() method to process one turn of conversation.
+        The response is stored for later extraction via the logs property.
 
         Args:
             query: The user query to send to the agent
@@ -364,71 +517,32 @@ class CamelAgentAdapter(AgentAdapter):
         _check_camel_installed()
         from camel.messages import BaseMessage
 
-        start_time = time.time()
-        timestamp = datetime.now().isoformat()
+        # Create user message for CAMEL
+        user_msg = BaseMessage.make_user_message(
+            role_name="User",
+            content=query,
+        )
 
         try:
-            # Create user message for CAMEL
-            user_msg = BaseMessage.make_user_message(
-                role_name="User",
-                content=query,
-            )
-
-            # Execute one step
+            # Execute one step - CAMEL tracks everything internally
             response = self.agent.step(user_msg)
 
-            # Cache the response for traces
-            self._last_response = response
-            duration = time.time() - start_time
-
-            # Log successful execution
-            log_entry: Dict[str, Any] = {
-                "timestamp": timestamp,
-                "query": query,
-                "query_length": len(query),
-                "duration_seconds": duration,
-                "status": "success",
-            }
-
-            # Extract response details
-            if hasattr(response, "msgs") and response.msgs:
-                log_entry["response_count"] = len(response.msgs)
-
-            if hasattr(response, "terminated"):
-                log_entry["terminated"] = response.terminated
-
-            if hasattr(response, "info") and response.info:
-                # Extract useful info like token usage if available
-                info = response.info
-                if isinstance(info, dict):
-                    if "usage" in info:
-                        usage = info["usage"]
-                        if isinstance(usage, dict):
-                            log_entry["input_tokens"] = usage.get("prompt_tokens", 0)
-                            log_entry["output_tokens"] = usage.get("completion_tokens", 0)
-                            log_entry["total_tokens"] = usage.get("total_tokens", 0)
-
-            self.logs.append(log_entry)
+            # Store the response for traces (logs property extracts data from here)
+            self._responses.append(response)
 
             # Extract and return the final answer
             return self._extract_final_answer(response)
 
         except Exception as e:
-            duration = time.time() - start_time
-
-            # Log failed execution
-            self.logs.append(
-                {
-                    "timestamp": timestamp,
-                    "query": query,
-                    "query_length": len(query),
-                    "duration_seconds": duration,
-                    "status": "error",
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                }
-            )
-
+            # Log the error for traceability
+            self._errors.append({
+                "step_number": len(self._responses) + 1,
+                "status": "error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "query": query[:500] if len(query) > 500 else query,
+                "timestamp": datetime.now().isoformat(),
+            })
             raise
 
     def _extract_final_answer(self, response) -> str:
@@ -459,7 +573,7 @@ class CamelAgentAdapter(AgentAdapter):
         return str(response)
 
 
-class CamelUser(LLMUser):
+class CamelLLMUser(LLMUser):
     """A CAMEL-specific LLM user that provides a tool for user interaction.
 
     Extends LLMUser to provide a CAMEL-compatible FunctionTool that wraps
@@ -470,14 +584,14 @@ class CamelUser(LLMUser):
 
     Example:
         ```python
-        from maseval.interface.agents.camel import CamelUser
+        from maseval.interface.agents.camel import CamelLLMUser
         from maseval.interface.inference import OpenAIModelAdapter
 
         # Create a model for user simulation
         model = OpenAIModelAdapter(model_id="gpt-4o-mini")
 
         # Create the user
-        user = CamelUser(
+        user = CamelLLMUser(
             name="customer",
             model=model,
             user_profile={"name": "John", "preferences": ["fast service"]},

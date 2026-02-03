@@ -15,10 +15,10 @@ pytestmark = [pytest.mark.interface, pytest.mark.llamaindex]
 
 def test_llamaindex_adapter_import():
     """Test that LlamaIndexAgentAdapter can be imported when llama-index-core is installed."""
-    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter, LlamaIndexUser
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter, LlamaIndexLLMUser
 
     assert LlamaIndexAgentAdapter is not None
-    assert LlamaIndexUser is not None
+    assert LlamaIndexLLMUser is not None
 
 
 def test_llamaindex_in_agents_all():
@@ -26,7 +26,7 @@ def test_llamaindex_in_agents_all():
     import maseval.interface.agents
 
     assert "LlamaIndexAgentAdapter" in maseval.interface.agents.__all__
-    assert "LlamaIndexUser" in maseval.interface.agents.__all__
+    assert "LlamaIndexLLMUser" in maseval.interface.agents.__all__
 
 
 def test_check_llamaindex_installed_function():
@@ -49,13 +49,13 @@ def test_llamaindex_adapter_creation():
 
 
 def test_llamaindex_user_creation():
-    """Test that LlamaIndexUser can be created."""
-    from maseval.interface.agents.llamaindex import LlamaIndexUser
+    """Test that LlamaIndexLLMUser can be created."""
+    from maseval.interface.agents.llamaindex import LlamaIndexLLMUser
     from unittest.mock import Mock
 
     # Create user with required parameters
     mock_model = Mock()
-    user = LlamaIndexUser(
+    user = LlamaIndexLLMUser(
         name="test_user",
         model=mock_model,
         user_profile={"role": "tester"},
@@ -68,13 +68,13 @@ def test_llamaindex_user_creation():
 
 
 def test_llamaindex_user_get_tool():
-    """Test that LlamaIndexUser.get_tool() returns a FunctionTool."""
-    from maseval.interface.agents.llamaindex import LlamaIndexUser
+    """Test that LlamaIndexLLMUser.get_tool() returns a FunctionTool."""
+    from maseval.interface.agents.llamaindex import LlamaIndexLLMUser
     from llama_index.core.tools import FunctionTool
     from unittest.mock import Mock
 
     mock_model = Mock()
-    user = LlamaIndexUser(
+    user = LlamaIndexLLMUser(
         name="test_user",
         model=mock_model,
         user_profile={"role": "tester"},

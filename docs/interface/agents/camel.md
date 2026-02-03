@@ -23,4 +23,4 @@ pip install camel-ai
 
 ::: maseval.interface.agents.camel.CamelAgentAdapter
 
-::: maseval.interface.agents.camel.CamelUser
+::: maseval.interface.agents.camel.CamelLLMUser

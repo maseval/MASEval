@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Dict, List
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
 
-__all__ = ["SmolAgentAdapter", "SmolAgentUser"]
+__all__ = ["SmolAgentAdapter", "SmolAgentLLMUser"]
 
 # Only import smolagents types for type checking, not at runtime
 if TYPE_CHECKING:
@@ -473,7 +473,7 @@ class SmolAgentAdapter(AgentAdapter):
         return MessageHistory(converted_messages)
 
 
-class SmolAgentUser(LLMUser):
+class SmolAgentLLMUser(LLMUser):
     """A smolagents-specific LLM user that provides a tool for user interaction.
 
     Extends LLMUser to provide a smolagents-compatible tool via get_tool().
@@ -481,9 +481,9 @@ class SmolAgentUser(LLMUser):
 
     Example:
         ```python
-        from maseval.interface.agents.smolagents import SmolAgentUser
+        from maseval.interface.agents.smolagents import SmolAgentLLMUser
 
-        user = SmolAgentUser(...)
+        user = SmolAgentLLMUser(...)
         tool = user.get_tool()  # Returns a SmolAgentUserSimulationInputTool
         ```
     """
@@ -499,7 +499,7 @@ class SmolAgentUser(LLMUser):
 
         Example:
             ```python
-            user = SmolAgentUser(model=model, persona="...", scenario="...")
+            user = SmolAgentLLMUser(model=model, persona="...", scenario="...")
             tool = user.get_tool()
             agent = CodeAgent(tools=[tool, ...], model=model)
             ```

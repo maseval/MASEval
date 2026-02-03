@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict, List
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
 
-__all__ = ["LlamaIndexAgentAdapter", "LlamaIndexUser"]
+__all__ = ["LlamaIndexAgentAdapter", "LlamaIndexLLMUser"]
 
 # Only import LlamaIndex types for type checking, not at runtime
 if TYPE_CHECKING:
@@ -432,7 +432,7 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         return converted_msg
 
 
-class LlamaIndexUser(LLMUser):
+class LlamaIndexLLMUser(LLMUser):
     """A LlamaIndex-specific LLM user that provides a tool for user interaction.
 
     Extends LLMUser to provide a LlamaIndex-compatible tool via get_tool().
@@ -440,9 +440,9 @@ class LlamaIndexUser(LLMUser):
 
     Example:
         ```python
-        from maseval.interface.agents.llamaindex import LlamaIndexUser
+        from maseval.interface.agents.llamaindex import LlamaIndexLLMUser
 
-        user = LlamaIndexUser(...)
+        user = LlamaIndexLLMUser(...)
         tool = user.get_tool()  # Returns a LlamaIndex FunctionTool
         ```
     """
