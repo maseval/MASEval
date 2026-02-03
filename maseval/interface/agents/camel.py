@@ -645,37 +645,35 @@ class CamelLLMUser(LLMUser):
 class CamelAgentUser(User):
     """User backed by a CAMEL ChatAgent.
 
-    Wraps a CAMEL ChatAgent to act as the user in MASEval's evaluation loop.
-    Useful for using RolePlaying's `user_agent` with MASEval, enabling
-    agent-to-agent evaluation where one CAMEL agent acts as the user.
+    Wraps a CAMEL ChatAgent to act as the user in MASEval's evaluation loop,
+    enabling agent-to-agent evaluation where one agent acts as the user.
 
-    Unlike LLMUser which uses an LLM simulator, this class delegates
-    directly to a CAMEL ChatAgent for generating responses.
+    Unlike `CamelLLMUser` which uses MASEval's LLM simulator, this class
+    delegates directly to a CAMEL ChatAgent for generating responses.
 
     Example:
         ```python
-        from camel.societies import RolePlaying
-        from maseval.interface.agents.camel import CamelAgentAdapter, CamelAgentUser
+        from camel.agents import ChatAgent
+        from camel.models import ModelFactory
+        from camel.types import ModelPlatformType, ModelType
+        from maseval.interface.agents.camel import CamelAgentUser
 
-        # Create RolePlaying
-        role_playing = RolePlaying(
-            assistant_role_name="Assistant",
-            user_role_name="Customer",
-            task_prompt="Help the customer with their order",
+        # Create a ChatAgent to act as the user
+        model = ModelFactory.create(
+            model_platform=ModelPlatformType.OPENAI,
+            model_type=ModelType.GPT_4O_MINI,
+        )
+        user_agent = ChatAgent(
+            system_message="You are a customer seeking help with an order.",
+            model=model,
         )
 
-        # Use the user_agent as the MASEval user
+        # Wrap as MASEval user
         user = CamelAgentUser(
-            user_agent=role_playing.user_agent,
+            user_agent=user_agent,
             initial_query="I need help with my order",
             max_turns=5,
         )
-
-        # Wrap assistant for evaluation
-        assistant = CamelAgentAdapter(role_playing.assistant_agent, "assistant")
-
-        # Now use with benchmark
-        benchmark.run(tasks, agent=assistant, user=user)
         ```
     """
 
