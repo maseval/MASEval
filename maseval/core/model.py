@@ -158,12 +158,33 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
         - HuggingFaceModelAdapter
         - LiteLLMModelAdapter
         - OpenAIModelAdapter
+
+    Seeding:
+        Pass a `seed` parameter to enable deterministic generation. This seed
+        is passed to the underlying provider API if supported. If a seed is
+        provided but the provider doesn't support seeding, the adapter should
+        raise `SeedingError` from `maseval.core.seeding`.
+
+        User-provided generation_params["seed"] takes precedence over the
+        adapter's seed parameter.
     """
 
-    def __init__(self):
-        """Initialize the model adapter with call tracing."""
+    def __init__(self, seed: Optional[int] = None):
+        """Initialize the model adapter with call tracing.
+
+        Args:
+            seed: Seed for deterministic generation. Passed to the underlying
+                provider API if supported. If the provider doesn't support
+                seeding, subclasses should raise SeedingError.
+        """
         super().__init__()
+        self._seed = seed
         self.logs: List[Dict[str, Any]] = []
+
+    @property
+    def seed(self) -> Optional[int]:
+        """Seed for deterministic generation, or None if unseeded."""
+        return self._seed
 
     @property
     @abstractmethod
@@ -405,6 +426,7 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
         - `gathered_at` - ISO timestamp
         - `model_id` - Model identifier
         - `adapter_type` - The specific adapter class name
+        - `seed` - Seed for deterministic generation, or None if unseeded
 
         Returns:
             Dictionary containing model configuration.
@@ -413,4 +435,5 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
             **super().gather_config(),
             "model_id": self.model_id,
             "adapter_type": type(self).__name__,
+            "seed": self._seed,
         }

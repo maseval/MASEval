@@ -463,6 +463,96 @@ Returns:
 
 **Use backticks for code references** - method names, parameters, and values: `` `is_done()` ``, `` `stop_tokens` ``, `` `None` ``
 
+## Seeding for Reproducibility
+
+MASEval provides a seeding system for reproducible benchmark runs. Seeds cascade from a global seed through all components, ensuring deterministic behavior when model providers support seeding.
+
+### Basic Usage
+
+```python
+from maseval import Benchmark, DefaultSeedGenerator
+
+# Simple: pass a seed integer
+benchmark = MyBenchmark(seed=42)
+
+# Advanced: provide custom seed generator
+generator = DefaultSeedGenerator(global_seed=42)
+benchmark = MyBenchmark(seed_generator=generator)
+```
+
+### Using Seeds in Setup Methods
+
+All setup methods receive an optional `seed_generator` parameter:
+
+```python
+def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+    if seed_generator is not None:
+        # Derive seeds for different components
+        agent_seed = seed_generator.derive_seed("main_agent")
+
+        # Use per_repetition=False for baseline agents that should be constant
+        baseline_seed = seed_generator.derive_seed("baseline", per_repetition=False)
+
+        # Use child() for hierarchical namespacing (DefaultSeedGenerator only)
+        agent_gen = seed_generator.child("agents")
+        worker_seed = agent_gen.derive_seed("worker_1")
+
+    # Pass seeds to model adapters
+    model = self.get_model_adapter(model_id, seed=agent_seed)
+    # ... create agents ...
+```
+
+### Selective Variance with `per_repetition`
+
+The `per_repetition` flag controls whether a component gets different seeds across repetitions:
+
+- `per_repetition=True` (default): Seed varies per repetition. Use for components you want to test with different random states.
+- `per_repetition=False`: Seed is constant across repetitions. Use for baseline components that should remain fixed.
+
+### Model Provider Support
+
+Not all providers support seeding:
+
+| Provider | Seeding Support |
+|----------|-----------------|
+| OpenAI | ✅ Supported (best-effort) |
+| Google GenAI | ✅ Supported |
+| LiteLLM | ✅ Passes to underlying provider |
+| HuggingFace | ✅ Supported via `set_seed()` |
+| Anthropic | ❌ Not supported (raises `SeedingError`) |
+
+If a provider doesn't support seeding and you pass a seed, `SeedingError` is raised at adapter creation time.
+
+### Extending the Seeding System
+
+To customize seeding behavior:
+
+```python
+# Custom hash algorithm: subclass DefaultSeedGenerator
+class MD5SeedGenerator(DefaultSeedGenerator):
+    def _compute_seed(self, full_path: str, components: list) -> int:
+        seed_string = ":".join(str(c) for c in components)
+        hash_bytes = hashlib.md5(seed_string.encode()).digest()
+        return int.from_bytes(hash_bytes[:4], "big") & 0x7FFFFFFF
+
+# Completely custom: implement SeedGenerator ABC
+class DatabaseSeedGenerator(SeedGenerator):
+    # Implement: global_seed, derive_seed, for_task, for_repetition, seed_log
+    ...
+```
+
+### Seed Logging
+
+All derived seeds are automatically logged and included in results:
+
+```python
+results = benchmark.run(tasks, agent_data=config)
+for report in results:
+    seed_config = report["config"]["seeding"]["seed_generator"]
+    print(seed_config["global_seed"])  # 42
+    print(seed_config["seeds"])  # {"agents/main_agent": 12345, ...}
+```
+
 ## Early-Release Status
 
 **This project is early-release. Clean, maintainable code is the priority - not backwards compatibility.**

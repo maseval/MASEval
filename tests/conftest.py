@@ -37,6 +37,7 @@ class DummyModelAdapter(ModelAdapter):
         tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
         usage: Optional[Dict[str, int]] = None,
         stop_reason: Optional[str] = None,
+        seed: Optional[int] = None,
     ):
         """Initialize DummyModelAdapter.
 
@@ -50,8 +51,9 @@ class DummyModelAdapter(ModelAdapter):
             usage: Optional usage dict to include in all responses. Should have
                 input_tokens, output_tokens, total_tokens.
             stop_reason: Optional stop_reason to include in all responses.
+            seed: Seed for deterministic generation.
         """
-        super().__init__()
+        super().__init__(seed=seed)
         self._model_id = model_id
         self._responses: List[Optional[str]] = responses or ["test response"]
         self._tool_calls = tool_calls
