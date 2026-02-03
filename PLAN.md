@@ -9,6 +9,7 @@ This follows the project's established pattern of "abstract base classes with op
 ## Design Goals
 
 From IDEA.md Section 4:
+
 1. **Opt-in** — Users who don't need seeding shouldn't be affected
 2. **Derive by name, not index** — Seeds from identifiers, never positions
 3. **Support repetitions** — Each repetition gets a different seed
@@ -263,13 +264,13 @@ class SeedingError(Exception):
 
 The ABC + default implementation pattern makes it easy for users to customize:
 
-| Use Case | What to Do |
-|----------|------------|
-| Different hash algorithm | Subclass `DefaultSeedGenerator`, override `_compute_seed()` |
-| Different logging strategy | Subclass `DefaultSeedGenerator`, override `derive_seed()` |
-| Need `child()` hierarchy | Use or subclass `DefaultSeedGenerator` |
-| Seed lookup from database | Implement `SeedGenerator` ABC directly (5 methods) |
-| External seed service | Implement `SeedGenerator` ABC directly (5 methods) |
+| Use Case                   | What to Do                                                  |
+| -------------------------- | ----------------------------------------------------------- |
+| Different hash algorithm   | Subclass `DefaultSeedGenerator`, override `_compute_seed()` |
+| Different logging strategy | Subclass `DefaultSeedGenerator`, override `derive_seed()`   |
+| Need `child()` hierarchy   | Use or subclass `DefaultSeedGenerator`                      |
+| Seed lookup from database  | Implement `SeedGenerator` ABC directly (5 methods)          |
+| External seed service      | Implement `SeedGenerator` ABC directly (5 methods)          |
 
 **Example: Custom hash algorithm**
 
@@ -559,6 +560,7 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
 ```
 
 Each concrete adapter:
+
 - Passes `self._seed` to the provider API in `_chat_impl`
 - Raises `SeedingError` if seed is provided but provider doesn't support it
 - Logs the seed in `gather_config()`
@@ -589,35 +591,42 @@ This allows components to request either behavior within the same task repetitio
 ## Implementation Steps
 
 ### Phase 1: Core Infrastructure
+
 1. Create `maseval/core/seeding.py` with `SeedGenerator` (ABC), `DefaultSeedGenerator`, and `SeedingError`
 2. Add unit tests for seed derivation, thread safety, and extension patterns
 3. Add `seed` and `seed_generator` parameters to `Benchmark.__init__`
 
 ### Phase 2: Benchmark Integration
+
 4. Update `_execute_task_repetition` to create scoped generators
 5. Add `seed_generator` parameter to all setup methods
 6. Log seeds in `execution_configs`
 7. Update existing benchmark implementations (MACS, Tau2) to use seeds
 
 ### Phase 3: Model Adapter Support
+
 8. Add `seed` parameter to `ModelAdapter.__init__`
 9. Update interface adapters to pass seed to provider APIs
 10. Raise `SeedingError` for providers that don't support seeding
 
 ### Phase 4: Documentation & Examples
+
 11. Update AGENTS.md with seeding guidance
 12. Update five_a_day example to use new seeding system
 13. Add seeding section to documentation
+14. Add a guide about seeding to the docs
 
 ## Files to Create/Modify
 
 ### New Files
+
 - `maseval/core/seeding.py` — `SeedGenerator` (ABC), `DefaultSeedGenerator`, `SeedingError`
 - `tests/test_core/test_seeding.py` — Unit tests
 
 ### Modified Files
+
 - `maseval/core/benchmark.py` — Add `seed` and `seed_generator` parameters, update setup calls
-- `maseval/core/model.py` — Add seed parameter to ModelAdapter.__init__
+- `maseval/core/model.py` — Add seed parameter to ModelAdapter.**init**
 - `maseval/core/__init__.py` — Export `SeedGenerator`, `DefaultSeedGenerator`, `SeedingError`
 - `maseval/__init__.py` — Export `SeedGenerator`, `DefaultSeedGenerator`, `SeedingError`
 - `maseval/interface/inference/*.py` — Pass seed to provider APIs, raise SeedingError if unsupported
