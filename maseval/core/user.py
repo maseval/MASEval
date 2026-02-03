@@ -74,7 +74,7 @@ class User(ABC, TraceableMixin, ConfigurableMixin):
         """
         ...
 
-    def get_tool(self):
+    def get_tool(self) -> Any:
         """Return a framework-compatible tool for agent interaction.
 
         Some frameworks (smolagents, CAMEL) use a tool-based pattern where
@@ -82,7 +82,7 @@ class User(ABC, TraceableMixin, ConfigurableMixin):
         this in subclasses for frameworks that need it.
 
         Returns:
-            Framework-specific tool, or None if not applicable.
+            Framework-specific tool, or `None` if not applicable.
         """
         return None
 
