@@ -12,12 +12,19 @@ from .history import MessageHistory
 
 
 class TerminationReason(Enum):
-    """Reason why user interaction terminated."""
+    """Reason why user interaction terminated.
+
+    Attributes:
+        NOT_TERMINATED: Interaction is still ongoing.
+        MAX_TURNS: Maximum turn count reached.
+        USER_TERMINATED: User emitted a stop token (e.g., expressing satisfaction).
+        MAX_TURNS_AND_USER_TERMINATED: Both max turns reached and stop token detected.
+    """
 
     NOT_TERMINATED = "not_terminated"
     MAX_TURNS = "max_turns"
-    USER_TERMINATED = "user_terminated"  # stop token detected
-    MAX_TURNS_AND_USER_TERMINATED = "max_turns_and_user_terminated"  # both conditions met
+    USER_TERMINATED = "user_terminated"
+    MAX_TURNS_AND_USER_TERMINATED = "max_turns_and_user_terminated"
 
 
 class User(ABC, TraceableMixin, ConfigurableMixin):
@@ -27,13 +34,14 @@ class User(ABC, TraceableMixin, ConfigurableMixin):
     This could be an LLM simulating a human, a scripted response sequence,
     a real human, or another agent system.
 
-    Implementations must provide:
-    - get_initial_query(): The opening message to start the conversation
-    - respond(): Generate responses to agent messages
-    - is_done(): Determine when the interaction should end
+    Subclasses must implement:
 
-    The optional get_tool() method can be overridden by subclasses for frameworks
-    that use tool-based user interaction (e.g., smolagents, CAMEL).
+    - `get_initial_query()` - Return the opening message to start the conversation
+    - `respond()` - Generate responses to agent messages
+    - `is_done()` - Determine when the interaction should end
+
+    The optional `get_tool()` method can be overridden for frameworks that use
+    tool-based user interaction (e.g., smolagents, CAMEL).
     """
 
     @abstractmethod
@@ -90,27 +98,25 @@ class LLMUser(User):
     the full environment state, ensuring partial observability.
 
     Multi-Turn Interaction:
-        By default, users support single-turn interaction (max_turns=1). For benchmarks
-        that require multiple agent-user exchanges, set max_turns > 1.
+        By default, users support single-turn interaction (max_turns=1). For
+        benchmarks that require multiple agent-user exchanges, set max_turns > 1.
 
-    Early Stopping (User Satisfaction):
-        For benchmarks where the termination criterion is "user satisfaction" rather than
-        a fixed number of turns, configure stop_tokens. When the LLM-generated user
-        response contains any of these tokens, is_done() returns True, ending the interaction early.
-
-        Example: MACS benchmark uses "</stop>" to signal the user is satisfied with the
-        agent's response, allowing natural conversation endings before max_turns.
+    Early Stopping:
+        For benchmarks where termination depends on user satisfaction rather than
+        a fixed turn count, configure stop_tokens. When the user's response contains
+        any of these tokens, is_done() returns True. The MACS benchmark uses this
+        with "</stop>" to signal satisfaction.
 
     Attributes:
-        name (str): The name of the user.
-        model (ModelAdapter): The language model used for generating responses.
-        user_profile (Dict[str, Any]): A dictionary describing the user's persona.
-        scenario (str): A description of the task the user is trying to accomplish.
-        simulator (UserLLMSimulator): The simulator instance used to generate responses.
-        messages (MessageHistory): The conversation history between the user and the MAS.
-        max_turns (int): Maximum number of user response turns.
-        stop_tokens (List[str]): Tokens that trigger early stopping when detected.
-        early_stopping_condition (Optional[str]): Description of when to emit the stop token.
+        name: User identifier.
+        model: Language model for generating responses.
+        user_profile: Dictionary describing the user's persona and preferences.
+        scenario: Description of the task the user is trying to accomplish.
+        simulator: The LLM simulator instance generating responses.
+        messages: Conversation history between user and agent.
+        max_turns: Maximum number of user response turns.
+        stop_tokens: Tokens that trigger early stopping when detected (empty list if disabled).
+        early_stopping_condition: Description of when to emit a stop token, or None.
     """
 
     def __init__(
@@ -193,7 +199,7 @@ class LLMUser(User):
         else:
             self.messages = MessageHistory()
             self._initial_turn_count = 0
-        self.logs: list[Dict[str, Any]] = []
+        self.logs: List[Dict[str, Any]] = []
 
         # Multi-turn configuration
         self.max_turns = max_turns
@@ -312,23 +318,21 @@ class LLMUser(User):
         self.increment_turn()
         return clean_response
 
-    def gather_traces(self) -> dict[str, Any]:
+    def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces from this user.
 
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - name: User name
-            - profile: User profile data
-            - message_count: Number of messages in conversation history
-            - messages: Full conversation history as list of messages
-            - logs: Execution logs
-            - termination_reason: Why the interaction ended
-            - stop_reason: Which stop token triggered termination (if any)
-            - max_turns: Maximum allowed turns
-            - turns_used: Actual turns used
-            - stopped_by_user: Whether user emitted a stop token
+            Dictionary containing user state and interaction data:
+                - name: User identifier
+                - profile: User profile data
+                - message_count: Number of messages in history
+                - messages: Full conversation history
+                - logs: Execution logs with timing
+                - termination_reason: Why interaction ended (see TerminationReason)
+                - stop_reason: Which stop token triggered termination, if any
+                - max_turns: Maximum allowed turns
+                - turns_used: Actual turns used
+                - stopped_by_user: Whether user emitted a stop token
         """
         return {
             **super().gather_traces(),
@@ -353,8 +357,7 @@ class LLMUser(User):
         """Get the reason why the user interaction terminated.
 
         Returns:
-            TerminationReason indicating why is_done() returns True,
-            or NOT_TERMINATED if the interaction is still ongoing.
+            Why `is_done()` returns True, or `NOT_TERMINATED` if still ongoing.
         """
         max_turns_reached = self._turn_count >= self.max_turns
         user_terminated = self._stopped
@@ -409,18 +412,16 @@ class LLMUser(User):
         """
         self._turn_count += 1
 
-    def gather_config(self) -> dict[str, Any]:
+    def gather_config(self) -> Dict[str, Any]:
         """Gather configuration from this user.
 
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - name: User name
-            - profile: User profile data
-            - scenario: Task scenario description
-            - max_turns: Maximum interaction turns
-            - stop_tokens: Early stopping tokens (if configured)
+            Dictionary containing user configuration:
+                - name: User identifier
+                - profile: User profile data
+                - scenario: Task scenario description
+                - max_turns: Maximum interaction turns
+                - stop_tokens: Early stopping tokens (empty list if disabled)
         """
         return {
             **super().gather_config(),
