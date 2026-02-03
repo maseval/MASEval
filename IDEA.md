@@ -45,17 +45,73 @@ Research questions and methodologies that proper seeding infrastructure enables:
 
 ## 3. Current State
 
-MASEval has no systematic seeding. Components that require seeding:
+MASEval has no systematic seeding. To understand what infrastructure is needed, here's what a user must do today to implement seeding manually.
 
-| Component       | Why                                                                   |
+### Current Manual Workflow
+
+**Step 1: Define a seed derivation utility**
+
+```python
+# utils.py
+def derive_seed(base_seed: int, *components: str | int) -> int:
+    """Derive unique seed from base seed and component identifiers."""
+    seed_string = f"{base_seed}:" + ":".join(str(c) for c in components)
+    hash_bytes = hashlib.sha256(seed_string.encode()).digest()
+    return int.from_bytes(hash_bytes[:4], "big") & 0x7FFFFFFF
+```
+
+**Step 2: Derive seeds during data loading**
+
+```python
+def load_benchmark_data(seed: Optional[int] = None, ...):
+    for idx, (task_dict, config) in enumerate(zip(tasks_raw, configs_raw)):
+        task_id = task_dict["metadata"]["task_id"]
+
+        # Manually derive seeds for each agent
+        if seed is not None:
+            for agent_spec in config["agents"]:
+                agent_spec["seed"] = derive_seed(seed, task_id, agent_spec["agent_id"])
+
+        configs_data.append(config)
+
+    return TaskQueue(tasks_data), configs_data
+```
+
+**Step 3: Pass seeds through agent setup**
+
+```python
+def build_smolagents_single_agent(all_tool_adapters, primary_spec, ...):
+    # Extract seed from agent spec
+    seed = primary_spec.get("seed")
+
+    # Pass to model
+    model = LiteLLMModel(
+        model_id="gemini/gemini-2.5-flash",
+        seed=seed,
+    )
+
+    agent = ToolCallingAgent(model=model, tools=tools, ...)
+    return SmolAgentAdapter(agent, primary_spec["agent_id"])
+```
+
+### What This Doesn't Cover
+
+The manual approach above only seeds **agents**. A complete solution would also need to seed:
+
+| Component       | Current Status                                                        |
 | --------------- | --------------------------------------------------------------------- |
-| Evaluators      | LLM-as-judge evaluators are non-deterministic                         |
-| Environments    | May randomize task parameters, initial state, or dynamics             |
-| Tool Simulators | LLM-simulated responses vary; real tools may have stochastic behavior |
-| User Simulators | LLM-simulated user responses vary                                     |
-| Agents          | Agent LLM calls are non-deterministic                                 |
+| Agents          | Manual seeding possible (shown above)                                 |
+| User Simulators | No seeding — `setup_user()` doesn't receive seeds                     |
+| Tool Simulators | No seeding — `setup_environment()` doesn't receive seeds              |
+| Evaluators      | No seeding — `setup_evaluators()` doesn't receive seeds               |
+| Environments    | No seeding — randomized parameters can't be controlled                |
 
-Currently, users cannot reproduce runs. The only workaround is `temperature=0`, which doesn't guarantee determinism and isn't supported by all providers.
+### Problems with Manual Seeding
+
+1. **Boilerplate** — Every benchmark must implement seed derivation and plumbing
+2. **Incomplete** — Only covers components where users write custom setup code
+3. **No logging** — Seeds used aren't automatically recorded in results
+4. **Error-prone** — Easy to forget a component or derive seeds inconsistently
 
 ## 4. Design Requirements
 
