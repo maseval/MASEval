@@ -39,6 +39,18 @@ else:
     BaseMessage = None
     ChatAgentResponse = None
 
+# Unified role mapping for CAMEL to OpenAI format conversion
+_CAMEL_ROLE_MAPPING = {
+    "system": "system",
+    "user": "user",
+    "assistant": "assistant",
+    "tool": "tool",
+    "function": "assistant",
+    "critic": "assistant",  # CAMEL-specific role
+    "embodiment": "assistant",  # CAMEL-specific role
+    "default": "assistant",
+}
+
 
 def _check_camel_installed():
     """Check if camel-ai is installed and raise a helpful error if not."""
@@ -46,6 +58,33 @@ def _check_camel_installed():
         import camel  # noqa: F401
     except ImportError as e:
         raise ImportError("camel-ai is not installed. Install it with: pip install maseval[camel]") from e
+
+
+def _extract_response_content(response) -> str:
+    """Extract content string from a CAMEL ChatAgentResponse.
+
+    Args:
+        response: ChatAgentResponse from agent.step()
+
+    Returns:
+        The response content as a string.
+    """
+    # ChatAgentResponse has msgs attribute with response messages
+    if hasattr(response, "msgs") and response.msgs:
+        msg = response.msgs[0]
+        if hasattr(msg, "content"):
+            return str(msg.content)
+        return str(msg)
+
+    # Fallback: try msg attribute (singular)
+    if hasattr(response, "msg") and response.msg:
+        msg = response.msg
+        if hasattr(msg, "content"):
+            return str(msg.content)
+        return str(msg)
+
+    # Last resort: string representation
+    return str(response)
 
 
 class CamelAgentAdapter(AgentAdapter):
@@ -291,14 +330,7 @@ class CamelAgentAdapter(AgentAdapter):
                 content = msg.get("content", "")
 
                 # Normalize role to standard values
-                role_mapping = {
-                    "system": "system",
-                    "user": "user",
-                    "assistant": "assistant",
-                    "tool": "tool",
-                    "function": "assistant",
-                }
-                normalized_role = role_mapping.get(role.lower() if isinstance(role, str) else "assistant", "assistant")
+                normalized_role = _CAMEL_ROLE_MAPPING.get(role.lower() if isinstance(role, str) else "assistant", "assistant")
 
                 converted_msg: Dict[str, Any] = {
                     "role": normalized_role,
@@ -338,17 +370,7 @@ class CamelAgentAdapter(AgentAdapter):
             elif hasattr(role_type, "name"):
                 role = role_type.name.lower()
 
-        # Map CAMEL roles to OpenAI roles
-        role_mapping = {
-            "system": "system",
-            "user": "user",
-            "assistant": "assistant",
-            "tool": "tool",
-            "critic": "assistant",  # CAMEL-specific role
-            "embodiment": "assistant",  # CAMEL-specific role
-            "default": "assistant",
-        }
-        normalized_role = role_mapping.get(role, "assistant")
+        normalized_role = _CAMEL_ROLE_MAPPING.get(role, "assistant")
 
         # Extract content
         content = getattr(msg, "content", "")
@@ -556,23 +578,7 @@ class CamelAgentAdapter(AgentAdapter):
         Returns:
             The assistant's response content as a string
         """
-        # ChatAgentResponse has msgs attribute with response messages
-        if hasattr(response, "msgs") and response.msgs:
-            # Get the first (and typically only) response message
-            msg = response.msgs[0]
-            if hasattr(msg, "content"):
-                return str(msg.content)
-            return str(msg)
-
-        # Fallback: try msg attribute (singular)
-        if hasattr(response, "msg") and response.msg:
-            msg = response.msg
-            if hasattr(msg, "content"):
-                return str(msg.content)
-            return str(msg)
-
-        # Last resort: string representation
-        return str(response)
+        return _extract_response_content(response)
 
 
 class CamelLLMUser(LLMUser):
@@ -745,20 +751,13 @@ class CamelAgentUser(User):
 
             # Get response from CAMEL agent
             response = self.user_agent.step(user_msg)
-
-            # Extract content from response
-            if hasattr(response, "msgs") and response.msgs:
-                content = response.msgs[0].content if hasattr(response.msgs[0], "content") else str(response.msgs[0])
-            elif hasattr(response, "msg") and response.msg:
-                content = response.msg.content if hasattr(response.msg, "content") else str(response.msg)
-            else:
-                content = str(response)
+            content = _extract_response_content(response)
 
             log_entry["duration_seconds"] = time.time() - start_time
             log_entry["response_preview"] = content[:200]
             self.logs.append(log_entry)
 
-            return str(content)
+            return content
 
         except Exception as e:
             log_entry["duration_seconds"] = time.time() - start_time
@@ -810,8 +809,7 @@ class CamelAgentUser(User):
             Dictionary containing trace information.
         """
         return {
-            "type": self.__class__.__name__,
-            "gathered_at": datetime.now().isoformat(),
+            **super().gather_traces(),
             "name": self.name,
             "turns_used": self._turn_count,
             "max_turns": self._max_turns,
@@ -826,8 +824,7 @@ class CamelAgentUser(User):
             Dictionary containing configuration information.
         """
         return {
-            "type": self.__class__.__name__,
-            "gathered_at": datetime.now().isoformat(),
+            **super().gather_config(),
             "name": self.name,
             "max_turns": self._max_turns,
             "initial_query": self._initial_query[:200],  # Truncate for config
@@ -907,12 +904,7 @@ def camel_role_playing_execution_loop(
             tracer.record_step(assistant_response, user_response)
 
         # Extract final answer from assistant response
-        if hasattr(assistant_response, "msgs") and assistant_response.msgs:
-            msg = assistant_response.msgs[0]
-            final_answer = msg.content if hasattr(msg, "content") else str(msg)
-        elif hasattr(assistant_response, "msg") and assistant_response.msg:
-            msg = assistant_response.msg
-            final_answer = msg.content if hasattr(msg, "content") else str(msg)
+        final_answer = _extract_response_content(assistant_response)
 
         # Check for termination
         assistant_terminated = getattr(assistant_response, "terminated", False)
