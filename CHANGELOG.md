@@ -27,9 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+**User**
+
+- Refactored `User` class into abstract base class defining the interface (`get_initial_query()`, `respond()`, `is_done()`) with `LLMUser` as the concrete LLM-driven implementation. This enables non-LLM user implementations (scripted, human-in-the-loop, agent-based). (PR: #22)
+- Renamed `AgenticUser` → `AgenticLLMUser` for consistency with the new hierarchy (PR: #22)
+
 **Interface**
 
-- Renamed framework-specific `LLMUser` subclasses for clarity (PR: #22):
+- Renamed framework-specific user classes to reflect the new `LLMUser` base (PR: #22):
   - `SmolAgentUser` → `SmolAgentLLMUser`
   - `LangGraphUser` → `LangGraphLLMUser`
   - `LlamaIndexUser` → `LlamaIndexLLMUser`
