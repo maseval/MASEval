@@ -425,6 +425,32 @@ Returns:
 """
 ```
 
+**For dictionary returns, document fields in the docstring body** using "Output fields:":
+
+```python
+# Bad - creates multiple table rows in Returns
+"""
+Returns:
+    Dictionary containing:
+    - `name` - User identifier
+    - `profile` - User profile data
+"""
+
+# Good - fields in body, single-line Returns
+"""
+Gather execution traces from this user.
+
+Output fields:
+
+- `name` - User identifier
+- `profile` - User profile data
+- `message_count` - Number of messages in history
+
+Returns:
+    Dictionary containing user state and interaction data.
+"""
+```
+
 **HTML-like strings must be in backticks** (otherwise stripped as HTML):
 
 ```python

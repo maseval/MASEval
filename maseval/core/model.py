@@ -361,17 +361,20 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
         evaluation. Returns comprehensive statistics about all calls made
         to this adapter.
 
+        Output fields:
+
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp
+        - `model_id` - Model identifier
+        - `total_calls` - Number of chat/generate calls
+        - `successful_calls` - Number of successful calls
+        - `failed_calls` - Number of failed calls
+        - `total_duration_seconds` - Total time spent in calls
+        - `average_duration_seconds` - Average time per call
+        - `logs` - List of individual call records
+
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - model_id: Model identifier
-            - total_calls: Number of chat/generate calls
-            - successful_calls: Number of successful calls
-            - failed_calls: Number of failed calls
-            - total_duration_seconds: Total time spent in calls
-            - average_duration_seconds: Average time per call
-            - logs: List of individual call records
+            Dictionary containing model execution traces.
         """
         total_calls = len(self.logs)
         successful_calls = sum(1 for call in self.logs if call["status"] == "success")
@@ -396,12 +399,15 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
         Called automatically by Benchmark to collect configuration for
         reproducibility. Returns identifying information about this adapter.
 
+        Output fields:
+
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp
+        - `model_id` - Model identifier
+        - `adapter_type` - The specific adapter class name
+
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - model_id: Model identifier
-            - adapter_type: The specific adapter class name
+            Dictionary containing model configuration.
         """
         return {
             **super().gather_config(),

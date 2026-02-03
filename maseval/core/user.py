@@ -321,18 +321,21 @@ class LLMUser(User):
     def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces from this user.
 
+        Output fields:
+
+        - `name` - User identifier
+        - `profile` - User profile data
+        - `message_count` - Number of messages in history
+        - `messages` - Full conversation history
+        - `logs` - Execution logs with timing
+        - `termination_reason` - Why interaction ended (see `TerminationReason`)
+        - `stop_reason` - Which stop token triggered termination, if any
+        - `max_turns` - Maximum allowed turns
+        - `turns_used` - Actual turns used
+        - `stopped_by_user` - Whether user emitted a stop token
+
         Returns:
-            Dictionary containing user state and interaction data:
-                - name: User identifier
-                - profile: User profile data
-                - message_count: Number of messages in history
-                - messages: Full conversation history
-                - logs: Execution logs with timing
-                - termination_reason: Why interaction ended (see TerminationReason)
-                - stop_reason: Which stop token triggered termination, if any
-                - max_turns: Maximum allowed turns
-                - turns_used: Actual turns used
-                - stopped_by_user: Whether user emitted a stop token
+            Dictionary containing user state and interaction data.
         """
         return {
             **super().gather_traces(),
@@ -415,13 +418,16 @@ class LLMUser(User):
     def gather_config(self) -> Dict[str, Any]:
         """Gather configuration from this user.
 
+        Output fields:
+
+        - `name` - User identifier
+        - `profile` - User profile data
+        - `scenario` - Task scenario description
+        - `max_turns` - Maximum interaction turns
+        - `stop_tokens` - Early stopping tokens (empty list if disabled)
+
         Returns:
-            Dictionary containing user configuration:
-                - name: User identifier
-                - profile: User profile data
-                - scenario: Task scenario description
-                - max_turns: Maximum interaction turns
-                - stop_tokens: Early stopping tokens (empty list if disabled)
+            Dictionary containing user configuration.
         """
         return {
             **super().gather_config(),
