@@ -451,9 +451,7 @@ class DummyBenchmark(Benchmark):
         """Create a dummy model adapter for testing."""
         return DummyModelAdapter(model_id=model_id)
 
-    def setup_environment(
-        self, agent_data: Dict[str, Any], task: Task, seed_generator: Optional[SeedGenerator] = None
-    ) -> Environment:
+    def setup_environment(self, agent_data: Dict[str, Any], task: Task, seed_generator: Optional[SeedGenerator] = None) -> Environment:
         self.setup_environment_calls.append((agent_data, task))
         return DummyEnvironment(task.environment_data)
 
