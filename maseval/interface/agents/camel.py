@@ -233,9 +233,7 @@ class CamelAgentAdapter(AgentAdapter):
 
                 # External tool call requests
                 if "external_tool_call_requests" in info and info["external_tool_call_requests"]:
-                    log_entry["external_tool_call_requests"] = [
-                        str(req) for req in info["external_tool_call_requests"]
-                    ]
+                    log_entry["external_tool_call_requests"] = [str(req) for req in info["external_tool_call_requests"]]
 
             logs_list.append(log_entry)
 
@@ -403,14 +401,16 @@ class CamelAgentAdapter(AgentAdapter):
                     total_tool_calls += len(info["tool_calls"])
 
         # Add aggregated statistics
-        base_traces.update({
-            "total_steps": len(self._responses),
-            "total_input_tokens": total_input_tokens,
-            "total_output_tokens": total_output_tokens,
-            "total_tokens": total_input_tokens + total_output_tokens,
-            "total_tool_calls": total_tool_calls,
-            "last_terminated": last_terminated,
-        })
+        base_traces.update(
+            {
+                "total_steps": len(self._responses),
+                "total_input_tokens": total_input_tokens,
+                "total_output_tokens": total_output_tokens,
+                "total_tokens": total_input_tokens + total_output_tokens,
+                "total_tool_calls": total_tool_calls,
+                "last_terminated": last_terminated,
+            }
+        )
 
         return base_traces
 
@@ -535,14 +535,16 @@ class CamelAgentAdapter(AgentAdapter):
 
         except Exception as e:
             # Log the error for traceability
-            self._errors.append({
-                "step_number": len(self._responses) + 1,
-                "status": "error",
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "query": query[:500] if len(query) > 500 else query,
-                "timestamp": datetime.now().isoformat(),
-            })
+            self._errors.append(
+                {
+                    "step_number": len(self._responses) + 1,
+                    "status": "error",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "query": query[:500] if len(query) > 500 else query,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
             raise
 
     def _extract_final_answer(self, response) -> str:
@@ -839,27 +841,25 @@ def camel_role_playing_execution_loop(
     max_steps: int = 10,
     tracer: Optional["CamelRolePlayingTracer"] = None,
 ) -> Any:
-    """Execution loop using CAMEL RolePlaying's step() semantics.
+    """Execution loop for benchmarks using CAMEL's RolePlaying.
 
-    This function provides a reusable execution loop for benchmarks that use
-    CAMEL's RolePlaying. It handles the step-by-step interaction between
-    the assistant and user agents, returning the final answer.
+    CAMEL's RolePlaying manages its own agent-user coordination: it alternates
+    between an assistant agent and a user agent via `step()` calls, handling
+    turn-taking and termination internally. This differs from MASEval's default
+    execution loop, which coordinates between an `AgentAdapter` and a `User`.
 
-    Use this in your benchmark's execution_loop override:
-
-        def execution_loop(self, agents, task, environment, user):
-            return camel_role_playing_execution_loop(
-                self._role_playing, task, max_steps=10, tracer=self._tracer
-            )
+    This function bridges the two: call it from your benchmark's `execution_loop`
+    override to let RolePlaying handle the interaction while MASEval handles
+    the evaluation lifecycle.
 
     Args:
         role_playing: The CAMEL RolePlaying instance.
-        task: Current MASEval task (used for context, not directly accessed).
+        task: Current MASEval task (passed for interface consistency).
         max_steps: Maximum number of RolePlaying steps. Defaults to 10.
-        tracer: Optional CamelRolePlayingTracer to record step data.
+        tracer: Optional `CamelRolePlayingTracer` to record step data.
 
     Returns:
-        Final answer from the assistant agent, or None if no response.
+        Final answer from the assistant agent, or `None` if no response.
 
     Example:
         ```python
@@ -927,9 +927,16 @@ def camel_role_playing_execution_loop(
 class CamelRolePlayingTracer(TraceableMixin, ConfigurableMixin):
     """Collects orchestration traces from CAMEL RolePlaying.
 
-    RolePlaying orchestrates the interaction between two ChatAgents.
-    This tracer captures the orchestration-level state that individual
-    agent traces don't include, such as step count and termination reason.
+    RolePlaying is a CAMEL-AI component that orchestrates turn-based interaction
+    between two ChatAgents (an assistant and a simulated user).
+
+    When using RolePlaying, you typically wrap both agents with `CamelAgentAdapter`
+    to trace their individual message histories and token usage. However, this
+    misses orchestration-level data that no single agent owns: how many
+    back-and-forth steps occurred, which agent terminated the conversation, etc.
+
+    This tracer fills that gap by capturing RolePlaying's orchestration state,
+    giving you the complete picture alongside individual agent traces.
 
     Register with benchmark to include in trace collection:
 
@@ -1053,12 +1060,20 @@ class CamelRolePlayingTracer(TraceableMixin, ConfigurableMixin):
 class CamelWorkforceTracer(TraceableMixin, ConfigurableMixin):
     """Collects orchestration traces from CAMEL Workforce.
 
-    Workforce is a complex task orchestrator that manages task decomposition,
-    worker assignment, and retry strategies. This tracer captures the
-    orchestration-level state that individual worker traces don't include.
+    Workforce is a CAMEL-AI component that manages task decomposition, worker
+    assignment, and retry strategies for complex multi-agent collaboration.
 
-    Note: This tracer accesses Workforce internal attributes (_children,
-    _assignees, _pending_tasks, etc.) which may change with CAMEL updates.
+    When using Workforce, you typically wrap individual workers with
+    `CamelAgentAdapter` to trace their message histories. However, this misses
+    orchestration-level data that no single worker owns: how the problem was
+    decomposed into subtasks, which worker was assigned to each task, task
+    dependencies, and completion status.
+
+    This tracer fills that gap by capturing Workforce's orchestration state,
+    giving you the complete picture alongside individual worker traces.
+
+    Note: This tracer accesses Workforce internal attributes (`_children`,
+    `_assignees`, `_pending_tasks`, etc.) which may change with CAMEL updates.
 
     Register with benchmark to include in trace collection:
 

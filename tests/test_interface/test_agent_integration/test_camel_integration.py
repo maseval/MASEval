@@ -103,9 +103,7 @@ def test_camel_adapter_gather_traces_with_response():
 
     # Simulate a response being stored (new API uses _responses list)
     mock_response = MockCamelResponse(
-        content="Response",
-        terminated=True,
-        info={"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+        content="Response", terminated=True, info={"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
     )
     adapter._responses.append(mock_response)
 
