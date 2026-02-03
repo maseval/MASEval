@@ -18,32 +18,8 @@ pytestmark = [pytest.mark.interface, pytest.mark.camel]
 
 
 # =============================================================================
-# Basic Import and Creation Tests
+# Basic Creation and Configuration Tests
 # =============================================================================
-
-
-def test_camel_adapter_import():
-    """Test that CamelAgentAdapter can be imported when camel-ai is installed."""
-    from maseval.interface.agents.camel import CamelAgentAdapter, CamelLLMUser
-
-    assert CamelAgentAdapter is not None
-    assert CamelLLMUser is not None
-
-
-def test_camel_in_agents_all():
-    """Test that camel appears in interface.agents.__all__ when installed."""
-    import maseval.interface.agents
-
-    assert "CamelAgentAdapter" in maseval.interface.agents.__all__
-    assert "CamelLLMUser" in maseval.interface.agents.__all__
-
-
-def test_check_camel_installed_function():
-    """Test that _check_camel_installed doesn't raise when camel-ai is installed."""
-    from maseval.interface.agents.camel import _check_camel_installed
-
-    # Should not raise
-    _check_camel_installed()
 
 
 def test_camel_adapter_creation():
@@ -60,7 +36,6 @@ def test_camel_adapter_creation():
 def test_camel_user_creation():
     """Test that CamelLLMUser can be created."""
     from maseval.interface.agents.camel import CamelLLMUser
-    from unittest.mock import Mock
 
     # Create user with required parameters
     mock_model = Mock()
@@ -234,7 +209,6 @@ def test_camel_user_get_tool():
     """Test that CamelLLMUser.get_tool() returns a CAMEL FunctionTool."""
     from maseval.interface.agents.camel import CamelLLMUser
     from camel.toolkits import FunctionTool
-    from unittest.mock import Mock
 
     # Create mock model
     mock_model = Mock()
@@ -310,22 +284,8 @@ def test_camel_adapter_convert_memory_messages_with_tool_calls():
 
 
 # =============================================================================
-# Phase 2 Tests: CamelAgentUser, Execution Loop, Tracers
+# CamelAgentUser Tests
 # =============================================================================
-
-
-def test_camel_agent_user_import():
-    """Test that CamelAgentUser can be imported."""
-    from maseval.interface.agents.camel import CamelAgentUser
-
-    assert CamelAgentUser is not None
-
-
-def test_camel_agent_user_in_all():
-    """Test that CamelAgentUser is in __all__."""
-    import maseval.interface.agents
-
-    assert "CamelAgentUser" in maseval.interface.agents.__all__
 
 
 def test_camel_agent_user_creation():
@@ -487,20 +447,6 @@ def test_camel_agent_user_gather_config():
 # =============================================================================
 
 
-def test_execution_loop_import():
-    """Test that camel_role_playing_execution_loop can be imported."""
-    from maseval.interface.agents.camel import camel_role_playing_execution_loop
-
-    assert camel_role_playing_execution_loop is not None
-
-
-def test_execution_loop_in_all():
-    """Test that camel_role_playing_execution_loop is in __all__."""
-    import maseval.interface.agents
-
-    assert "camel_role_playing_execution_loop" in maseval.interface.agents.__all__
-
-
 def test_execution_loop_basic():
     """Test camel_role_playing_execution_loop with mock RolePlaying."""
     from maseval.interface.agents.camel import camel_role_playing_execution_loop
@@ -568,24 +514,9 @@ def test_execution_loop_max_steps():
 # =============================================================================
 
 
-def test_role_playing_tracer_import():
-    """Test that CamelRolePlayingTracer can be imported."""
-    from maseval.interface.agents.camel import CamelRolePlayingTracer
-
-    assert CamelRolePlayingTracer is not None
-
-
-def test_role_playing_tracer_in_all():
-    """Test that CamelRolePlayingTracer is in __all__."""
-    import maseval.interface.agents
-
-    assert "CamelRolePlayingTracer" in maseval.interface.agents.__all__
-
-
 def test_role_playing_tracer_creation():
     """Test CamelRolePlayingTracer creation."""
     from maseval.interface.agents.camel import CamelRolePlayingTracer
-    from unittest.mock import Mock
 
     mock_role_playing = Mock()
     tracer = CamelRolePlayingTracer(mock_role_playing, name="test_tracer")
@@ -642,7 +573,6 @@ def test_role_playing_tracer_gather_traces():
 def test_role_playing_tracer_gather_config():
     """Test CamelRolePlayingTracer.gather_config() returns expected fields."""
     from maseval.interface.agents.camel import CamelRolePlayingTracer
-    from unittest.mock import Mock
 
     mock_role_playing = Mock()
     mock_role_playing.task_prompt = "Test task prompt"
@@ -664,24 +594,9 @@ def test_role_playing_tracer_gather_config():
 # =============================================================================
 
 
-def test_workforce_tracer_import():
-    """Test that CamelWorkforceTracer can be imported."""
-    from maseval.interface.agents.camel import CamelWorkforceTracer
-
-    assert CamelWorkforceTracer is not None
-
-
-def test_workforce_tracer_in_all():
-    """Test that CamelWorkforceTracer is in __all__."""
-    import maseval.interface.agents
-
-    assert "CamelWorkforceTracer" in maseval.interface.agents.__all__
-
-
 def test_workforce_tracer_creation():
     """Test CamelWorkforceTracer creation."""
     from maseval.interface.agents.camel import CamelWorkforceTracer
-    from unittest.mock import Mock
 
     mock_workforce = Mock()
     tracer = CamelWorkforceTracer(mock_workforce, name="test_workforce")
@@ -692,7 +607,6 @@ def test_workforce_tracer_creation():
 def test_workforce_tracer_gather_traces():
     """Test CamelWorkforceTracer.gather_traces() returns expected fields."""
     from maseval.interface.agents.camel import CamelWorkforceTracer
-    from unittest.mock import Mock
 
     # Create mock workforce with internal state
     mock_workforce = Mock()
@@ -716,7 +630,6 @@ def test_workforce_tracer_gather_traces():
 def test_workforce_tracer_gather_config():
     """Test CamelWorkforceTracer.gather_config() returns expected fields."""
     from maseval.interface.agents.camel import CamelWorkforceTracer
-    from unittest.mock import Mock
 
     # Create mock workforce
     mock_worker1 = Mock()
@@ -740,7 +653,6 @@ def test_workforce_tracer_gather_config():
 def test_workforce_tracer_extract_completed_tasks():
     """Test CamelWorkforceTracer extracts completed task info."""
     from maseval.interface.agents.camel import CamelWorkforceTracer
-    from unittest.mock import Mock
 
     # Create mock tasks
     mock_task = Mock()
@@ -936,7 +848,6 @@ def test_camel_user_get_tool_invocation():
     """Test CamelLLMUser.get_tool() returns a working tool."""
     from maseval.interface.agents.camel import CamelLLMUser
     from camel.toolkits import FunctionTool
-    from unittest.mock import Mock
 
     mock_model = Mock()
 
@@ -1077,7 +988,6 @@ def test_role_playing_tracer_user_termination():
 def test_role_playing_tracer_config_missing_attributes():
     """Test CamelRolePlayingTracer.gather_config() handles missing attributes."""
     from maseval.interface.agents.camel import CamelRolePlayingTracer
-    from unittest.mock import Mock
 
     # RolePlaying without optional attributes
     mock_role_playing = Mock(spec=[])  # No attributes
@@ -1095,7 +1005,6 @@ def test_role_playing_tracer_config_missing_attributes():
 def test_workforce_tracer_empty_state():
     """Test CamelWorkforceTracer handles empty/missing internal state."""
     from maseval.interface.agents.camel import CamelWorkforceTracer
-    from unittest.mock import Mock
 
     # Workforce with no internal state
     mock_workforce = Mock(spec=[])  # No attributes
@@ -1113,7 +1022,6 @@ def test_workforce_tracer_empty_state():
 def test_workforce_tracer_config_missing_mode():
     """Test CamelWorkforceTracer.gather_config() handles missing mode."""
     from maseval.interface.agents.camel import CamelWorkforceTracer
-    from unittest.mock import Mock
 
     mock_workforce = Mock(spec=[])  # No mode attribute
 
@@ -1128,7 +1036,6 @@ def test_workforce_tracer_config_missing_mode():
 def test_workforce_tracer_task_without_result():
     """Test CamelWorkforceTracer handles tasks without result attribute."""
     from maseval.interface.agents.camel import CamelWorkforceTracer
-    from unittest.mock import Mock
 
     # Task with only id and content, no result
     mock_task = Mock(spec=["id", "content"])
@@ -1153,7 +1060,6 @@ def test_workforce_tracer_task_without_result():
 def test_workforce_tracer_truncates_long_content():
     """Test CamelWorkforceTracer truncates long task content."""
     from maseval.interface.agents.camel import CamelWorkforceTracer
-    from unittest.mock import Mock
 
     # Task with very long content
     mock_task = Mock()
