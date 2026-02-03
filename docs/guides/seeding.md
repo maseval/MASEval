@@ -1,0 +1,266 @@
+# Seeding for Reproducibility
+
+## Overview
+
+MASEval provides a seeding system for reproducible benchmark runs. Seeds cascade from a global seed through all components, enabling deterministic behavior when model providers support seeding.
+
+This guide covers:
+
+- **Basic usage**: Enabling seeding in benchmarks
+- **Selective variance**: Controlling which components vary per repetition
+- **Custom generators**: Implementing alternative seeding strategies
+- **Provider support**: Which model providers support seeding
+
+!!! info "When to use seeding"
+
+    Seeding is most useful when:
+
+    - Comparing agent architectures under controlled conditions
+    - Running ablation studies where you need reproducibility
+    - Debugging issues that only appear intermittently
+    - Creating reproducible baselines for publication
+
+    Note that not all model providers support seeding, and even those that do may only offer "best-effort" determinism.
+
+## Basic Usage
+
+### Enabling Seeding
+
+Pass a `seed` parameter when creating your benchmark:
+
+```python
+from maseval import Benchmark
+
+# Simple: pass a seed integer
+benchmark = MyBenchmark(seed=42)
+results = benchmark.run(tasks, agent_data=config)
+```
+
+This creates a `DefaultSeedGenerator` internally and passes it to all setup methods.
+
+### Using Seeds in Setup Methods
+
+All setup methods receive an optional `seed_generator` parameter. Use it to derive seeds for your components:
+
+```python
+from maseval import Benchmark, SeedGenerator
+from typing import Optional
+
+class MyBenchmark(Benchmark):
+    def setup_agents(
+        self,
+        agent_data,
+        environment,
+        task,
+        user,
+        seed_generator: Optional[SeedGenerator] = None,
+    ):
+        # Derive a seed for your agent
+        agent_seed = None
+        if seed_generator is not None:
+            agent_seed = seed_generator.derive_seed("main_agent")
+
+        # Pass seed to model adapter
+        model = self.get_model_adapter(model_id, seed=agent_seed)
+        agent = MyAgent(model=model)
+        # ... rest of setup
+```
+
+Seeds are derived from hierarchical paths, so `derive_seed("main_agent")` produces a different seed than `derive_seed("baseline_agent")`.
+
+## Selective Variance with `per_repetition`
+
+When running multiple repetitions of the same task, you may want some components to vary while others remain constant. The `per_repetition` flag controls this:
+
+```python
+def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+    if seed_generator is not None:
+        # Varies per repetition - different seed for rep 0, 1, 2, ...
+        experimental_seed = seed_generator.derive_seed("experimental", per_repetition=True)
+
+        # Constant across repetitions - same seed for rep 0, 1, 2, ...
+        baseline_seed = seed_generator.derive_seed("baseline", per_repetition=False)
+```
+
+**Use cases:**
+
+| `per_repetition` | Behavior | Use case |
+|------------------|----------|----------|
+| `True` (default) | Seed varies per repetition | Experimental agents, ablation studies |
+| `False` | Seed constant across repetitions | Baseline agents, control conditions |
+
+## Hierarchical Namespacing
+
+For complex systems with many components, use `child()` to create hierarchical namespaces:
+
+```python
+def setup_environment(self, agent_data, task, seed_generator=None):
+    if seed_generator is not None:
+        # Create a child generator for environment components
+        env_gen = seed_generator.child("environment")
+
+        # Seeds are prefixed with "environment/"
+        weather_seed = env_gen.derive_seed("weather_tool")  # "environment/weather_tool"
+        search_seed = env_gen.derive_seed("search_tool")    # "environment/search_tool"
+
+def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+    if seed_generator is not None:
+        # Create a child generator for agents
+        agent_gen = seed_generator.child("agents")
+
+        primary_seed = agent_gen.derive_seed("primary")     # "agents/primary"
+        worker_seed = agent_gen.derive_seed("worker")       # "agents/worker"
+```
+
+Child generators share the same seed log, so all derived seeds are recorded together.
+
+!!! note "Flat paths work too"
+
+    You can use flat paths directly without `child()`:
+
+    ```python
+    seed_generator.derive_seed("environment/weather_tool")
+    seed_generator.derive_seed("agents/primary")
+    ```
+
+    Both approaches produce identical seeds. Use `child()` when it makes your code cleaner.
+
+## Model Provider Support
+
+Not all providers support seeding. Here's the current status:
+
+| Provider | Support | Notes |
+|----------|---------|-------|
+| OpenAI | Best-effort | Seed parameter accepted, but determinism not guaranteed |
+| Google GenAI | Supported | Seed parameter passed to generation config |
+| LiteLLM | Pass-through | Passes seed to underlying provider |
+| HuggingFace | Supported | Uses `transformers.set_seed()` |
+| Anthropic | Not supported | Raises `SeedingError` if seed provided |
+
+If you pass a seed to an adapter that doesn't support seeding, it raises `SeedingError` at creation time:
+
+```python
+from maseval import SeedingError
+
+try:
+    adapter = AnthropicModelAdapter(client, model_id="claude-3", seed=42)
+except SeedingError as e:
+    print(f"Provider doesn't support seeding: {e}")
+```
+
+## Seed Logging
+
+All derived seeds are automatically logged and included in results:
+
+```python
+results = benchmark.run(tasks, agent_data=config)
+
+for report in results:
+    seed_config = report["config"]["seeding"]["seed_generator"]
+    print(f"Global seed: {seed_config['global_seed']}")
+    print(f"Task: {seed_config['task_id']}")
+    print(f"Repetition: {seed_config['rep_index']}")
+    print(f"Seeds used: {seed_config['seeds']}")
+    # Output: {"agents/primary": 12345, "agents/worker": 67890, ...}
+```
+
+This enables exact reproduction of benchmark runs and debugging of seed-related issues.
+
+## Custom Seed Generators
+
+### Using a Different Hash Algorithm
+
+Subclass `DefaultSeedGenerator` and override `_compute_seed()`:
+
+```python
+import hashlib
+from maseval import DefaultSeedGenerator
+
+class MD5SeedGenerator(DefaultSeedGenerator):
+    """Uses MD5 instead of SHA-256."""
+
+    def _compute_seed(self, full_path: str, components: list) -> int:
+        seed_string = ":".join(str(c) for c in components)
+        hash_bytes = hashlib.md5(seed_string.encode()).digest()
+        return int.from_bytes(hash_bytes[:4], "big") & 0x7FFFFFFF
+
+# Use it
+benchmark = MyBenchmark(seed_generator=MD5SeedGenerator(global_seed=42))
+```
+
+### Implementing a Custom Generator
+
+For completely custom seeding strategies (e.g., database-backed seeds), implement the `SeedGenerator` ABC:
+
+```python
+from maseval import SeedGenerator
+from typing import Dict, Any
+from typing_extensions import Self
+
+class DatabaseSeedGenerator(SeedGenerator):
+    """Looks up seeds from a database for exact reproducibility."""
+
+    def __init__(self, db_connection, run_id: str):
+        super().__init__()
+        self._db = db_connection
+        self._run_id = run_id
+        self._task_id = None
+        self._rep_index = None
+        self._log = {}
+
+    @property
+    def global_seed(self) -> int:
+        return self._db.get_run_seed(self._run_id)
+
+    def derive_seed(self, name: str, per_repetition: bool = True) -> int:
+        key = (self._run_id, self._task_id, self._rep_index if per_repetition else None, name)
+        seed = self._db.get_or_create_seed(key)
+        self._log[name] = seed
+        return seed
+
+    def for_task(self, task_id: str) -> Self:
+        new_gen = DatabaseSeedGenerator(self._db, self._run_id)
+        new_gen._task_id = task_id
+        return new_gen
+
+    def for_repetition(self, rep_index: int) -> Self:
+        new_gen = DatabaseSeedGenerator(self._db, self._run_id)
+        new_gen._task_id = self._task_id
+        new_gen._rep_index = rep_index
+        new_gen._log = self._log  # Share log within task
+        return new_gen
+
+    @property
+    def seed_log(self) -> Dict[str, int]:
+        return dict(self._log)
+```
+
+## Thread Safety
+
+The `DefaultSeedGenerator` is thread-safe by design:
+
+1. **Isolated logs per task**: `for_task()` creates a fresh seed log
+2. **No cross-thread sharing**: The root generator is read-only
+3. **Children share parent's log**: Safe because a single task runs in a single thread
+
+```
+Thread 1 (task A, rep 0):
+  task_gen_A = root.for_task("A").for_repetition(0)  # Fresh log
+  child = task_gen_A.child("env")                     # Shares task_gen_A's log
+
+Thread 2 (task B, rep 0):
+  task_gen_B = root.for_task("B").for_repetition(0)  # Different fresh log
+  child = task_gen_B.child("env")                     # Shares task_gen_B's log
+```
+
+If you implement a custom `SeedGenerator`, ensure similar thread isolation by creating fresh state in `for_task()`.
+
+## Tips
+
+**For reproducibility**: Always log and report the global seed used. Include it in publications and experiment tracking.
+
+**For debugging**: Use `seed_generator.seed_log` to inspect which seeds were derived during a run.
+
+**For baselines**: Use `per_repetition=False` for baseline agents that should remain constant while you vary experimental agents.
+
+**For provider compatibility**: Check provider support before relying on seeding. OpenAI's seeding is "best-effort" and may not be perfectly deterministic.

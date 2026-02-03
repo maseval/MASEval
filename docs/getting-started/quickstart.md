@@ -221,6 +221,7 @@ Topic-based discussions covering specific features and best practices:
 
 - [Message Tracing](../guides/message-tracing.md) — Capture and analyze agent conversations
 - [Configuration Gathering](../guides/config-gathering.md) — Collect reproducible experiment configurations
+- [Seeding](../guides/seeding.md) — Enable reproducible benchmark runs
 
 ### Reference
 
