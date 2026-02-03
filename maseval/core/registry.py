@@ -6,11 +6,14 @@ storage to enable parallel task execution without cross-contamination.
 """
 
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 from datetime import datetime
 
 from .tracing import TraceableMixin
 from .config import ConfigurableMixin
+
+# Type alias for components that can be registered
+RegisterableComponent = Union[TraceableMixin, ConfigurableMixin]
 
 
 class ComponentRegistry:
@@ -73,13 +76,13 @@ class ComponentRegistry:
 
     # --- Public API ---
 
-    def register(self, category: str, name: str, component: TraceableMixin) -> TraceableMixin:
+    def register(self, category: str, name: str, component: RegisterableComponent) -> RegisterableComponent:
         """Register a component for trace and config collection.
 
         Args:
-            category: Component category (e.g., "agents", "models", "environment")
+            category: Component category (e.g., "agents", "models", "environment", "seeding")
             name: Unique identifier within the category
-            component: Component instance (must be TraceableMixin)
+            component: Component instance (TraceableMixin and/or ConfigurableMixin)
 
         Returns:
             The component (for chaining)
@@ -91,21 +94,22 @@ class ComponentRegistry:
         key = f"{category}:{name}"
 
         # Check for duplicate registration under different key
-        if component_id in self._component_id_map:
-            existing_key = self._component_id_map[component_id]
-            if existing_key != key:
-                raise ValueError(
-                    f"Component is already registered as '{existing_key}' and cannot be "
-                    f"re-registered as '{key}'. Note: Environments, users, and agents "
-                    f"returned from setup methods are automatically registered."
-                )
+        existing_key = self._component_id_map.get(component_id) or self._config_component_id_map.get(component_id)
+        if existing_key and existing_key != key:
+            raise ValueError(
+                f"Component is already registered as '{existing_key}' and cannot be "
+                f"re-registered as '{key}'. Note: Environments, users, and agents "
+                f"returned from setup methods are automatically registered."
+            )
+        if existing_key == key:
             return component  # Idempotent
 
-        # Register for tracing
-        self._trace_registry[key] = component
-        self._component_id_map[component_id] = key
+        # Register for tracing if supported
+        if isinstance(component, TraceableMixin):
+            self._trace_registry[key] = component
+            self._component_id_map[component_id] = key
 
-        # Also register for config if supported
+        # Register for config if supported
         if isinstance(component, ConfigurableMixin):
             self._config_registry[key] = component
             self._config_component_id_map[component_id] = key

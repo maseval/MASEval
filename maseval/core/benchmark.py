@@ -16,7 +16,7 @@ from .callback_handler import CallbackHandler
 from .callback import BenchmarkCallback
 from .user import User
 from .tracing import TraceableMixin
-from .registry import ComponentRegistry
+from .registry import ComponentRegistry, RegisterableComponent
 from .context import TaskContext
 from .utils.system_info import gather_benchmark_config
 from .callbacks.progress_bar import (
@@ -285,11 +285,11 @@ class Benchmark(ABC):
         """
         return self._seed_generator
 
-    def register(self, category: str, name: str, component: TraceableMixin) -> TraceableMixin:
+    def register(self, category: str, name: str, component: RegisterableComponent) -> RegisterableComponent:
         """Register a component for comprehensive trace and configuration collection.
 
         All core MASEval components (AgentAdapter, ModelAdapter, Environment,
-        User, LLMSimulator, BenchmarkCallback) inherit from TraceableMixin and
+        User, LLMSimulator, BenchmarkCallback) inherit from TraceableMixin and/or
         ConfigurableMixin, and are automatically registered for both trace and
         configuration collection before evaluation.
 
@@ -300,10 +300,10 @@ class Benchmark(ABC):
 
         Args:
             category: Component category (e.g., "agents", "models", "tools", "simulators",
-                     "callbacks", "user", "environment"). Use plural form to match
+                     "callbacks", "user", "environment", "seeding"). Use plural form to match
                      the structure in collect_all_traces() and collect_all_configs().
             name: Unique identifier for this component within its category
-            component: Any object inheriting from TraceableMixin (and optionally ConfigurableMixin)
+            component: Any object inheriting from TraceableMixin and/or ConfigurableMixin
 
         Returns:
             The component (for chaining convenience)
