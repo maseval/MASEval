@@ -103,9 +103,9 @@ class LLMUser(User):
 
     Early Stopping:
         For benchmarks where termination depends on user satisfaction rather than
-        a fixed turn count, configure stop_tokens. When the user's response contains
-        any of these tokens, is_done() returns True. The MACS benchmark uses this
-        with "</stop>" to signal satisfaction.
+        a fixed turn count, configure `stop_tokens`. When the user's response contains
+        any of these tokens, `is_done()` returns True. The MACS benchmark uses
+        `"</stop>"` to signal satisfaction.
 
     Attributes:
         name: User identifier.
