@@ -612,13 +612,17 @@ This allows components to request either behavior within the same task repetitio
 ### Phase 4: Documentation & Examples ✅ COMPLETE
 
 11. ✅ Update AGENTS.md with seeding guidance
-12. ✅ five_a_day example already has comprehensive seed support (uses local derive_seed utility with same SHA-256 algorithm)
+12. ✅ Updated five_a_day example to use benchmark's seeding system (`Benchmark(seed=...)`)
+    - Removed local `derive_seed()` utility from utils.py
+    - Updated `setup_agents()` to build seeds dict and pass to builders (clean separation from agent specs)
+    - All builder functions accept `seeds: Optional[Dict[str, int]]` as separate parameter
+    - Updated notebook to use new seeding system with same clean pattern
 13. Deferred: Add seeding section to documentation (docs/reference/seeding.md)
 14. Deferred: Add a guide about seeding to the docs
 
 **Implementation Summary:**
 - All core phases (1-4) are complete
-- 1335 tests pass (17 skipped for expected missing dependencies)
+- 1366 tests pass (17 skipped for expected missing dependencies)
 - Documentation tasks (13-14) deferred for separate PR
 
 ## Files to Create/Modify

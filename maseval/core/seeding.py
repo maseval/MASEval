@@ -28,7 +28,8 @@ Example:
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Self
+from typing import Any, Dict, List, Optional
+from typing_extensions import Self
 import hashlib
 
 from .config import ConfigurableMixin
