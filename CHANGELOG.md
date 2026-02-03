@@ -11,12 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Seeding System**
 
-- Added `SeedGenerator` abstract base class and `DefaultSeedGenerator` implementation for reproducible benchmark runs via SHA-256-based seed derivation (PR: #PR_NUMBER_PLACEHOLDER)
-- Added `seed` and `seed_generator` parameters to `Benchmark.__init__` for enabling reproducibility (PR: #PR_NUMBER_PLACEHOLDER)
-- Added `seed_generator` parameter to all benchmark setup methods (`setup_environment`, `setup_user`, `setup_agents`, `setup_evaluators`) (PR: #PR_NUMBER_PLACEHOLDER)
-- Added `seed` parameter to `ModelAdapter.__init__` for deterministic model inference (PR: #PR_NUMBER_PLACEHOLDER)
-- Added `SeedingError` exception for providers that don't support seeding (Anthropic models raise this if seed is provided) (PR: #PR_NUMBER_PLACEHOLDER)
-- Added seed support to interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFaceModelAdapter` pass seeds to underlying APIs (PR: #PR_NUMBER_PLACEHOLDER)
+- Added `SeedGenerator` abstract base class and `DefaultSeedGenerator` implementation for reproducible benchmark runs via SHA-256-based seed derivation (PR: #24)
+- Added `seed` and `seed_generator` parameters to `Benchmark.__init__` for enabling reproducibility (PR: #24)
+- Added `seed_generator` parameter to all benchmark setup methods (`setup_environment`, `setup_user`, `setup_agents`, `setup_evaluators`) (PR: #24)
+- Added `seed` parameter to `ModelAdapter.__init__` for deterministic model inference (PR: #24)
+- Added `SeedingError` exception for providers that don't support seeding (Anthropic models raise this if seed is provided) (PR: #24)
+- Added seed support to interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFaceModelAdapter` pass seeds to underlying APIs (PR: #24)
 
 **Interface**
 
