@@ -2,7 +2,9 @@
 
 ## Overview
 
-Implement Option B from IDEA.md with child generator support from Option C. The system provides a centralized `SeedGenerator` that derives seeds by path and can spawn scoped child generators.
+Implement Option B from IDEA.md with child generator support from Option C. The system provides an abstract `SeedGenerator` base class that defines the interface, plus a `DefaultSeedGenerator` concrete implementation that derives seeds via SHA-256 hashing.
+
+This follows the project's established pattern of "abstract base classes with optional default implementations" (see README.md).
 
 ## Design Goals
 
@@ -14,6 +16,7 @@ From IDEA.md Section 4:
 5. **Logging** — Seeds used must be recorded in results
 6. **Fail explicitly** — Providers without seed support should error
 7. **Extensible** — Future use cases (task queues, etc.) should work
+8. **Easy to customize** — Users can implement custom seeding strategies by subclassing
 
 ## API Design
 
@@ -22,12 +25,89 @@ From IDEA.md Section 4:
 ```python
 # maseval/core/seeding.py
 
+from abc import ABC, abstractmethod
+from typing import Optional, Dict, Any, Self
+import hashlib
+
 from maseval.core.config import ConfigurableMixin
 
-class SeedGenerator(ConfigurableMixin):
-    """Generates deterministic seeds from hierarchical paths.
 
-    Thread-safe. Immutable after construction (derives seeds via pure functions).
+class SeedGenerator(ABC, ConfigurableMixin):
+    """Abstract base class for seed generation.
+
+    Subclass this to implement custom seeding strategies (e.g., database lookup,
+    different hash algorithms, external seed services).
+
+    The default implementation is `DefaultSeedGenerator`, which uses SHA-256 hashing
+    and provides additional convenience methods like `child()` for hierarchical namespacing.
+    """
+
+    @property
+    @abstractmethod
+    def global_seed(self) -> int:
+        """Root seed for the entire benchmark run."""
+        pass
+
+    @abstractmethod
+    def derive_seed(self, name: str, per_repetition: bool = True) -> int:
+        """Derive a seed for a named component.
+
+        Args:
+            name: Component identifier (e.g., "agent_x", "environment/tool_weather").
+                Use "/" for hierarchical paths if desired.
+            per_repetition: If True, seed varies per repetition. If False,
+                seed is constant across repetitions of the same task.
+
+        Returns:
+            Deterministic seed derived from the generator's state and name.
+
+        Raises:
+            SeedingError: If required context (task_id, rep_index) is not set.
+        """
+        pass
+
+    @abstractmethod
+    def for_task(self, task_id: str) -> Self:
+        """Create a generator scoped to a specific task.
+
+        Returns:
+            New generator with task_id set and fresh log.
+        """
+        pass
+
+    @abstractmethod
+    def for_repetition(self, rep_index: int) -> Self:
+        """Create a generator scoped to a specific repetition.
+
+        Returns:
+            New generator with rep_index set, preserving task scope and log.
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def seed_log(self) -> Dict[str, int]:
+        """Return all seeds derived by this generator and its children."""
+        pass
+
+    def gather_config(self) -> Dict[str, Any]:
+        """Gather configuration for tracing integration."""
+        return {
+            **super().gather_config(),
+            "seeds": self.seed_log,
+        }
+
+
+class DefaultSeedGenerator(SeedGenerator):
+    """Default hash-based seed generator using SHA-256.
+
+    Derives deterministic seeds from hierarchical paths. Thread-safe and immutable
+    after construction (derives seeds via pure functions).
+
+    Provides `child()` method for hierarchical namespacing (not part of the ABC).
+    Override `_compute_seed()` to customize the hash algorithm while keeping
+    the rest of the infrastructure (logging, scoping, validation).
+
     All child generators share the same seed log for unified tracking.
     """
 
@@ -47,11 +127,17 @@ class SeedGenerator(ConfigurableMixin):
             path_prefix: Accumulated path from parent generators.
             _shared_log: Internal. Shared dict for logging all derived seeds.
         """
+        super().__init__()
         self._global_seed = global_seed
         self._task_id = task_id
         self._rep_index = rep_index
         self._path_prefix = path_prefix
         self._shared_log = _shared_log if _shared_log is not None else {}
+
+    @property
+    def global_seed(self) -> int:
+        """Root seed for the entire benchmark run."""
+        return self._global_seed
 
     def derive_seed(self, name: str, per_repetition: bool = True) -> int:
         """Derive a seed for a named component.
@@ -72,29 +158,39 @@ class SeedGenerator(ConfigurableMixin):
         if per_repetition and self._rep_index is None:
             raise SeedingError("rep_index not set. Call for_repetition() first.")
 
-        seed = self._compute_seed(name, per_repetition)
-
-        # Log with full path
-        full_path = f"{self._path_prefix}/{name}" if self._path_prefix else name
-        self._shared_log[full_path] = seed
-
-        return seed
-
-    def _compute_seed(self, name: str, per_repetition: bool) -> int:
-        """Internal: compute deterministic seed from components."""
         full_path = f"{self._path_prefix}/{name}" if self._path_prefix else name
 
-        # Include rep_index only if per_repetition=True
+        # Build components for seed computation
         if per_repetition:
             components = [self._global_seed, self._task_id, self._rep_index, full_path]
         else:
             components = [self._global_seed, self._task_id, full_path]
 
+        seed = self._compute_seed(full_path, components)
+
+        # Log with full path
+        self._shared_log[full_path] = seed
+
+        return seed
+
+    def _compute_seed(self, full_path: str, components: list) -> int:
+        """Compute seed from components using SHA-256.
+
+        Override this method to use a different hash algorithm while keeping
+        the rest of the DefaultSeedGenerator infrastructure.
+
+        Args:
+            full_path: The full hierarchical path (for reference, already in components).
+            components: List of [global_seed, task_id, [rep_index], path] to hash.
+
+        Returns:
+            Integer seed in range [0, 2^31 - 1].
+        """
         seed_string = ":".join(str(c) for c in components)
         hash_bytes = hashlib.sha256(seed_string.encode()).digest()
         return int.from_bytes(hash_bytes[:4], "big") & 0x7FFFFFFF
 
-    def child(self, name: str) -> "SeedGenerator":
+    def child(self, name: str) -> Self:
         """Create a child generator scoped to a component.
 
         The child inherits context (global_seed, task_id, rep_index) and extends
@@ -104,10 +200,10 @@ class SeedGenerator(ConfigurableMixin):
             name: Component name to add to the path.
 
         Returns:
-            New SeedGenerator with extended path, sharing the same log.
+            New DefaultSeedGenerator with extended path, sharing the same log.
         """
         new_path = f"{self._path_prefix}/{name}" if self._path_prefix else name
-        return SeedGenerator(
+        return self.__class__(
             global_seed=self._global_seed,
             task_id=self._task_id,
             rep_index=self._rep_index,
@@ -115,13 +211,13 @@ class SeedGenerator(ConfigurableMixin):
             _shared_log=self._shared_log,  # Share the log
         )
 
-    def for_task(self, task_id: str) -> "SeedGenerator":
+    def for_task(self, task_id: str) -> Self:
         """Create a generator scoped to a specific task.
 
         Returns:
-            New SeedGenerator with task_id set and fresh log.
+            New DefaultSeedGenerator with task_id set and fresh log.
         """
-        return SeedGenerator(
+        return self.__class__(
             global_seed=self._global_seed,
             task_id=task_id,
             rep_index=None,
@@ -129,13 +225,13 @@ class SeedGenerator(ConfigurableMixin):
             _shared_log={},  # Fresh log for this task
         )
 
-    def for_repetition(self, rep_index: int) -> "SeedGenerator":
+    def for_repetition(self, rep_index: int) -> Self:
         """Create a generator scoped to a specific repetition.
 
         Returns:
-            New SeedGenerator with rep_index set, preserving task scope and log.
+            New DefaultSeedGenerator with rep_index set, preserving task scope and log.
         """
-        return SeedGenerator(
+        return self.__class__(
             global_seed=self._global_seed,
             task_id=self._task_id,
             rep_index=rep_index,
@@ -151,16 +247,81 @@ class SeedGenerator(ConfigurableMixin):
     def gather_config(self) -> Dict[str, Any]:
         """Gather configuration for tracing integration."""
         return {
+            **super().gather_config(),
             "global_seed": self._global_seed,
             "task_id": self._task_id,
             "rep_index": self._rep_index,
-            "seeds": self.seed_log,
         }
 
 
 class SeedingError(Exception):
     """Raised when seeding is misconfigured or unsupported."""
     pass
+```
+
+### Extension Patterns
+
+The ABC + default implementation pattern makes it easy for users to customize:
+
+| Use Case | What to Do |
+|----------|------------|
+| Different hash algorithm | Subclass `DefaultSeedGenerator`, override `_compute_seed()` |
+| Different logging strategy | Subclass `DefaultSeedGenerator`, override `derive_seed()` |
+| Need `child()` hierarchy | Use or subclass `DefaultSeedGenerator` |
+| Seed lookup from database | Implement `SeedGenerator` ABC directly (5 methods) |
+| External seed service | Implement `SeedGenerator` ABC directly (5 methods) |
+
+**Example: Custom hash algorithm**
+
+```python
+class MD5SeedGenerator(DefaultSeedGenerator):
+    """Uses MD5 instead of SHA-256 (not recommended, just for illustration)."""
+
+    def _compute_seed(self, full_path: str, components: list) -> int:
+        seed_string = ":".join(str(c) for c in components)
+        hash_bytes = hashlib.md5(seed_string.encode()).digest()
+        return int.from_bytes(hash_bytes[:4], "big") & 0x7FFFFFFF
+```
+
+**Example: Database-backed seeds**
+
+```python
+class DatabaseSeedGenerator(SeedGenerator):
+    """Looks up seeds from a database for exact reproducibility."""
+
+    def __init__(self, db_connection, run_id: str):
+        super().__init__()
+        self._db = db_connection
+        self._run_id = run_id
+        self._task_id = None
+        self._rep_index = None
+        self._log = {}
+
+    @property
+    def global_seed(self) -> int:
+        return self._db.get_run_seed(self._run_id)
+
+    def derive_seed(self, name: str, per_repetition: bool = True) -> int:
+        key = (self._run_id, self._task_id, self._rep_index if per_repetition else None, name)
+        seed = self._db.get_or_create_seed(key)
+        self._log[name] = seed
+        return seed
+
+    def for_task(self, task_id: str) -> Self:
+        new_gen = DatabaseSeedGenerator(self._db, self._run_id)
+        new_gen._task_id = task_id
+        return new_gen
+
+    def for_repetition(self, rep_index: int) -> Self:
+        new_gen = DatabaseSeedGenerator(self._db, self._run_id)
+        new_gen._task_id = self._task_id
+        new_gen._rep_index = rep_index
+        new_gen._log = self._log  # Share log within task
+        return new_gen
+
+    @property
+    def seed_log(self) -> Dict[str, int]:
+        return dict(self._log)
 ```
 
 ### Integration with Benchmark
@@ -171,10 +332,15 @@ class Benchmark(ABC):
         self,
         ...,
         seed: Optional[int] = None,  # NEW: global seed for reproducibility
+        seed_generator: Optional[SeedGenerator] = None,  # NEW: custom generator
     ):
-        self._seed_generator: Optional[SeedGenerator] = None
-        if seed is not None:
-            self._seed_generator = SeedGenerator(global_seed=seed)
+        # Users can provide either a seed (uses DefaultSeedGenerator) or a custom generator
+        if seed_generator is not None:
+            self._seed_generator = seed_generator
+        elif seed is not None:
+            self._seed_generator = DefaultSeedGenerator(global_seed=seed)
+        else:
+            self._seed_generator = None
 
     @property
     def seed_generator(self) -> Optional[SeedGenerator]:
@@ -275,7 +441,9 @@ def get_model_adapter(self, model_id: str, seed: Optional[int] = None, **kwargs)
     return adapter
 ```
 
-## Usage Example
+## Usage Examples
+
+### Basic Usage (Default Generator)
 
 ```python
 class MyBenchmark(Benchmark):
@@ -283,11 +451,17 @@ class MyBenchmark(Benchmark):
         env = MyEnvironment(task.environment_data)
 
         if seed_generator is not None:
+            # Option 1: Use child() for hierarchical namespacing (DefaultSeedGenerator only)
             env_gen = seed_generator.child("environment")
             for tool in env.tools:
                 tool_seed = env_gen.derive_seed(tool.name)
                 tool_model = self.get_model_adapter(model_id, seed=tool_seed)
                 tool.set_simulator(tool_model)
+
+            # Option 2: Use flat paths (works with any SeedGenerator)
+            # for tool in env.tools:
+            #     tool_seed = seed_generator.derive_seed(f"environment/{tool.name}")
+            #     ...
 
         return env
 
@@ -301,6 +475,7 @@ class MyBenchmark(Benchmark):
 
     def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
         if seed_generator is not None:
+            # Using child() for cleaner namespacing
             agent_gen = seed_generator.child("agents")
             # Vary experimental agent per rep, keep baseline constant
             experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
@@ -311,7 +486,7 @@ class MyBenchmark(Benchmark):
 
         # ... create agents with seeds ...
 
-# Run with seeding
+# Run with seeding (uses DefaultSeedGenerator internally)
 benchmark = MyBenchmark(seed=42, n_task_repeats=3)
 results = benchmark.run(tasks=tasks, agent_data=config)
 
@@ -323,15 +498,24 @@ for report in results:
     # {"environment/tool_weather": 12345, "user_simulator": 67890, "agents/experimental": ...}
 ```
 
+### Custom Generator
+
+```python
+# Use a custom generator for specialized seeding strategies
+custom_gen = MyDatabaseSeedGenerator(db_connection, run_id="experiment_42")
+benchmark = MyBenchmark(seed_generator=custom_gen, n_task_repeats=3)
+results = benchmark.run(tasks=tasks, agent_data=config)
+```
+
 ## Thread Safety
 
-The `SeedGenerator` is thread-safe by design:
+The `DefaultSeedGenerator` is thread-safe by design:
 
 1. **Isolated logs per task repetition**: `for_task()` creates a fresh `_shared_log` dict. Each task repetition has its own log that isn't shared across threads.
 
 2. **No cross-thread sharing**: The root `self._seed_generator` is read-only (only used to call `for_task()`). All mutable state (the log) lives in the task-scoped generator.
 
-3. **Children share parent's log**: Within a single task repetition, `child()` generators share the same `_shared_log`. This is safe because a single task repetition runs in a single thread.
+3. **Children share parent's log**: Within a single task repetition, `child()` generators (in `DefaultSeedGenerator`) share the same `_shared_log`. This is safe because a single task repetition runs in a single thread.
 
 ```
 Thread 1 (task A, rep 0):
@@ -344,6 +528,8 @@ Thread 2 (task B, rep 0):
 
 # No cross-thread sharing of mutable state
 ```
+
+**Note for custom implementations:** If you implement your own `SeedGenerator`, ensure similar thread isolation by creating fresh state in `for_task()`.
 
 ## Awkward Patterns / Open Questions
 
@@ -403,9 +589,9 @@ This allows components to request either behavior within the same task repetitio
 ## Implementation Steps
 
 ### Phase 1: Core Infrastructure
-1. Create `maseval/core/seeding.py` with `SeedGenerator` and `SeedingError`
-2. Add unit tests for seed derivation and thread safety
-3. Add `seed` parameter to `Benchmark.__init__`
+1. Create `maseval/core/seeding.py` with `SeedGenerator` (ABC), `DefaultSeedGenerator`, and `SeedingError`
+2. Add unit tests for seed derivation, thread safety, and extension patterns
+3. Add `seed` and `seed_generator` parameters to `Benchmark.__init__`
 
 ### Phase 2: Benchmark Integration
 4. Update `_execute_task_repetition` to create scoped generators
@@ -426,31 +612,39 @@ This allows components to request either behavior within the same task repetitio
 ## Files to Create/Modify
 
 ### New Files
-- `maseval/core/seeding.py` — SeedGenerator, SeedingError
+- `maseval/core/seeding.py` — `SeedGenerator` (ABC), `DefaultSeedGenerator`, `SeedingError`
 - `tests/test_core/test_seeding.py` — Unit tests
 
 ### Modified Files
-- `maseval/core/benchmark.py` — Add seed parameter, update setup calls
+- `maseval/core/benchmark.py` — Add `seed` and `seed_generator` parameters, update setup calls
 - `maseval/core/model.py` — Add seed parameter to ModelAdapter.__init__
-- `maseval/core/__init__.py` — Export SeedGenerator, SeedingError
-- `maseval/__init__.py` — Export SeedGenerator, SeedingError
+- `maseval/core/__init__.py` — Export `SeedGenerator`, `DefaultSeedGenerator`, `SeedingError`
+- `maseval/__init__.py` — Export `SeedGenerator`, `DefaultSeedGenerator`, `SeedingError`
 - `maseval/interface/inference/*.py` — Pass seed to provider APIs, raise SeedingError if unsupported
 - `maseval/benchmark/macs/macs.py` — Use seed_generator in setup methods
 - `maseval/benchmark/tau2/tau2.py` — Use seed_generator in setup methods
 - `examples/five_a_day_benchmark/five_a_day_benchmark.py` — Use new seeding system
-- `AGENTS.md` — Document seeding
-- `docs/reference/seeding.md` — User documentation
+- `AGENTS.md` — Document seeding and extension patterns
+- `docs/reference/seeding.md` — User documentation with extension examples
 
 ## Testing Strategy
 
-1. **Unit tests** for `SeedGenerator`:
+1. **Unit tests** for `DefaultSeedGenerator`:
    - Deterministic derivation (same inputs → same output)
    - Different paths → different seeds
-   - Child generators extend paths correctly
+   - `child()` generators extend paths correctly and share log
    - Thread safety under concurrent access
    - `per_repetition=False` produces constant seeds across reps
+   - `global_seed` property returns correct value
 
-2. **Integration tests**:
+2. **Unit tests** for `SeedGenerator` ABC:
+   - Cannot instantiate directly (raises TypeError)
+   - Subclasses must implement all 5 abstract methods (`global_seed`, `derive_seed`, `for_task`, `for_repetition`, `seed_log`)
+   - Custom subclass with overridden `_compute_seed()` works correctly
+   - Custom subclass without `child()` works (flat paths)
+
+3. **Integration tests**:
    - Benchmark with `seed=42` produces reproducible results
    - Benchmark with `seed=None` works (seeding disabled)
+   - Benchmark with custom `seed_generator` works
    - Seeds appear in result configs
