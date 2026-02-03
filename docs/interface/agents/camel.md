@@ -24,3 +24,11 @@ pip install camel-ai
 ::: maseval.interface.agents.camel.CamelAgentAdapter
 
 ::: maseval.interface.agents.camel.CamelLLMUser
+
+::: maseval.interface.agents.camel.CamelAgentUser
+
+::: maseval.interface.agents.camel.camel_role_playing_execution_loop
+
+::: maseval.interface.agents.camel.CamelRolePlayingTracer
+
+::: maseval.interface.agents.camel.CamelWorkforceTracer
