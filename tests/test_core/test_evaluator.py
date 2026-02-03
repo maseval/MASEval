@@ -32,7 +32,7 @@ class TestEvaluator:
                 return {"score": 1.0}
 
         class TestBenchmark(DummyBenchmark):
-            def setup_evaluators(self, environment, task, agents, user):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
                 return [TracingEvaluator(task, environment, user)]
 
         tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
@@ -132,7 +132,7 @@ class TestEvaluator:
                 return {"score": 0.8, "evaluator": "eval2"}
 
         class TestBenchmark(DummyBenchmark):
-            def setup_evaluators(self, environment, task, agents, user):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
                 return [
                     Evaluator1(task, environment, user),
                     Evaluator2(task, environment, user),

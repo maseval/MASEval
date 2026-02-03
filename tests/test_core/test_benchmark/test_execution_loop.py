@@ -32,22 +32,22 @@ class ExecutionLoopBenchmark(Benchmark):
 
         return DummyModelAdapter(model_id=model_id)
 
-    def setup_environment(self, agent_data, task):
+    def setup_environment(self, agent_data, task, seed_generator=None):
         from conftest import DummyEnvironment
 
         return DummyEnvironment(task.environment_data)
 
-    def setup_user(self, agent_data, environment, task):
+    def setup_user(self, agent_data, environment, task, seed_generator=None):
         return self._return_user
 
-    def setup_agents(self, agent_data, environment, task, user):
+    def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
         from conftest import DummyAgent, DummyAgentAdapter
 
         agent = DummyAgent()
         adapter = DummyAgentAdapter(agent, "test_agent")
         return [adapter], {"test_agent": adapter}
 
-    def setup_evaluators(self, environment, task, agents, user):
+    def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
         from conftest import DummyEvaluator
 
         return [DummyEvaluator(task, environment, user)]

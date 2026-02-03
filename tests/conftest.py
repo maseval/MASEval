@@ -12,6 +12,7 @@ from maseval import (
     TaskQueue,
     Evaluator,
     MessageHistory,
+    SeedGenerator,
 )
 from maseval.core.model import ModelAdapter, ChatResponse
 
@@ -448,16 +449,29 @@ class DummyBenchmark(Benchmark):
         """Create a dummy model adapter for testing."""
         return DummyModelAdapter(model_id=model_id)
 
-    def setup_environment(self, agent_data: Dict[str, Any], task: Task) -> Environment:
+    def setup_environment(
+        self, agent_data: Dict[str, Any], task: Task, seed_generator: Optional[SeedGenerator] = None
+    ) -> Environment:
         self.setup_environment_calls.append((agent_data, task))
         return DummyEnvironment(task.environment_data)
 
-    def setup_user(self, agent_data: Dict[str, Any], environment: Environment, task: Task) -> Optional[User]:
+    def setup_user(
+        self,
+        agent_data: Dict[str, Any],
+        environment: Environment,
+        task: Task,
+        seed_generator: Optional[SeedGenerator] = None,
+    ) -> Optional[User]:
         self.setup_user_calls.append((agent_data, environment, task))
         return None
 
     def setup_agents(
-        self, agent_data: Dict[str, Any], environment: Environment, task: Task, user: Optional[User]
+        self,
+        agent_data: Dict[str, Any],
+        environment: Environment,
+        task: Task,
+        user: Optional[User],
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         self.setup_agents_calls.append((agent_data, environment, task, user))
         agent = DummyAgent()
@@ -465,7 +479,12 @@ class DummyBenchmark(Benchmark):
         return [agent_adapter], {"test_agent": agent_adapter}
 
     def setup_evaluators(
-        self, environment: Environment, task: Task, agents: Sequence[AgentAdapter], user: Optional[User]
+        self,
+        environment: Environment,
+        task: Task,
+        agents: Sequence[AgentAdapter],
+        user: Optional[User],
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Sequence[Evaluator]:
         self.setup_evaluators_calls.append((environment, task, agents, user))
         return [DummyEvaluator(task, environment, user)]

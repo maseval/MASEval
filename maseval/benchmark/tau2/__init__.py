@@ -35,7 +35,7 @@ Usage:
 
     # Create your framework-specific benchmark subclass
     class MyTau2Benchmark(Tau2Benchmark):
-        def setup_agents(self, agent_data, environment, task, user):
+        def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
             # Get real tools from environment
             tools = environment.tools
             # Create your agent with these tools

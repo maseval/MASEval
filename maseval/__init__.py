@@ -50,6 +50,7 @@ from .core.exceptions import (
     validate_no_extra_arguments,
     validate_arguments_from_schema,
 )
+from .core.seeding import SeedGenerator, DefaultSeedGenerator, SeedingError
 
 __all__ = [
     # Tasks
@@ -106,4 +107,8 @@ __all__ = [
     "validate_required_arguments",
     "validate_no_extra_arguments",
     "validate_arguments_from_schema",
+    # Seeding
+    "SeedGenerator",
+    "DefaultSeedGenerator",
+    "SeedingError",
 ]

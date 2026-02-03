@@ -82,7 +82,7 @@ class TestTraceCollection:
                 raise RuntimeError("Trace gathering failed")
 
         class TestBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 from conftest import DummyAgent
 
                 agent = DummyAgent()
@@ -121,7 +121,7 @@ class TestTraceCollection:
                 return "result"
 
         class TestBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 from conftest import DummyAgent
 
                 agent = DummyAgent()

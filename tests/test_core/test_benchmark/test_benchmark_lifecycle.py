@@ -314,7 +314,7 @@ class TestFailureSafeExecution:
                 return self.agent.run(query)
 
         class TaskFailureBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 agent = FailingAgent()
                 agent_adapter = FailingAgentAdapter(agent, "failing_agent")
                 return [agent_adapter], {"failing_agent": agent_adapter}
@@ -351,7 +351,7 @@ class TestFailureSafeExecution:
                 return self.agent.run(query)
 
         class TaskFailureBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 agent = FailingAgent()
                 agent_adapter = FailingAgentAdapter(agent, "failing_agent")
                 return [agent_adapter], {"failing_agent": agent_adapter}
@@ -377,7 +377,7 @@ class TestFailureSafeExecution:
                 raise ValueError("Evaluation failed!")
 
         class EvaluationFailureBenchmark(DummyBenchmark):
-            def setup_evaluators(self, environment, task, agents, user):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
                 return [FailingEvaluator(task, environment, user)]
 
         tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
@@ -408,7 +408,7 @@ class TestFailureSafeExecution:
                 raise ValueError("Evaluation failed!")
 
         class EvaluationFailureBenchmark(DummyBenchmark):
-            def setup_evaluators(self, environment, task, agents, user):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
                 return [FailingEvaluator(task, environment, user)]
 
         tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
@@ -425,7 +425,7 @@ class TestFailureSafeExecution:
         from conftest import DummyBenchmark
 
         class SetupFailureBenchmark(DummyBenchmark):
-            def setup_environment(self, agent_data, task):
+            def setup_environment(self, agent_data, task, seed_generator=None):
                 raise RuntimeError("Environment setup failed!")
 
         tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
@@ -448,7 +448,7 @@ class TestFailureSafeExecution:
         from conftest import DummyBenchmark
 
         class SetupFailureBenchmark(DummyBenchmark):
-            def setup_environment(self, agent_data, task):
+            def setup_environment(self, agent_data, task, seed_generator=None):
                 raise RuntimeError("Environment setup failed!")
 
         tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
@@ -479,7 +479,7 @@ class TestFailureSafeExecution:
                 super().__init__(*args, **kwargs)
                 self.task_counter = 0
 
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 if self.task_counter == 1:  # Fail second task
                     agent = FailingAgent()
                     agent_adapter = FailingAgentAdapter(agent, "failing")
@@ -651,7 +651,7 @@ class TestFailureSafeExecution:
                 self.task_counter = 0
                 self.fail_on_first_run = True
 
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 # Fail second task on first run only
                 if self.task_counter == 1 and self.fail_on_first_run:
                     agent = FailingAgent()
