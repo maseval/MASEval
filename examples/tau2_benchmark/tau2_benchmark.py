@@ -146,7 +146,7 @@ class DefaultTau2User(Tau2User):
 
         def ask_user(question: str) -> str:
             """Ask the customer a question to clarify their request or get additional information."""
-            return self.simulate_response(question)
+            return self.respond(question)
 
         return {"ask_user": ask_user}
 
@@ -345,7 +345,7 @@ class SmolagentsTau2User(Tau2User):
             output_type = "string"
 
             def forward(self, question: str) -> str:
-                return user.simulate_response(question)
+                return user.respond(question)
 
         return UserInputTool()
 
@@ -506,7 +506,7 @@ class LangGraphTau2User(Tau2User):
 
         def user_input(question: str) -> str:
             """Ask the customer a question to clarify their request."""
-            return self.simulate_response(question)
+            return self.respond(question)
 
         return StructuredTool.from_function(
             func=user_input,

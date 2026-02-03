@@ -30,7 +30,7 @@ swap between agent frameworks.
 import pytest
 from typing import List, Optional
 from maseval.core.callback import AgentCallback
-from conftest import DummyAgent, DummyAgentAdapter, FakeSmolagentsModel
+from conftest import DummyAgent, DummyAgentAdapter, FakeSmolagentsModel, MockCamelAgent
 
 # Mark all tests as contract + interface (requires optional dependencies)
 pytestmark = [pytest.mark.contract, pytest.mark.interface]
@@ -174,6 +174,11 @@ def create_agent_for_framework(framework: str, mock_llm: MockLLM):
 
         return agent
 
+    elif framework == "camel":
+        pytest.importorskip("camel")
+        # Use shared MockCamelAgent from conftest
+        return MockCamelAgent(mock_llm.responses)
+
     else:
         raise ValueError(f"Unknown framework: {framework}")
 
@@ -218,6 +223,15 @@ def create_adapter_for_framework(framework: str, agent, callbacks: Optional[List
         )
         return LlamaIndexAgentAdapter(agent, "test_agent", callbacks=callbacks)
 
+    elif framework == "camel":
+        pytest.importorskip("camel")
+        from maseval.interface.agents.camel import CamelAgentAdapter
+
+        # CAMEL agents should have step and memory attributes
+        assert hasattr(agent, "step"), f"Expected CAMEL agent with step() method, got {type(agent)}"
+        assert hasattr(agent, "memory"), f"Expected CAMEL agent with memory attribute, got {type(agent)}"
+        return CamelAgentAdapter(agent, "test_agent", callbacks=callbacks)
+
     else:
         raise ValueError(f"Unknown framework: {framework}")
 
@@ -226,7 +240,7 @@ def create_adapter_for_framework(framework: str, agent, callbacks: Optional[List
 
 
 @pytest.mark.contract
-@pytest.mark.parametrize("framework", ["dummy", "smolagents", "langgraph", "llamaindex"])
+@pytest.mark.parametrize("framework", ["dummy", "smolagents", "langgraph", "llamaindex", "camel"])
 class TestAgentAdapterContract:
     """Verify all AgentAdapter implementations honor the same contract."""
 

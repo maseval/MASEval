@@ -114,6 +114,7 @@ nav:
           - Utilities: reference/utilities.md
       - Interface:
           - Agents:
+              - CAMEL-AI: interface/agents/camel.md
               - LangGraph: interface/agents/langgraph.md
               - LlamaIndex: interface/agents/llamaindex.md
               - SmolAgents: interface/agents/smolagents.md

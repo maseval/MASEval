@@ -321,17 +321,20 @@ class Benchmark(ABC):
         The collected traces are stored in `benchmark.reports` list along with configs
         for persistent access across all task repetitions.
 
+        Output fields:
+
+        - `metadata` - Collection timestamp and thread info
+        - `agents` - Dict mapping agent names to their traces (messages, execution data)
+        - `models` - Dict mapping model names to their traces (API calls, timing, errors)
+        - `tools` - Dict mapping tool names to their traces (invocations, parameters)
+        - `simulators` - Dict mapping simulator names to their traces (attempts, outcomes)
+        - `callbacks` - Dict mapping callback names to their traces (custom data)
+        - `environment` - Direct traces from the environment (not nested), or `None` if not present
+        - `user` - Direct traces from the user simulator (not nested), or `None` if not present
+        - `other` - Dict for any other registered components
+
         Returns:
-            Structured dictionary containing:
-            - metadata: Collection timestamp and thread info
-            - agents: Dict mapping agent names to their traces (messages, execution data)
-            - models: Dict mapping model names to their traces (API calls, timing, errors)
-            - tools: Dict mapping tool names to their traces (invocations, parameters)
-            - simulators: Dict mapping simulator names to their traces (attempts, outcomes)
-            - callbacks: Dict mapping callback names to their traces (custom data)
-            - environment: Direct traces from the environment (not nested), or None if not present
-            - user: Direct traces from the user simulator (not nested), or None if not present
-            - other: Dict for any other registered components
+            Structured dictionary containing execution traces from all registered components.
 
         How to use:
             This method is called automatically by `run()` after each task repetition:
@@ -366,18 +369,21 @@ class Benchmark(ABC):
         The collected configs are stored in `benchmark.reports` list along with traces
         for persistent access across all task repetitions.
 
+        Output fields:
+
+        - `metadata` - Collection timestamp and thread info
+        - `agents` - Dict mapping agent names to their config (settings, parameters)
+        - `models` - Dict mapping model names to their config (model IDs, parameters)
+        - `tools` - Dict mapping tool names to their config (specifications, settings)
+        - `simulators` - Dict mapping simulator names to their config (parameters, templates)
+        - `callbacks` - Dict mapping callback names to their config (settings)
+        - `environment` - Direct config from the environment (not nested), or `None` if not present
+        - `user` - Direct config from the user simulator (not nested), or `None` if not present
+        - `other` - Dict for any other registered components
+        - `benchmark` - Benchmark-level configuration (git, system, packages)
+
         Returns:
-            Structured dictionary containing:
-            - metadata: Collection timestamp and thread info
-            - agents: Dict mapping agent names to their config (settings, parameters)
-            - models: Dict mapping model names to their config (model IDs, parameters)
-            - tools: Dict mapping tool names to their config (specifications, settings)
-            - simulators: Dict mapping simulator names to their config (parameters, templates)
-            - callbacks: Dict mapping callback names to their config (settings)
-            - environment: Direct config from the environment (not nested), or None if not present
-            - user: Direct config from the user simulator (not nested), or None if not present
-            - other: Dict for any other registered components
-            - benchmark: Benchmark-level configuration (git, system, packages)
+            Structured dictionary containing configuration from all registered components.
 
         How to use:
             This method is called automatically by `run()` after each task repetition:
@@ -548,7 +554,7 @@ class Benchmark(ABC):
             ```python
             def setup_user(self, agent_data: Dict[str, Any], environment: Environment, task: Task) -> User:
                 framework = agent_data.get("framework", "default")
-                return UserSimulator(
+                return LLMUser(
                     profile=task.environment_data.get("user_profile"),
                     scenario=task.metadata["scenario"],
                     model=self.user_model,
@@ -842,7 +848,7 @@ class Benchmark(ABC):
         """Execute agents with optional user interaction loop.
 
         This method orchestrates the agent-user interaction pattern. When a user is
-        present, the user initiates the conversation using `User.get_intial_query`.
+        present, the user initiates the conversation using `user.get_initial_query()`.
         If no user is present, ``task.query`` is used as the initial query.
 
         Interaction Flow:
@@ -891,7 +897,7 @@ class Benchmark(ABC):
                 break
 
             # Simulate user response (handles message recording, stop token detection, turn counting)
-            user_response = user.simulate_response(str(final_answer) if final_answer else "")
+            user_response = user.respond(str(final_answer) if final_answer else "")
 
             # Check if user is done (cheap state check - no LLM call)
             if user.is_done():

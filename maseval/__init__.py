@@ -33,7 +33,7 @@ from .core.simulator import (
     UserSimulatorError,
 )
 from .core.model import ModelAdapter, ChatResponse
-from .core.user import User, TerminationReason
+from .core.user import User, LLMUser, AgenticLLMUser, TerminationReason
 from .core.evaluator import Evaluator
 from .core.history import MessageHistory, ToolInvocationHistory
 from .core.tracing import TraceableMixin
@@ -75,6 +75,8 @@ __all__ = [
     "UserSimulatorError",
     # User simulation
     "User",
+    "LLMUser",
+    "AgenticLLMUser",
     "TerminationReason",
     # Evaluation
     "Evaluator",

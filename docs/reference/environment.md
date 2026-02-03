@@ -14,4 +14,4 @@ Some agent adapters expose helper tools or user-simulation tools that can be use
 
 ::: maseval.interface.agents.smolagents.SmolAgentAdapter
 
-::: maseval.interface.agents.smolagents.SmolAgentUser
+::: maseval.interface.agents.smolagents.SmolAgentLLMUser

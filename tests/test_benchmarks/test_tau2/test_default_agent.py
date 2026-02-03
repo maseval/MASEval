@@ -765,6 +765,7 @@ class TestTau2BenchmarkMethods:
         user = benchmark.setup_user({}, mock_env, task)
 
         assert user is not None
+        assert isinstance(user, Tau2User)
         assert "Helpful customer" in user.scenario
         assert "Order inquiry" in user.scenario
         assert "Order #123" in user.scenario
@@ -791,6 +792,7 @@ class TestTau2BenchmarkMethods:
         user = benchmark.setup_user({}, mock_env, task)
 
         assert user is not None
+        assert isinstance(user, Tau2User)
         assert user.scenario == "Simple string instructions"
 
     def test_setup_user_empty_instructions(self):
@@ -811,6 +813,7 @@ class TestTau2BenchmarkMethods:
         user = benchmark.setup_user({}, mock_env, task)
 
         assert user is not None
+        assert isinstance(user, Tau2User)
         assert user.scenario == ""
 
     def test_setup_evaluators(self, sample_task):

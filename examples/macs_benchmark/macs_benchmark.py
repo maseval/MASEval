@@ -148,7 +148,7 @@ class SmolagentsMACSUser(MACSUser):
             output_type = "string"
 
             def forward(self, question: str) -> str:
-                return user.simulate_response(question)
+                return user.respond(question)
 
         return UserInputTool()
 
@@ -393,7 +393,7 @@ class LangGraphMACSUser(MACSUser):
 
         def user_input(question: str) -> str:
             """Ask the user a question to understand their complete requirements."""
-            return self.simulate_response(question)
+            return self.respond(question)
 
         return StructuredTool.from_function(
             func=user_input,

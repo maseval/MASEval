@@ -217,7 +217,7 @@ class TestExecutionLoopWithUser:
         benchmark.execution_loop(agents, task, env, user=user)
 
         # max_turns=3 with initial_query counting as turn 1
-        # After 2 simulate_response calls, turn_count=3, is_done=True
+        # After 2 respond() calls, turn_count=3, is_done=True
         assert len(benchmark.run_agents_calls) == 2
 
     def test_stops_when_user_done_via_stop_token(self, dummy_model):

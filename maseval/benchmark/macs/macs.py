@@ -48,6 +48,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
 from maseval import (
     AgentAdapter,
     Benchmark,
+    User,
     Environment,
     Evaluator,
     MessageHistory,
@@ -56,7 +57,7 @@ from maseval import (
     TaskExecutionStatus,
     ToolInvocationHistory,
     ToolLLMSimulator,
-    User,
+    LLMUser,
     AgentError,
     EnvironmentError,
     validate_arguments_from_schema,
@@ -456,10 +457,10 @@ class MACSEvaluator(Evaluator):
 # =============================================================================
 
 
-class MACSUser(User):
+class MACSUser(LLMUser):
     """MACS-specific user simulator with conversation limits.
 
-    Extends the base User class with MACS-specific behavior:
+    Extends the LLMUser class with MACS-specific behavior:
     - Maximum 5 turns of interaction (as per MACS paper)
     - </stop> token detection for natural conversation ending
     - User profile and scenario-aware responses

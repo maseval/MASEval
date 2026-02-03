@@ -1,10 +1,10 @@
-"""Tests for AgenticUser and AgenticUserLLMSimulator."""
+"""Tests for AgenticLLMUser and AgenticLLMUserLLMSimulator."""
 
 import pytest
 import json
 from typing import Any, Dict, List, Optional, Union
 from unittest.mock import MagicMock
-from maseval.core.user import AgenticUser
+from maseval.core.user import AgenticLLMUser
 from maseval.core.model import ModelAdapter, ChatResponse
 
 
@@ -37,7 +37,7 @@ class MockModelAdapter(ModelAdapter):
         return chat_response
 
 
-class DummyAgenticUser(AgenticUser):
+class DummyAgenticLLMUser(AgenticLLMUser):
     def get_tool(self):
         return None
 
@@ -51,7 +51,7 @@ def mock_tool():
 
 @pytest.mark.core
 def test_agentic_user_tool_usage(mock_tool):
-    """Test that AgenticUser can execute a tool loop."""
+    """Test that AgenticLLMUser can execute a tool loop."""
 
     # Mock model responses:
     # 1. Thought + Tool Call
@@ -63,10 +63,10 @@ def test_agentic_user_tool_usage(mock_tool):
 
     model = MockModelAdapter([response_1, response_2])
 
-    user = DummyAgenticUser(name="AgenticTester", model=model, user_profile={}, scenario="Testing tools", tools={"mock_tool": mock_tool})
+    user = DummyAgenticLLMUser(name="AgenticTester", model=model, user_profile={}, scenario="Testing tools", tools={"mock_tool": mock_tool})
 
     # Simulate response
-    final_response = user.simulate_response("Please check.")
+    final_response = user.respond("Please check.")
 
     # Verification
     assert final_response == "The tool worked."
@@ -81,18 +81,18 @@ def test_agentic_user_tool_usage(mock_tool):
 
 @pytest.mark.core
 def test_agentic_user_max_steps(mock_tool):
-    """Test that AgenticUser respects max_internal_steps."""
+    """Test that AgenticLLMUser respects max_internal_steps."""
 
     # Always return tool call
     response = json.dumps({"text": "Looping...", "tool_calls": [{"name": "mock_tool", "arguments": {}}]})
 
     model = MockModelAdapter([response])
 
-    user = DummyAgenticUser(
+    user = DummyAgenticLLMUser(
         name="Looper", model=model, user_profile={}, scenario="Infinite loop", tools={"mock_tool": mock_tool}, max_internal_steps=3
     )
 
-    final_response = user.simulate_response("Go.")
+    final_response = user.respond("Go.")
 
     assert "I need to stop" in final_response
     assert mock_tool.call_count == 3
@@ -100,11 +100,11 @@ def test_agentic_user_max_steps(mock_tool):
 
 @pytest.mark.core
 def test_agentic_user_no_tools():
-    """Test that AgenticUser works without tools."""
+    """Test that AgenticLLMUser works without tools."""
     response = json.dumps({"text": "Hello! How can I help?", "tool_calls": []})
     model = MockModelAdapter([response])
 
-    user = DummyAgenticUser(
+    user = DummyAgenticLLMUser(
         name="NoToolUser",
         model=model,
         user_profile={},
@@ -112,7 +112,7 @@ def test_agentic_user_no_tools():
         tools={},
     )
 
-    final_response = user.simulate_response("Hi there!")
+    final_response = user.respond("Hi there!")
 
     assert final_response == "Hello! How can I help?"
     assert len(user.messages) == 2
@@ -120,7 +120,7 @@ def test_agentic_user_no_tools():
 
 @pytest.mark.core
 def test_agentic_user_tool_error(mock_tool):
-    """Test that AgenticUser handles tool execution errors gracefully."""
+    """Test that AgenticLLMUser handles tool execution errors gracefully."""
     # Make tool raise an error
     mock_tool.side_effect = ValueError("Tool failed!")
 
@@ -129,7 +129,7 @@ def test_agentic_user_tool_error(mock_tool):
 
     model = MockModelAdapter([response_1, response_2])
 
-    user = DummyAgenticUser(
+    user = DummyAgenticLLMUser(
         name="ErrorHandler",
         model=model,
         user_profile={},
@@ -137,7 +137,7 @@ def test_agentic_user_tool_error(mock_tool):
         tools={"mock_tool": mock_tool},
     )
 
-    final_response = user.simulate_response("Please check.")
+    final_response = user.respond("Please check.")
 
     # Should continue despite error
     assert final_response == "I see there was an error."
@@ -146,12 +146,12 @@ def test_agentic_user_tool_error(mock_tool):
 
 @pytest.mark.core
 def test_agentic_user_stop_token():
-    """Test that AgenticUser can emit stop tokens."""
+    """Test that AgenticLLMUser can emit stop tokens."""
     # Response with stop token (no tool calls and contains satisfaction indicator)
     response = json.dumps({"text": "I am satisfied with the response. <STOP>", "tool_calls": []})
     model = MockModelAdapter([response])
 
-    user = DummyAgenticUser(
+    user = DummyAgenticLLMUser(
         name="StopUser",
         model=model,
         user_profile={},
@@ -159,21 +159,21 @@ def test_agentic_user_stop_token():
         tools={},
     )
 
-    final_response = user.simulate_response("Here is your answer.")
+    final_response = user.respond("Here is your answer.")
 
     assert "satisfied" in final_response
 
 
 @pytest.mark.core
 def test_agentic_user_parse_error():
-    """Test that AgenticUser handles parse errors with retry."""
+    """Test that AgenticLLMUser handles parse errors with retry."""
     # First response is invalid JSON, second is valid
     invalid_response = "This is not valid JSON"
     valid_response = json.dumps({"text": "Now valid.", "tool_calls": []})
 
     model = MockModelAdapter([invalid_response, valid_response])
 
-    user = DummyAgenticUser(
+    user = DummyAgenticLLMUser(
         name="ParseRetry",
         model=model,
         user_profile={},
@@ -182,7 +182,7 @@ def test_agentic_user_parse_error():
     )
 
     # The behavior depends on implementation - may return error or retry
-    final_response = user.simulate_response("Test.")
+    final_response = user.respond("Test.")
 
     # Should handle the invalid JSON somehow
     assert final_response is not None
@@ -190,7 +190,7 @@ def test_agentic_user_parse_error():
 
 @pytest.mark.core
 def test_agentic_user_multiple_tool_calls(mock_tool):
-    """Test that AgenticUser can execute multiple tool calls."""
+    """Test that AgenticLLMUser can execute multiple tool calls."""
     response_1 = json.dumps(
         {
             "text": "I need to call multiple tools.",
@@ -204,7 +204,7 @@ def test_agentic_user_multiple_tool_calls(mock_tool):
 
     model = MockModelAdapter([response_1, response_2])
 
-    user = DummyAgenticUser(
+    user = DummyAgenticLLMUser(
         name="MultiTool",
         model=model,
         user_profile={},
@@ -212,7 +212,7 @@ def test_agentic_user_multiple_tool_calls(mock_tool):
         tools={"mock_tool": mock_tool},
     )
 
-    final_response = user.simulate_response("Execute all.")
+    final_response = user.respond("Execute all.")
 
     assert final_response == "Both tools executed."
     assert mock_tool.call_count == 2
@@ -220,13 +220,13 @@ def test_agentic_user_multiple_tool_calls(mock_tool):
 
 @pytest.mark.core
 def test_agentic_user_unknown_tool():
-    """Test that AgenticUser handles unknown tool names."""
+    """Test that AgenticLLMUser handles unknown tool names."""
     response_1 = json.dumps({"text": "Let me use an unknown tool.", "tool_calls": [{"name": "nonexistent_tool", "arguments": {}}]})
     response_2 = json.dumps({"text": "That tool didn't work.", "tool_calls": []})
 
     model = MockModelAdapter([response_1, response_2])
 
-    user = DummyAgenticUser(
+    user = DummyAgenticLLMUser(
         name="UnknownTool",
         model=model,
         user_profile={},
@@ -234,7 +234,7 @@ def test_agentic_user_unknown_tool():
         tools={},
     )
 
-    final_response = user.simulate_response("Test.")
+    final_response = user.respond("Test.")
 
     # Should continue despite unknown tool
     assert final_response == "That tool didn't work."
@@ -242,13 +242,13 @@ def test_agentic_user_unknown_tool():
 
 @pytest.mark.core
 def test_agentic_user_gather_traces(mock_tool):
-    """Test that AgenticUser can gather traces."""
+    """Test that AgenticLLMUser can gather traces."""
     response_1 = json.dumps({"text": "Using tool.", "tool_calls": [{"name": "mock_tool", "arguments": {"key": "value"}}]})
     response_2 = json.dumps({"text": "Done.", "tool_calls": []})
 
     model = MockModelAdapter([response_1, response_2])
 
-    user = DummyAgenticUser(
+    user = DummyAgenticLLMUser(
         name="TraceTester",
         model=model,
         user_profile={},
@@ -256,7 +256,7 @@ def test_agentic_user_gather_traces(mock_tool):
         tools={"mock_tool": mock_tool},
     )
 
-    user.simulate_response("Start.")
+    user.respond("Start.")
     traces = user.gather_traces()
 
     # Check that traces is a dict with expected structure
@@ -272,7 +272,7 @@ class TestGenerateToolDefinitions:
     def test_generate_tool_definitions_empty(self):
         """Empty tools dict generates empty definitions."""
         model = MockModelAdapter([json.dumps({"text": "Hi", "tool_calls": []})])
-        user = DummyAgenticUser(
+        user = DummyAgenticLLMUser(
             name="Empty",
             model=model,
             user_profile={},
@@ -286,7 +286,7 @@ class TestGenerateToolDefinitions:
     def test_generate_tool_definitions_with_tools(self, mock_tool):
         """Tools generate proper definitions."""
         model = MockModelAdapter([json.dumps({"text": "Hi", "tool_calls": []})])
-        user = DummyAgenticUser(
+        user = DummyAgenticLLMUser(
             name="WithTools",
             model=model,
             user_profile={},

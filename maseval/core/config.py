@@ -72,12 +72,15 @@ class ConfigurableMixin:
         This method is called by the Benchmark before evaluation to collect
         all configuration information. The returned dictionary must be JSON-serializable.
 
-        Returns:
-            Dictionary containing configuration with standardized structure:
-            - type: Component class name
-            - gathered_at: ISO timestamp of when config was collected
+        Output fields:
 
-            Subclasses typically add additional component-specific configuration.
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp of when config was collected
+
+        Subclasses typically add additional component-specific configuration.
+
+        Returns:
+            Dictionary containing configuration with standardized structure.
 
         How to use:
             Override this method and call `super().gather_config()` to extend

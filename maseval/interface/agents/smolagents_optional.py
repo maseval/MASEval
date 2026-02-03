@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from smolagents import UserInputTool
 
 if TYPE_CHECKING:
-    from maseval.interface.agents.smolagents import SmolAgentUser
+    from maseval.interface.agents.smolagents import SmolAgentLLMUser
 
 __all__ = ["SmolAgentUserSimulationInputTool"]
 
@@ -19,17 +19,17 @@ class SmolAgentUserSimulationInputTool(UserInputTool):
     """A tool that simulates user input for smolagents using the User simulator.
 
     This class directly inherits from `smolagents.UserInputTool` and can be passed
-    to any smolagent. It wraps a `SmolAgentUser` and intercepts user input requests,
+    to any smolagent. It wraps a `SmolAgentLLMUser` and intercepts user input requests,
     routing them through the user's LLM-based response simulation.
 
     Note:
-        Don't instantiate this directly. Use `SmolAgentUser.get_tool()` instead.
+        Don't instantiate this directly. Use `SmolAgentLLMUser.get_tool()` instead.
 
     Example:
         ```python
-        from maseval.interface.agents.smolagents import SmolAgentUser
+        from maseval.interface.agents.smolagents import SmolAgentLLMUser
 
-        user = SmolAgentUser(model=model, persona="Helpful user", scenario="Book a flight")
+        user = SmolAgentLLMUser(model=model, persona="Helpful user", scenario="Book a flight")
         tool = user.get_tool()  # Returns SmolAgentUserSimulationInputTool instance
 
         # Pass to your smolagent
@@ -37,28 +37,28 @@ class SmolAgentUserSimulationInputTool(UserInputTool):
         ```
 
     Attributes:
-        _user: The SmolAgentUser instance that handles response simulation.
+        _user: The SmolAgentLLMUser instance that handles response simulation.
     """
 
-    def __init__(self, user: "SmolAgentUser"):
-        """Initialize the tool with a SmolAgentUser.
+    def __init__(self, user: "SmolAgentLLMUser"):
+        """Initialize the tool with a SmolAgentLLMUser.
 
         Args:
-            user: The SmolAgentUser instance to wrap for response simulation.
+            user: The SmolAgentLLMUser instance to wrap for response simulation.
         """
         super().__init__()
         self._user = user
 
     def forward(self, question: str) -> str:
-        """Simulate asking the user a question and getting a response.
+        """Ask the user a question and get a response.
 
         This method is called by smolagents when the agent needs user input.
-        It delegates to the wrapped SmolAgentUser's simulate_response method.
+        It delegates to the wrapped SmolAgentLLMUser's respond method.
 
         Args:
-            question: The question to ask the simulated user.
+            question: The question to ask the user.
 
         Returns:
-            The simulated user's response based on their persona and scenario.
+            The user's response.
         """
-        return self._user.simulate_response(question)
+        return self._user.respond(question)

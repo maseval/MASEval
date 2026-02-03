@@ -34,6 +34,7 @@ dependencies = [
 smolagents = ["smolagents>=1.21.3"]
 langgraph = ["langgraph>=0.6.0"]
 llamaindex = ["llama-index-core>=0.12.0"]
+camel = ["camel-ai>=0.2.0"]
 
 # Inference engines
 anthropic = ["anthropic>=0.40.0"]
@@ -48,7 +49,7 @@ langfuse = ["langfuse>=3.3.4"]
 
 # Dependencies for running examples (only what's actually used)
 examples = [
-    "maseval[smolagents,langgraph,llamaindex,anthropic,openai,google-genai,litellm,langfuse]",
+    "maseval[smolagents,langgraph,llamaindex,camel,anthropic,openai,google-genai,litellm,langfuse]",
     # Additional integrations used in examples
     "langchain>=0.3.27",
     "langchain-google-genai>=2.1.12",
@@ -103,6 +104,7 @@ markers = [
     "smolagents: Tests that specifically require smolagents",
     "langgraph: Tests that specifically require langgraph",
     "llamaindex: Tests that specifically require llama-index-core",
+    "camel: Tests that specifically require camel-ai",
 ]
 
 [tool.coverage.run]

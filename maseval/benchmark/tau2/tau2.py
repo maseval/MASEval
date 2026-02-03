@@ -61,7 +61,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Callable
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
-from maseval.core.user import AgenticUser
+from maseval.core.user import AgenticLLMUser
 from maseval.core.callback import BenchmarkCallback
 
 from maseval.benchmark.tau2.environment import Tau2Environment
@@ -73,10 +73,10 @@ from maseval.benchmark.tau2.evaluator import Tau2Evaluator
 # =============================================================================
 
 
-class Tau2User(AgenticUser):
+class Tau2User(AgenticLLMUser):
     """Tau2-specific user simulator with customer service personas.
 
-    Extends the AgenticUser class with tau2-specific behavior:
+    Extends the AgenticLLMUser class with tau2-specific behavior:
     - Customer personas from user_scenario
     - Domain-aware responses (airline, retail, telecom)
     - Multi-turn interaction support

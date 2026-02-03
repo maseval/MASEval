@@ -387,6 +387,82 @@ def calculate_average(numbers: list) -> float:
     """
 ```
 
+### mkdocs Rendering
+
+This project uses mkdocstrings to render docstrings as HTML. Follow these rules to ensure proper rendering:
+
+**Lists require a blank line before them:**
+
+```python
+# Bad - renders as one paragraph
+"""Subclasses must provide:
+- method_one(): Description
+- method_two(): Description
+"""
+
+# Good - renders as proper bullet list
+"""Subclasses must provide:
+
+- `method_one()` - Description
+- `method_two()` - Description
+"""
+```
+
+**Return descriptions must be single-line** (multi-line creates multiple table rows):
+
+```python
+# Bad
+"""
+Returns:
+    TerminationReason indicating why is_done() returns True,
+    or NOT_TERMINATED if the interaction is still ongoing.
+"""
+
+# Good
+"""
+Returns:
+    Why `is_done()` returns True, or `NOT_TERMINATED` if still ongoing.
+"""
+```
+
+**For dictionary returns, document fields in the docstring body** using "Output fields:":
+
+```python
+# Bad - creates multiple table rows in Returns
+"""
+Returns:
+    Dictionary containing:
+    - `name` - User identifier
+    - `profile` - User profile data
+"""
+
+# Good - fields in body, single-line Returns
+"""
+Gather execution traces from this user.
+
+Output fields:
+
+- `name` - User identifier
+- `profile` - User profile data
+- `message_count` - Number of messages in history
+
+Returns:
+    Dictionary containing user state and interaction data.
+"""
+```
+
+**HTML-like strings must be in backticks** (otherwise stripped as HTML):
+
+```python
+# Bad - </stop> disappears
+"""Uses "</stop>" to signal satisfaction."""
+
+# Good
+"""Uses `"</stop>"` to signal satisfaction."""
+```
+
+**Use backticks for code references** - method names, parameters, and values: `` `is_done()` ``, `` `stop_tokens` ``, `` `None` ``
+
 ## Early-Release Status
 
 **This project is early-release. Clean, maintainable code is the priority - not backwards compatibility.**

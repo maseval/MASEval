@@ -23,4 +23,4 @@ pip install langgraph
 
 ::: maseval.interface.agents.langgraph.LangGraphAgentAdapter
 
-::: maseval.interface.agents.langgraph.LangGraphUser
+::: maseval.interface.agents.langgraph.LangGraphLLMUser

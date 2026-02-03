@@ -9,7 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Interface**
+
+- CAMEL-AI integration: `CamelAgentAdapter` and `CamelLLMUser` for evaluating CAMEL-AI ChatAgent-based systems (PR: #22)
+- Added `CamelAgentUser` for using a CAMEL ChatAgent as the user in agent-to-agent evaluation (PR: #22)
+- Added `camel_role_playing_execution_loop()` for benchmarks using CAMEL's RolePlaying semantics (PR: #22)
+- Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
+
 ### Changed
+
+**Interface**
+
+- Renamed framework-specific `LLMUser` subclasses for clarity (PR: #22):
+  - `SmolAgentUser` → `SmolAgentLLMUser`
+  - `LangGraphUser` → `LangGraphLLMUser`
+  - `LlamaIndexUser` → `LlamaIndexLLMUser`
 
 ### Fixed
 
@@ -126,7 +140,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Interface**
 
-- [LlamaIndex](https://github.com/run-llama/llama_index) integration: `LlamaIndexAgentAdapter` and `LlamaIndexUser` for evaluating LlamaIndex workflow-based agents (PR: #7)
+- [LlamaIndex](https://github.com/run-llama/llama_index) integration: `LlamaIndexAgentAdapter` and `LlamaIndexLLMUser` for evaluating LlamaIndex workflow-based agents (PR: #7)
 - The `logs` property inside `SmolAgentAdapter` and `LanggraphAgentAdapter` are now properly filled. (PR: #3)
 
 **Examples**

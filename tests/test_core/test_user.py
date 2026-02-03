@@ -1,12 +1,12 @@
-"""Test User class functionality.
+"""Test LLMUser class functionality.
 
-These tests verify the User base class (maseval.core.user.User) behavior:
+These tests verify the LLMUser class (maseval.core.user.LLMUser) behavior:
 - Conversation history management (MessageHistory)
 - Multi-turn interaction (max_turns, turn counting)
 - Early stopping via stop tokens
 - Optional initial prompts and LLM-generated initial queries
 
-Note: This tests the User class, NOT the UserLLMSimulator class.
+Note: This tests the LLMUser class, NOT the UserLLMSimulator class.
 UserLLMSimulator is tested in test_llm_simulator.py.
 """
 
@@ -15,14 +15,14 @@ import pytest
 
 @pytest.mark.core
 class TestUser:
-    """Tests for User base class basics."""
+    """Tests for LLMUser basics."""
 
-    def test_user_simulate_response_updates_messages(self, dummy_user):
-        """Test that simulate_response adds to message history."""
+    def test_user_respond_updates_messages(self, dummy_user):
+        """Test that respond adds to message history."""
         initial_len = len(dummy_user.messages)
 
-        # simulate_response adds assistant message, then user response
-        dummy_user.simulate_response("How can I help?")
+        # respond adds assistant message, then user response
+        dummy_user.respond("How can I help?")
 
         # Should have added 2 messages: assistant question + user response
         assert len(dummy_user.messages) == initial_len + 2
@@ -30,7 +30,7 @@ class TestUser:
     def test_user_messages_includes_both_sides(self, dummy_user):
         """Test that messages includes both user and assistant messages."""
         # Simulate a response (adds assistant + user messages)
-        dummy_user.simulate_response("Question for user")
+        dummy_user.respond("Question for user")
 
         messages = list(dummy_user.messages)
         roles = [m["role"] for m in messages]
@@ -120,27 +120,27 @@ class TestUserMultiTurn:
 
         assert not user.is_done()
 
-    def test_simulate_response_increments_turn_count(self, dummy_model):
-        """Each simulate_response() call increments _turn_count."""
+    def test_respond_increments_turn_count(self, dummy_model):
+        """Each respond() call increments _turn_count."""
         from conftest import DummyUser
 
         user = DummyUser(name="test", model=dummy_model, max_turns=5)
         initial_count = user._turn_count
 
-        user.simulate_response("Question 1")
+        user.respond("Question 1")
         assert user._turn_count == initial_count + 1
 
-        user.simulate_response("Question 2")
+        user.respond("Question 2")
         assert user._turn_count == initial_count + 2
 
-    def test_simulate_response_returns_empty_when_done(self, dummy_model):
+    def test_respond_returns_empty_when_done(self, dummy_model):
         """Returns empty string when is_done() is True."""
         from conftest import DummyUser
 
         user = DummyUser(name="test", model=dummy_model, max_turns=1)
         user._turn_count = 1  # Already at max
 
-        response = user.simulate_response("More questions?")
+        response = user.respond("More questions?")
         assert response == ""
 
     def test_turn_count_starts_at_zero_without_initial_query(self, dummy_model):
@@ -219,7 +219,7 @@ class TestUserStopTokens:
         )
         user.simulator.return_value = "Thanks! </stop>"  # type: ignore[union-attr]  # mock
 
-        user.simulate_response("Here's your answer")
+        user.respond("Here's your answer")
 
         assert user._stopped
 
@@ -236,7 +236,7 @@ class TestUserStopTokens:
         )
         user.simulator.return_value = "Perfect, thanks! </stop>"  # type: ignore[union-attr]  # mock
 
-        response = user.simulate_response("Booking confirmed!")
+        response = user.respond("Booking confirmed!")
 
         assert "</stop>" not in response
         assert "Perfect, thanks!" in response
@@ -254,7 +254,7 @@ class TestUserStopTokens:
         )
         user.simulator.return_value = "Done </stop>"  # type: ignore[union-attr]  # mock
 
-        user.simulate_response("Result")
+        user.respond("Result")
 
         assert user.is_done()
 
@@ -271,7 +271,7 @@ class TestUserStopTokens:
         )
         user.simulator.return_value = "Thanks! </stop>"  # type: ignore[union-attr]  # mock (lowercase)
 
-        user.simulate_response("Answer")
+        user.respond("Answer")
 
         assert user._stopped
 
@@ -288,7 +288,7 @@ class TestUserStopTokens:
         )
         user.simulator.return_value = "</stop>"  # type: ignore[union-attr]  # mock
 
-        response = user.simulate_response("Done!")
+        response = user.respond("Done!")
 
         assert response == "Thank you, that's all I needed!"
         assert user._stopped
@@ -307,7 +307,7 @@ class TestUserStopTokens:
         user.simulator.return_value = "Thank you, all is clear </stop>"  # type: ignore[union-attr]  # mock
 
         initial_turn_count = user._turn_count
-        user.simulate_response("Here is your result")
+        user.respond("Here is your result")
 
         # Turn count should increment even though stop token was detected
         assert user._turn_count == initial_turn_count + 1
@@ -340,7 +340,7 @@ class TestUserStopTokens:
         )
         user.simulator.return_value = "All finished </done>"  # type: ignore[assignment]
 
-        user.simulate_response("Here's your answer")
+        user.respond("Here's your answer")
 
         assert user._stopped
         assert user._stop_reason == "</done>"
@@ -451,13 +451,13 @@ class TestUserMessageHistory:
         assert user.messages[0]["content"] == "Hello agent"
 
     def test_assistant_message_recorded(self, dummy_model):
-        """simulate_response() records assistant message before responding."""
+        """respond() records assistant message before responding."""
         from conftest import DummyUser
 
         user = DummyUser(name="test", model=dummy_model, max_turns=3)
         user.simulator.return_value = "User reply"  # type: ignore[union-attr]  # mock
 
-        user.simulate_response("Agent says hello")
+        user.respond("Agent says hello")
 
         # Should have: assistant message + user response
         assert len(user.messages) == 2
@@ -465,13 +465,13 @@ class TestUserMessageHistory:
         assert user.messages[0]["content"] == "Agent says hello"
 
     def test_user_response_recorded(self, dummy_model):
-        """simulate_response() records user response."""
+        """respond() records user response."""
         from conftest import DummyUser
 
         user = DummyUser(name="test", model=dummy_model, max_turns=3)
         user.simulator.return_value = "Thanks for the help"  # type: ignore[union-attr]  # mock
 
-        user.simulate_response("Here's your answer")
+        user.respond("Here's your answer")
 
         assert user.messages[-1]["role"] == "user"
         assert user.messages[-1]["content"] == "Thanks for the help"
@@ -489,8 +489,8 @@ class TestUserMessageHistory:
         user.simulator.side_effect = ["Monday works", "Yes, book it"]  # type: ignore[union-attr]  # mock
 
         # Two agent-user exchanges
-        user.simulate_response("When do you want to travel?")
-        user.simulate_response("Shall I book it?")
+        user.respond("When do you want to travel?")
+        user.respond("Shall I book it?")
 
         messages = list(user.messages)
         assert len(messages) == 5  # initial + 2*(assistant + user)
@@ -514,7 +514,7 @@ class TestUserMessageHistory:
         )
         user.simulator.return_value = "Got it"  # type: ignore[union-attr]  # mock
 
-        user.simulate_response("Agent response")
+        user.respond("Agent response")
 
         traces = user.gather_traces()
 

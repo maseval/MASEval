@@ -9,9 +9,9 @@ import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List
 
-from maseval import AgentAdapter, MessageHistory, User
+from maseval import AgentAdapter, MessageHistory, LLMUser
 
-__all__ = ["LlamaIndexAgentAdapter", "LlamaIndexUser"]
+__all__ = ["LlamaIndexAgentAdapter", "LlamaIndexLLMUser"]
 
 # Only import LlamaIndex types for type checking, not at runtime
 if TYPE_CHECKING:
@@ -432,16 +432,17 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         return converted_msg
 
 
-class LlamaIndexUser(User):
-    """A LlamaIndex-specific user that provides a tool for user interaction.
+class LlamaIndexLLMUser(LLMUser):
+    """A LlamaIndex-specific LLM user that provides a tool for user interaction.
 
+    Extends LLMUser to provide a LlamaIndex-compatible tool via get_tool().
     Requires llama-index-core to be installed.
 
     Example:
         ```python
-        from maseval.interface.agents.llamaindex import LlamaIndexUser
+        from maseval.interface.agents.llamaindex import LlamaIndexLLMUser
 
-        user = LlamaIndexUser(...)
+        user = LlamaIndexLLMUser(...)
         tool = user.get_tool()  # Returns a LlamaIndex FunctionTool
         ```
     """
@@ -450,7 +451,7 @@ class LlamaIndexUser(User):
         """Get a LlamaIndex-compatible tool for user interaction.
 
         Returns:
-            LlamaIndex FunctionTool that wraps simulate_response
+            LlamaIndex FunctionTool that wraps the respond method.
         """
         _check_llamaindex_installed()
         from llama_index.core.tools import FunctionTool
@@ -466,7 +467,7 @@ class LlamaIndexUser(User):
             Returns:
                 The user's response
             """
-            return user_instance.simulate_response(question)
+            return user_instance.respond(question)
 
         return FunctionTool.from_defaults(
             fn=ask_user,
