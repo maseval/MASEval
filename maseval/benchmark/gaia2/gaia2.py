@@ -631,9 +631,11 @@ class DefaultGaia2AgentAdapter(AgentAdapter):
         """Get message history.
 
         Returns:
-            List of messages
+            MessageHistory object
         """
-        return self._agent.get_messages()
+        from maseval.core.history import MessageHistory
+
+        return MessageHistory(self._agent.get_messages())
 
     def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces.
@@ -641,12 +643,9 @@ class DefaultGaia2AgentAdapter(AgentAdapter):
         Returns:
             Trace dictionary
         """
-        history = self.get_messages()
         return {
             **super().gather_traces(),
             "name": self.name,
-            "message_count": len(history),
-            "messages": history,
             "iteration_count": self._agent.iteration_count,
             "terminated": self._agent._terminated,
         }
