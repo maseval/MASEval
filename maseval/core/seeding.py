@@ -179,6 +179,32 @@ class DefaultSeedGenerator(SeedGenerator):
         tools_gen = env_gen.child("tools")
         weather_seed = tools_gen.derive_seed("weather")  # Path: "environment/tools/weather"
         ```
+
+    Thread Safety:
+        DefaultSeedGenerator is thread-safe by design through isolation:
+
+        1. **Isolated logs per task**: `for_task()` creates a fresh seed log, so
+           different tasks running in parallel threads don't share state.
+
+        2. **Root generator is read-only**: The root generator only stores the
+           global_seed and is never mutated after construction.
+
+        3. **Children share parent's log**: Within a task, `child()` and
+           `for_repetition()` share the same seed log. This is safe because
+           a single task/repetition runs in a single thread.
+
+        Parallel execution example::
+
+            Thread 1 (task A, rep 0):
+              task_gen_A = root.for_task("A").for_repetition(0)  # Fresh log
+              child = task_gen_A.child("env")                     # Shares task_gen_A's log
+
+            Thread 2 (task B, rep 0):
+              task_gen_B = root.for_task("B").for_repetition(0)  # Different fresh log
+              child = task_gen_B.child("env")                     # Shares task_gen_B's log
+
+        If implementing a custom SeedGenerator subclass, ensure similar thread
+        isolation by creating fresh state in `for_task()`.
     """
 
     def __init__(

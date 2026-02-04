@@ -136,6 +136,104 @@ Child generators share the same seed log, so all derived seeds are recorded toge
 
     Both approaches produce identical seeds. Use `child()` when it makes your code cleaner.
 
+## How Seed Derivation Works
+
+This section demonstrates the core mechanics of seed derivation with concrete examples.
+
+### Basic Example
+
+```python
+from maseval import DefaultSeedGenerator
+
+# Create a generator with a global seed
+gen = DefaultSeedGenerator(global_seed=0)
+
+# Scope to a task and repetition (required before deriving seeds)
+task_gen = gen.for_task("task_1").for_repetition(0)
+
+# Derive seeds for components
+agent_seed = task_gen.derive_seed("agent")
+print(agent_seed)  # 778051139
+
+# Different paths produce different seeds
+env_seed = task_gen.derive_seed("environment")
+print(env_seed)  # 1348051591
+
+# Child generators extend the path
+tools_gen = task_gen.child("tools")
+weather_seed = tools_gen.derive_seed("weather")  # Path: "tools/weather"
+print(weather_seed)  # 1528663065
+```
+
+### Determinism: Same Path = Same Seed
+
+The key property of the seed generator is **determinism**: the same path always produces the same derived seed, even when called multiple times.
+
+```python
+gen = DefaultSeedGenerator(global_seed=0).for_task("task_1").for_repetition(0)
+
+# Call the same path twice on the same generator
+seed1 = gen.derive_seed("agent")
+seed2 = gen.derive_seed("agent")
+
+print(seed1)  # 778051139
+print(seed2)  # 778051139
+assert seed1 == seed2  # Always true
+```
+
+This also works across separate generator instances with the same configuration:
+
+```python
+# Two separate generators with identical configuration
+gen1 = DefaultSeedGenerator(global_seed=0).for_task("task_1").for_repetition(0)
+gen2 = DefaultSeedGenerator(global_seed=0).for_task("task_1").for_repetition(0)
+
+seed1 = gen1.derive_seed("agent")
+seed2 = gen2.derive_seed("agent")
+
+assert seed1 == seed2  # Always true
+```
+
+This is what enables reproducibility - if you record the global seed used in an experiment, you can recreate the exact same derived seeds later.
+
+### Different Global Seeds = Different Results
+
+Changing the global seed changes all derived seeds:
+
+```python
+# With seed=0
+gen_0 = DefaultSeedGenerator(global_seed=0).for_task("task_1").for_repetition(0)
+print(gen_0.derive_seed("agent"))        # 778051139
+print(gen_0.derive_seed("environment"))  # 1348051591
+
+# With seed=1 - same paths, different seeds
+gen_1 = DefaultSeedGenerator(global_seed=1).for_task("task_1").for_repetition(0)
+print(gen_1.derive_seed("agent"))        # 1297896250
+print(gen_1.derive_seed("environment"))  # 886012105
+```
+
+This allows you to run multiple independent experiments by simply changing the global seed.
+
+### Seed Log
+
+The generator tracks all derived seeds, which is useful for debugging and reproducibility:
+
+```python
+gen = DefaultSeedGenerator(global_seed=42).for_task("task_1").for_repetition(0)
+
+# Derive several seeds
+gen.derive_seed("agent")
+tools_gen = gen.child("tools")
+tools_gen.derive_seed("weather")
+tools_gen.derive_seed("search")
+
+# Inspect what was derived
+print(gen.seed_log)
+# {'agent': 1608637542, 'tools/weather': 353148029, 'tools/search': 906566780}
+```
+
+The seed log is included in benchmark reports automatically, so you always have a record of which seeds were used.
+
 ## Model Provider Support
 
 Not all providers support seeding. Here's the current status:
@@ -245,26 +343,6 @@ class DatabaseSeedGenerator(SeedGenerator):
     def seed_log(self) -> Dict[str, int]:
         return dict(self._log)
 ```
-
-## Thread Safety
-
-The `DefaultSeedGenerator` is thread-safe by design:
-
-1. **Isolated logs per task**: `for_task()` creates a fresh seed log
-2. **No cross-thread sharing**: The root generator is read-only
-3. **Children share parent's log**: Safe because a single task runs in a single thread
-
-```
-Thread 1 (task A, rep 0):
-  task_gen_A = root.for_task("A").for_repetition(0)  # Fresh log
-  child = task_gen_A.child("env")                     # Shares task_gen_A's log
-
-Thread 2 (task B, rep 0):
-  task_gen_B = root.for_task("B").for_repetition(0)  # Different fresh log
-  child = task_gen_B.child("env")                     # Shares task_gen_B's log
-```
-
-If you implement a custom `SeedGenerator`, ensure similar thread isolation by creating fresh state in `for_task()`.
 
 ## Tips
 
