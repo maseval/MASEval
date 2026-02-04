@@ -260,7 +260,6 @@ class TestSeedGeneratorABC:
 
     def test_custom_subclass_works(self):
         """Custom subclass with all methods implemented works."""
-        from typing import Self
 
         class SimpleSeedGenerator(SeedGenerator):
             def __init__(self, seed: int = 0):
@@ -277,10 +276,10 @@ class TestSeedGeneratorABC:
                 self._log[name] = result
                 return result
 
-            def for_task(self, task_id: str) -> Self:
+            def for_task(self, task_id: str) -> "SimpleSeedGenerator":
                 return self
 
-            def for_repetition(self, rep_index: int) -> Self:
+            def for_repetition(self, rep_index: int) -> "SimpleSeedGenerator":
                 return self
 
             @property

@@ -631,7 +631,9 @@ class TestModelAdapterSeeding:
         """HuggingFaceModelAdapter accepts seed parameter."""
         from maseval.interface.inference import HuggingFaceModelAdapter
 
-        mock_model = lambda x: "response"
+        def mock_model(x):
+            return "response"
+
         adapter = HuggingFaceModelAdapter(model=mock_model, model_id="llama", seed=42)
 
         assert adapter.seed == 42
