@@ -119,7 +119,8 @@ class GoogleGenAIGaia2Benchmark(DefaultAgentGaia2Benchmark):
 
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> GoogleGenAIModelAdapter:
         """Create a Google GenAI model adapter."""
-        adapter = GoogleGenAIModelAdapter(get_google_client(), model_id=model_id)
+        seed = kwargs.get("seed")
+        adapter = GoogleGenAIModelAdapter(get_google_client(), model_id=model_id, seed=seed)
         if "register_name" in kwargs:
             self.register("models", kwargs["register_name"], adapter)
         return adapter
@@ -136,7 +137,8 @@ class OpenAIGaia2Benchmark(DefaultAgentGaia2Benchmark):
 
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> OpenAIModelAdapter:
         """Create an OpenAI model adapter."""
-        adapter = OpenAIModelAdapter(get_openai_client(), model_id=model_id)
+        seed = kwargs.get("seed")
+        adapter = OpenAIModelAdapter(get_openai_client(), model_id=model_id, seed=seed)
         if "register_name" in kwargs:
             self.register("models", kwargs["register_name"], adapter)
         return adapter

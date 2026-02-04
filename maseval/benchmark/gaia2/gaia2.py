@@ -17,12 +17,13 @@ Usage:
 
     # Create your framework-specific benchmark subclass
     class MyGaia2Benchmark(Gaia2Benchmark):
-        def setup_agents(self, agent_data, environment, task, user):
+        def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
             # Your framework-specific agent creation
             ...
 
         def get_model_adapter(self, model_id, **kwargs):
-            adapter = MyModelAdapter(model_id)
+            seed = kwargs.get("seed")  # Extract seed for reproducibility
+            adapter = MyModelAdapter(model_id, seed=seed)
             if "register_name" in kwargs:
                 self.register("models", kwargs["register_name"], adapter)
             return adapter
@@ -52,6 +53,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
 from maseval.core.callback import BenchmarkCallback
+from maseval.core.seeding import SeedGenerator
 
 from maseval.benchmark.gaia2.environment import Gaia2Environment
 from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
@@ -118,12 +120,14 @@ class Gaia2Benchmark(Benchmark):
         self,
         agent_data: Dict[str, Any],
         task: Task,
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Gaia2Environment:
         """Create Gaia2 environment wrapping ARE simulation.
 
         Args:
             agent_data: Agent configuration
             task: Current task
+            seed_generator: Optional seed generator for reproducibility
 
         Returns:
             Gaia2Environment instance
@@ -135,11 +139,18 @@ class Gaia2Benchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: Gaia2Environment,
         task: Task,
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Optional[User]:
         """Gaia2 uses event-based simulation, not turn-based user simulation.
 
         User interactions in Gaia2 happen through scheduled events (e.g.,
         "user sends message at t=30s") rather than synchronous turn-taking.
+
+        Args:
+            agent_data: Agent configuration
+            environment: Gaia2Environment instance
+            task: Current task
+            seed_generator: Optional seed generator for reproducibility
 
         Returns:
             None (no user simulator needed)
@@ -153,6 +164,7 @@ class Gaia2Benchmark(Benchmark):
         environment: Gaia2Environment,
         task: Task,
         user: Optional[User],
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create agents for this task. Must be implemented by subclass.
 
@@ -161,6 +173,7 @@ class Gaia2Benchmark(Benchmark):
             environment: Gaia2Environment with ARE tools
             task: Current task
             user: Optional user simulator (always None for Gaia2)
+            seed_generator: Optional seed generator for reproducibility
 
         Returns:
             Tuple of (ordered agent list, agent dict keyed by ID)
@@ -173,6 +186,7 @@ class Gaia2Benchmark(Benchmark):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Sequence[Evaluator]:
         """Create Gaia2 evaluator using ARE's judge.
 
@@ -181,6 +195,7 @@ class Gaia2Benchmark(Benchmark):
             task: Current task with evaluation data
             agents: Agent instances
             user: Optional user simulator (always None)
+            seed_generator: Optional seed generator for reproducibility
 
         Returns:
             List with single Gaia2Evaluator instance
@@ -188,7 +203,12 @@ class Gaia2Benchmark(Benchmark):
         evaluator_model_id = task.evaluation_data.get("model_id")
         model = None
         if evaluator_model_id:
-            model = self.get_model_adapter(evaluator_model_id, register_name="evaluator")
+            # Derive seed for evaluator model if seeding is enabled
+            evaluator_seed = None
+            if seed_generator is not None:
+                eval_gen = seed_generator.child("evaluators")
+                evaluator_seed = eval_gen.derive_seed("judge")
+            model = self.get_model_adapter(evaluator_model_id, register_name="evaluator", seed=evaluator_seed)
 
         return [
             Gaia2Evaluator(
@@ -717,6 +737,7 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
         environment: Gaia2Environment,
         task: Task,
         user: Optional[User],
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create default Gaia2 agent.
 
@@ -725,6 +746,7 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
             environment: Gaia2Environment with ARE tools
             task: Current task
             user: Optional user (always None)
+            seed_generator: Optional seed generator for reproducibility
 
         Returns:
             Tuple of (agent list, agent dict)
@@ -738,8 +760,14 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
         invalid_format_retries = merged_data.get("invalid_format_retries", _DEFAULT_INVALID_FORMAT_RETRIES)
         verbose = merged_data.get("verbose", 0)
 
+        # Derive seed for agent model if seeding is enabled
+        agent_seed = None
+        if seed_generator is not None:
+            agent_gen = seed_generator.child("agents")
+            agent_seed = agent_gen.derive_seed("gaia2_agent")
+
         tools = environment.create_tools()
-        model = self.get_model_adapter(model_id, register_name="agent_model")
+        model = self.get_model_adapter(model_id, register_name="agent_model", seed=agent_seed)
 
         agent = DefaultGaia2Agent(
             tools=tools,

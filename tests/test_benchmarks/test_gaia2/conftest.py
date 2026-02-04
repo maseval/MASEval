@@ -224,6 +224,7 @@ class ConcreteGaia2Benchmark:
                 environment: Gaia2Environment,
                 task: Task,
                 user: Optional[Any],
+                seed_generator: Optional[Any] = None,
             ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
                 adapter = Gaia2AgentAdapter("test_agent")
                 adapter.set_responses(["Task completed successfully."])

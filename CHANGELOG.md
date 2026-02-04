@@ -11,19 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Benchmarks**
 
-- Gaia2 Benchmark: Integration with Meta's ARE (Agent Research Environments) platform for evaluating LLM-based agents on dynamic, multi-step scenarios (PR: #PR_NUMBER_PLACEHOLDER)
-- `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator` components for framework-agnostic evaluation with ARE simulation (PR: #PR_NUMBER_PLACEHOLDER)
-- `DefaultAgentGaia2Benchmark` with ReAct-style agent for direct comparison with ARE reference implementation (PR: #PR_NUMBER_PLACEHOLDER)
-- Tool wrapper (`AREToolWrapper`) for MASEval tracing of ARE tools with simulation time tracking (PR: #PR_NUMBER_PLACEHOLDER)
-- Data loading utilities: `load_tasks()`, `configure_model_ids()` for loading scenarios from HuggingFace (PR: #PR_NUMBER_PLACEHOLDER)
-- Metrics: `compute_gaia2_metrics()` for GSR (Goal Success Rate) computation by capability type (PR: #PR_NUMBER_PLACEHOLDER)
-- Support for 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, noise (PR: #PR_NUMBER_PLACEHOLDER)
-- Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #PR_NUMBER_PLACEHOLDER)
+- GAIA2 Benchmark: Integration with Meta's ARE (Agent Research Environments) platform for evaluating LLM-based agents on dynamic, multi-step scenarios (PR: #26)
+- `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator` components for framework-agnostic evaluation with ARE simulation (PR: #26)
+- `DefaultAgentGaia2Benchmark` with ReAct-style agent for direct comparison with ARE reference implementation (PR: #26)
+- Tool wrapper (`AREToolWrapper`) for MASEval tracing of ARE tools with simulation time tracking (PR: #26)
+- Data loading utilities: `load_tasks()`, `configure_model_ids()` for loading scenarios from HuggingFace (PR: #26)
+- Metrics: `compute_gaia2_metrics()` for GSR (Goal Success Rate) computation by capability type (PR: #26)
+- Support for 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, noise (PR: #26)
+- Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #26)
 
 **Examples**
 
-- Gaia2 benchmark example with Google GenAI and OpenAI model support (PR: #PR_NUMBER_PLACEHOLDER)
-  **Seeding System**
+- Gaia2 benchmark example with Google GenAI and OpenAI model support (PR: #26)
+
+**Seeding System**
 
 - Added `SeedGenerator` abstract base class and `DefaultSeedGenerator` implementation for reproducible benchmark runs via SHA-256-based seed derivation (PR: #24)
 - Added `seed` and `seed_generator` parameters to `Benchmark.__init__` for enabling reproducibility (PR: #24)
@@ -40,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
 
 ### Changed
+
+**Benchmarks**
+
+- All benchmarks now actively use the seeding system by deriving seeds for model adapters. Seeds are passed to agents, user simulators, tool simulators, and LLM-based evaluators for reproducible runs. (PR: #PR_NUMBER_PLACEHOLDER)
+  - `Gaia2Benchmark`: Seeds `agents/gaia2_agent`, `evaluators/judge`
+  - `MACSBenchmark`: Seeds `environment/tools/tool_{name}`, `simulators/user`, `evaluators/user_gsr`, `evaluators/system_gsr`
+  - `Tau2Benchmark`: Seeds `simulators/user`, `agents/default_agent`
 
 **User**
 
