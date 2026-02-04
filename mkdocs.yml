@@ -92,7 +92,9 @@ nav:
   - Guides:
       - guides/index.md
       - Message Tracing: guides/message-tracing.md
+      - Configuration Gathering: guides/config-gathering.md
       - Exception Handling: guides/exception-handling.md
+      - Seeding: guides/seeding.md
   - Examples:
       - examples/index.md
       - Tiny Tutorial: examples/tutorial.ipynb
@@ -108,6 +110,7 @@ nav:
           - Exceptions: reference/exceptions.md
           - History: reference/history.md
           - Model: reference/model.md
+          - Seeding: reference/seeding.md
           - Simulator: reference/simulator.md
           - Tasks: reference/task.md
           - User: reference/user.md

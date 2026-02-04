@@ -561,9 +561,11 @@ class Benchmark(ABC):
                 env = TravelEnvironment(task.environment_data)
 
                 if seed_generator is not None:
+                    # Use nested child() for logical paths like "environment/tools/weather"
                     env_gen = seed_generator.child("environment")
+                    tools_gen = env_gen.child("tools")
                     for tool in env.tools:
-                        tool_seed = env_gen.derive_seed(tool.name)
+                        tool_seed = tools_gen.derive_seed(tool.name)
                         tool_model = self.get_model_adapter(model_id, seed=tool_seed)
                         tool.set_simulator(tool_model)
 
@@ -608,7 +610,9 @@ class Benchmark(ABC):
             def setup_user(self, agent_data, environment, task, seed_generator=None):
                 user_seed = None
                 if seed_generator is not None:
-                    user_seed = seed_generator.derive_seed("user_simulator")
+                    # Use child() to create logical namespace - results in "simulators/user"
+                    sim_gen = seed_generator.child("simulators")
+                    user_seed = sim_gen.derive_seed("user")
 
                 user_model = self.get_model_adapter(model_id, seed=user_seed)
                 return LLMUser(model=user_model, ...)
@@ -668,13 +672,19 @@ class Benchmark(ABC):
             ```python
             def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 if seed_generator is not None:
+                    # Use child() for logical paths like "agents/experimental"
                     agent_gen = seed_generator.child("agents")
                     # Vary experimental agent per rep, keep baseline constant
                     experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
                     baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
+
+                    # For worker agents, nest further: "agents/workers/analyst"
+                    worker_gen = agent_gen.child("workers")
+                    analyst_seed = worker_gen.derive_seed("analyst")
                 else:
                     experimental_seed = None
                     baseline_seed = None
+                    analyst_seed = None
 
                 # Create agents with seeds
                 model = self.get_model_adapter(model_id, seed=experimental_seed)
@@ -716,7 +726,9 @@ class Benchmark(ABC):
             def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
                 judge_seed = None
                 if seed_generator is not None:
-                    judge_seed = seed_generator.derive_seed("llm_judge")
+                    # Use child() to create logical namespace - results in "evaluators/judge"
+                    eval_gen = seed_generator.child("evaluators")
+                    judge_seed = eval_gen.derive_seed("judge")
 
                 return [
                     SuccessEvaluator(task.evaluation_data["gold_answer"]),

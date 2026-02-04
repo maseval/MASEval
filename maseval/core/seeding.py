@@ -16,12 +16,14 @@ Example:
     generator = DefaultSeedGenerator(global_seed=42)
     benchmark = MyBenchmark(seed_generator=generator)
 
-    # In setup methods, derive seeds for components
+    # In setup methods, derive seeds for components using hierarchical paths
     def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
         if seed_generator is not None:
-            agent_seed = seed_generator.derive_seed("main_agent")
-            # Or use child() for hierarchical namespacing
+            # Use child() for hierarchical namespacing - creates paths like "agents/orchestrator"
             agent_gen = seed_generator.child("agents")
+            orchestrator_seed = agent_gen.derive_seed("orchestrator")
+
+            # per_repetition controls variance across repetitions
             experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
             baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
     ```
@@ -167,13 +169,15 @@ class DefaultSeedGenerator(SeedGenerator):
         # Scope to task and repetition
         task_gen = gen.for_task("task_001").for_repetition(0)
 
-        # Derive seeds
-        agent_seed = task_gen.derive_seed("agent")  # Varies per rep
-        env_seed = task_gen.derive_seed("environment", per_repetition=False)  # Constant
+        # Use child() for hierarchical namespacing - creates paths like "agents/orchestrator"
+        agent_gen = task_gen.child("agents")
+        orchestrator_seed = agent_gen.derive_seed("orchestrator")  # Path: "agents/orchestrator"
+        baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)  # Constant
 
-        # Use child() for hierarchical namespacing
-        tools_gen = task_gen.child("tools")
-        weather_seed = tools_gen.derive_seed("weather")  # Path: "tools/weather"
+        # Nested child() for deeper hierarchies - creates "environment/tools/weather"
+        env_gen = task_gen.child("environment")
+        tools_gen = env_gen.child("tools")
+        weather_seed = tools_gen.derive_seed("weather")  # Path: "environment/tools/weather"
         ```
     """
 
@@ -276,7 +280,8 @@ class DefaultSeedGenerator(SeedGenerator):
         Example:
             ```python
             env_gen = seed_generator.child("environment")
-            tool_seed = env_gen.derive_seed("weather")  # Path: "environment/weather"
+            tools_gen = env_gen.child("tools")
+            weather_seed = tools_gen.derive_seed("weather")  # Path: "environment/tools/weather"
             ```
         """
         new_path = f"{self._path_prefix}/{name}" if self._path_prefix else name

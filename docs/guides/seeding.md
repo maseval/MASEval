@@ -55,10 +55,12 @@ class MyBenchmark(Benchmark):
         user,
         seed_generator: Optional[SeedGenerator] = None,
     ):
-        # Derive a seed for your agent
+        # Derive a seed for your agent using hierarchical paths
         agent_seed = None
         if seed_generator is not None:
-            agent_seed = seed_generator.derive_seed("main_agent")
+            # Use child() to create logical namespaces - results in "agents/orchestrator"
+            agent_gen = seed_generator.child("agents")
+            agent_seed = agent_gen.derive_seed("orchestrator")
 
         # Pass seed to model adapter
         model = self.get_model_adapter(model_id, seed=agent_seed)
@@ -66,7 +68,7 @@ class MyBenchmark(Benchmark):
         # ... rest of setup
 ```
 
-Seeds are derived from hierarchical paths, so `derive_seed("main_agent")` produces a different seed than `derive_seed("baseline_agent")`.
+Seeds are derived from hierarchical paths, so `derive_seed("orchestrator")` within a `child("agents")` context produces `"agents/orchestrator"`, which is different from `"agents/baseline"`.
 
 ## Selective Variance with `per_repetition`
 
@@ -75,11 +77,16 @@ When running multiple repetitions of the same task, you may want some components
 ```python
 def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
     if seed_generator is not None:
+        # Use child() to group agent seeds under "agents/" namespace
+        agent_gen = seed_generator.child("agents")
+
         # Varies per repetition - different seed for rep 0, 1, 2, ...
-        experimental_seed = seed_generator.derive_seed("experimental", per_repetition=True)
+        # Results in path: "agents/experimental"
+        experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
 
         # Constant across repetitions - same seed for rep 0, 1, 2, ...
-        baseline_seed = seed_generator.derive_seed("baseline", per_repetition=False)
+        # Results in path: "agents/baseline"
+        baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
 ```
 
 **Use cases:**
@@ -99,17 +106,21 @@ def setup_environment(self, agent_data, task, seed_generator=None):
         # Create a child generator for environment components
         env_gen = seed_generator.child("environment")
 
-        # Seeds are prefixed with "environment/"
-        weather_seed = env_gen.derive_seed("weather_tool")  # "environment/weather_tool"
-        search_seed = env_gen.derive_seed("search_tool")    # "environment/search_tool"
+        # Further nest tools under "environment/tools/"
+        tools_gen = env_gen.child("tools")
+        weather_seed = tools_gen.derive_seed("weather")  # "environment/tools/weather"
+        search_seed = tools_gen.derive_seed("search")    # "environment/tools/search"
 
 def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
     if seed_generator is not None:
         # Create a child generator for agents
         agent_gen = seed_generator.child("agents")
 
-        primary_seed = agent_gen.derive_seed("primary")     # "agents/primary"
-        worker_seed = agent_gen.derive_seed("worker")       # "agents/worker"
+        orchestrator_seed = agent_gen.derive_seed("orchestrator")  # "agents/orchestrator"
+
+        # Nest workers under "agents/workers/"
+        worker_gen = agent_gen.child("workers")
+        analyst_seed = worker_gen.derive_seed("analyst")           # "agents/workers/analyst"
 ```
 
 Child generators share the same seed log, so all derived seeds are recorded together.
@@ -119,8 +130,8 @@ Child generators share the same seed log, so all derived seeds are recorded toge
     You can use flat paths directly without `child()`:
 
     ```python
-    seed_generator.derive_seed("environment/weather_tool")
-    seed_generator.derive_seed("agents/primary")
+    seed_generator.derive_seed("environment/tools/weather")
+    seed_generator.derive_seed("agents/orchestrator")
     ```
 
     Both approaches produce identical seeds. Use `child()` when it makes your code cleaner.
@@ -161,7 +172,7 @@ for report in results:
     print(f"Task: {seed_config['task_id']}")
     print(f"Repetition: {seed_config['rep_index']}")
     print(f"Seeds used: {seed_config['seeds']}")
-    # Output: {"agents/primary": 12345, "agents/worker": 67890, ...}
+    # Output: {"agents/orchestrator": 12345, "agents/workers/analyst": 67890, ...}
 ```
 
 This enables exact reproduction of benchmark runs and debugging of seed-related issues.

@@ -469,7 +469,9 @@ class MyBenchmark(Benchmark):
     def setup_user(self, agent_data, environment, task, seed_generator=None):
         user_seed = None
         if seed_generator is not None:
-            user_seed = seed_generator.derive_seed("user_simulator")
+            # Use child() to create logical namespace - results in "simulators/user"
+            sim_gen = seed_generator.child("simulators")
+            user_seed = sim_gen.derive_seed("user")
 
         user_model = self.get_model_adapter(model_id, seed=user_seed)
         return MyUser(model=user_model, ...)
@@ -496,7 +498,7 @@ for report in results:
     seed_config = report["config"]["seeding"]["seed_generator"]
     print(seed_config["global_seed"])  # 42
     print(seed_config["seeds"])
-    # {"environment/tool_weather": 12345, "user_simulator": 67890, "agents/experimental": ...}
+    # {"environment/tools/weather": 12345, "simulators/user": 67890, "agents/experimental": ...}
 ```
 
 ### Custom Generator

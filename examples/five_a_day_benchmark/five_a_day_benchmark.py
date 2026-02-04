@@ -776,11 +776,13 @@ class FiveADayBenchmark(Benchmark):
         specialist_specs = [a for a in agents_specs if a["agent_id"] != primary_agent_id]
 
         # Derive seeds for agents using seed_generator if available
+        # Use child("agents") to create logical paths like "agents/primary_agent"
         seeds = None
         if seed_generator is not None:
-            seeds = {primary_spec["agent_id"]: seed_generator.derive_seed(primary_spec["agent_id"])}
+            agent_gen = seed_generator.child("agents")
+            seeds = {primary_spec["agent_id"]: agent_gen.derive_seed(primary_spec["agent_id"])}
             for spec in specialist_specs:
-                seeds[spec["agent_id"]] = seed_generator.derive_seed(spec["agent_id"])
+                seeds[spec["agent_id"]] = agent_gen.derive_seed(spec["agent_id"])
 
         # Build agent using unified interface - now returns (primary_adapter, all_adapters_dict)
         builder = get_agent_builder(framework, agent_type)

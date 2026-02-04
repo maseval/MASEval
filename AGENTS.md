@@ -487,15 +487,18 @@ All setup methods receive an optional `seed_generator` parameter:
 ```python
 def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
     if seed_generator is not None:
-        # Derive seeds for different components
-        agent_seed = seed_generator.derive_seed("main_agent")
+        # Use child() for hierarchical namespacing - creates paths like "agents/orchestrator"
+        agent_gen = seed_generator.child("agents")
+
+        # Derive seeds for different components - results in "agents/orchestrator"
+        orchestrator_seed = agent_gen.derive_seed("orchestrator")
 
         # Use per_repetition=False for baseline agents that should be constant
-        baseline_seed = seed_generator.derive_seed("baseline", per_repetition=False)
+        baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
 
-        # Use child() for hierarchical namespacing (DefaultSeedGenerator only)
-        agent_gen = seed_generator.child("agents")
-        worker_seed = agent_gen.derive_seed("worker_1")
+        # Further nesting for worker agents - results in "agents/workers/analyst"
+        worker_gen = agent_gen.child("workers")
+        analyst_seed = worker_gen.derive_seed("analyst")
 
     # Pass seeds to model adapters
     model = self.get_model_adapter(model_id, seed=agent_seed)
@@ -550,7 +553,7 @@ results = benchmark.run(tasks, agent_data=config)
 for report in results:
     seed_config = report["config"]["seeding"]["seed_generator"]
     print(seed_config["global_seed"])  # 42
-    print(seed_config["seeds"])  # {"agents/main_agent": 12345, ...}
+    print(seed_config["seeds"])  # {"agents/orchestrator": 12345, "agents/workers/analyst": 67890, ...}
 ```
 
 ## Early-Release Status
