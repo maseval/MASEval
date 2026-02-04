@@ -69,6 +69,7 @@ class OpenAIModelAdapter(ModelAdapter):
         client: Any,
         model_id: str,
         default_generation_params: Optional[Dict[str, Any]] = None,
+        seed: Optional[int] = None,
     ):
         """Initialize OpenAI model adapter.
 
@@ -78,8 +79,10 @@ class OpenAIModelAdapter(ModelAdapter):
             model_id: The model identifier (e.g., "gpt-4", "gpt-3.5-turbo").
             default_generation_params: Default parameters for all calls.
                 Common parameters: temperature, max_tokens, top_p.
+            seed: Seed for deterministic generation. OpenAI supports this natively.
+                Note: Determinism is best-effort, not guaranteed by OpenAI.
         """
-        super().__init__()
+        super().__init__(seed=seed)
         self._client = client
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}
@@ -113,6 +116,10 @@ class OpenAIModelAdapter(ModelAdapter):
         if generation_params:
             params.update(generation_params)
         params.update(kwargs)
+
+        # Add seed if set and not already in params (user params take precedence)
+        if self._seed is not None and "seed" not in params:
+            params["seed"] = self._seed
 
         # Add tools if provided
         if tools:

@@ -24,7 +24,7 @@ Usage:
 
     # Create your framework-specific benchmark subclass
     class MyMACSBenchmark(MACSBenchmark):
-        def setup_agents(self, agent_data, environment, task, user):
+        def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
             # Your framework-specific agent creation
             ...
 
@@ -48,6 +48,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
 from maseval import (
     AgentAdapter,
     Benchmark,
+    User,
     Environment,
     Evaluator,
     MessageHistory,
@@ -56,7 +57,7 @@ from maseval import (
     TaskExecutionStatus,
     ToolInvocationHistory,
     ToolLLMSimulator,
-    User,
+    LLMUser,
     AgentError,
     EnvironmentError,
     validate_arguments_from_schema,
@@ -456,10 +457,10 @@ class MACSEvaluator(Evaluator):
 # =============================================================================
 
 
-class MACSUser(User):
+class MACSUser(LLMUser):
     """MACS-specific user simulator with conversation limits.
 
-    Extends the base User class with MACS-specific behavior:
+    Extends the LLMUser class with MACS-specific behavior:
     - Maximum 5 turns of interaction (as per MACS paper)
     - </stop> token detection for natural conversation ending
     - User profile and scenario-aware responses
@@ -791,6 +792,7 @@ class MACSBenchmark(Benchmark):
         self,
         agent_data: Dict[str, Any],
         task: Task,
+        seed_generator=None,
     ) -> MACSEnvironment:
         """Create environment for a task.
 
@@ -819,6 +821,7 @@ class MACSBenchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: MACSEnvironment,
         task: Task,
+        seed_generator=None,
     ) -> MACSUser:
         """Create MACS user simulator.
 
@@ -856,6 +859,7 @@ class MACSBenchmark(Benchmark):
         environment: MACSEnvironment,
         task: Task,
         user: Optional[User],
+        seed_generator=None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create agents for this task. Must be implemented by subclass.
 
@@ -864,6 +868,7 @@ class MACSBenchmark(Benchmark):
             environment: MACSEnvironment with tools
             task: Current task
             user: Optional user simulator
+            seed_generator: Optional seed generator for deriving agent seeds
 
         Returns:
             Tuple of (ordered agent list, agent dict keyed by ID)
@@ -876,6 +881,7 @@ class MACSBenchmark(Benchmark):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
+        seed_generator=None,
     ) -> Sequence[Evaluator]:
         """Create user-side and system-side evaluators.
 

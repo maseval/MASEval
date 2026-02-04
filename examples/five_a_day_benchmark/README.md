@@ -44,14 +44,14 @@ uv run python examples/five_a_day_benchmark/five_a_day_benchmark.py --task 0 --c
 
 **Agents:** Single-agent (one agent, all tools) or multi-agent (orchestrator + specialists). Framework-specific adapters provide unified interface.
 
-**Seeding:** `derive_seed()` creates deterministic per-agent seeds using SHA256 hashing of `base_seed + task_id + agent_id`.
+**Seeding:** Uses MASEval's `Benchmark(seed=...)` parameter with `DefaultSeedGenerator` for reproducible per-agent seeds via SHA256 hashing.
 
 ## Project Structure
 
 ```
 five_a_day_benchmark/
 ├── five_a_day_benchmark.py       # Main benchmark (FiveADayBenchmark class)
-├── utils.py                       # derive_seed(), sanitize_name()
+├── utils.py                       # sanitize_name() helper
 ├── tools/                         # BaseTool subclasses with framework converters
 ├── evaluators/                    # Task-specific Evaluator subclasses
 └── data/

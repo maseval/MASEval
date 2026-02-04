@@ -26,7 +26,7 @@ Usage:
 
     # Create your framework-specific benchmark subclass
     class MyTau2Benchmark(Tau2Benchmark):
-        def setup_agents(self, agent_data, environment, task, user):
+        def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
             # Your framework-specific agent creation
             ...
 
@@ -61,7 +61,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Callable
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
-from maseval.core.user import AgenticUser
+from maseval.core.user import AgenticLLMUser
 from maseval.core.callback import BenchmarkCallback
 
 from maseval.benchmark.tau2.environment import Tau2Environment
@@ -73,10 +73,10 @@ from maseval.benchmark.tau2.evaluator import Tau2Evaluator
 # =============================================================================
 
 
-class Tau2User(AgenticUser):
+class Tau2User(AgenticLLMUser):
     """Tau2-specific user simulator with customer service personas.
 
-    Extends the AgenticUser class with tau2-specific behavior:
+    Extends the AgenticLLMUser class with tau2-specific behavior:
     - Customer personas from user_scenario
     - Domain-aware responses (airline, retail, telecom)
     - Multi-turn interaction support
@@ -218,7 +218,7 @@ class Tau2Benchmark(Benchmark):
 
     Example:
         class MyTau2Benchmark(Tau2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 # Setup your agents here
                 ...
 
@@ -295,6 +295,7 @@ class Tau2Benchmark(Benchmark):
         self,
         agent_data: Dict[str, Any],
         task: Task,
+        seed_generator=None,
     ) -> Tau2Environment:
         """Create environment for a task.
 
@@ -315,6 +316,7 @@ class Tau2Benchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: Tau2Environment,
         task: Task,
+        seed_generator=None,
     ) -> Optional[User]:
         """Create Tau2 user simulator.
 
@@ -380,6 +382,7 @@ class Tau2Benchmark(Benchmark):
         environment: Tau2Environment,
         task: Task,
         user: Optional[User],
+        seed_generator=None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create agents for this task. Must be implemented by subclass.
 
@@ -400,6 +403,7 @@ class Tau2Benchmark(Benchmark):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
+        seed_generator=None,
     ) -> Sequence[Evaluator]:
         """Create evaluator for the task.
 
@@ -908,6 +912,7 @@ class DefaultAgentTau2Benchmark(Tau2Benchmark):
         environment: Tau2Environment,
         task: Task,
         user: Optional[User],
+        seed_generator=None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create the default tau2 agent.
 
@@ -916,6 +921,7 @@ class DefaultAgentTau2Benchmark(Tau2Benchmark):
             environment: Tau2Environment with real tools
             task: Current task
             user: Optional user simulator
+            seed_generator: Optional seed generator for deriving agent seeds
 
         Returns:
             Tuple of (agent list, agent dict)

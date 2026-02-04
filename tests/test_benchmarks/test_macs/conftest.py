@@ -150,6 +150,7 @@ class ConcreteMACSBenchmark(MACSBenchmark):
         environment: MACSEnvironment,
         task: Task,
         user: Optional[User],
+        seed_generator=None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create test agents using MACSAgentAdapter."""
         adapter = MACSAgentAdapter("macs_test_agent")

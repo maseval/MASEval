@@ -15,10 +15,10 @@ pytestmark = [pytest.mark.interface, pytest.mark.smolagents]
 
 def test_smolagents_adapter_import():
     """Test that SmolAgentAdapter can be imported when smolagents is installed."""
-    from maseval.interface.agents.smolagents import SmolAgentAdapter, SmolAgentUser
+    from maseval.interface.agents.smolagents import SmolAgentAdapter, SmolAgentLLMUser
 
     assert SmolAgentAdapter is not None
-    assert SmolAgentUser is not None
+    assert SmolAgentLLMUser is not None
 
 
 def test_smolagents_in_agents_all():
@@ -26,7 +26,7 @@ def test_smolagents_in_agents_all():
     import maseval.interface.agents
 
     assert "SmolAgentAdapter" in maseval.interface.agents.__all__
-    assert "SmolAgentUser" in maseval.interface.agents.__all__
+    assert "SmolAgentLLMUser" in maseval.interface.agents.__all__
 
 
 def test_check_smolagents_installed_function():
@@ -49,13 +49,13 @@ def test_smolagents_adapter_creation():
 
 
 def test_smolagents_user_creation():
-    """Test that SmolAgentUser can be created."""
-    from maseval.interface.agents.smolagents import SmolAgentUser
+    """Test that SmolAgentLLMUser can be created."""
+    from maseval.interface.agents.smolagents import SmolAgentLLMUser
     from unittest.mock import Mock
 
     # Create user with required parameters
     mock_model = Mock()
-    user = SmolAgentUser(
+    user = SmolAgentLLMUser(
         name="test_user",
         model=mock_model,
         user_profile={"role": "tester"},

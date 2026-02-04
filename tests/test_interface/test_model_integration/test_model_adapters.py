@@ -1384,6 +1384,279 @@ class TestAnthropicModelAdapterIntegration:
         assert config["client_type"] == "MockClient"
 
 
+# ==================== Seed Propagation Tests ====================
+
+
+@pytest.mark.interface
+class TestModelAdapterSeedPropagation:
+    """Tests verifying seeds are passed to underlying APIs.
+
+    These tests verify the actual behavior: that seeds set on adapters
+    are passed through to the underlying provider API calls.
+    """
+
+    def test_openai_adapter_passes_seed_to_api(self):
+        """OpenAI adapter includes seed in API call."""
+        pytest.importorskip("openai")
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import OpenAIModelAdapter
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = "test"
+        mock_message.tool_calls = None
+        mock_message.role = "assistant"
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_choice.finish_reason = "stop"
+        mock_response.choices = [mock_choice]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+        mock_client.chat.completions.create.return_value = mock_response
+
+        adapter = OpenAIModelAdapter(client=mock_client, model_id="gpt-4", seed=42)
+        adapter.chat([{"role": "user", "content": "test"}])
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs.get("seed") == 42
+
+    def test_openai_adapter_no_seed_when_not_set(self):
+        """OpenAI adapter doesn't include seed when not set."""
+        pytest.importorskip("openai")
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import OpenAIModelAdapter
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = "test"
+        mock_message.tool_calls = None
+        mock_message.role = "assistant"
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_choice.finish_reason = "stop"
+        mock_response.choices = [mock_choice]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+        mock_client.chat.completions.create.return_value = mock_response
+
+        adapter = OpenAIModelAdapter(client=mock_client, model_id="gpt-4")  # No seed
+        adapter.chat([{"role": "user", "content": "test"}])
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "seed" not in call_kwargs
+
+    def test_openai_user_seed_overrides_adapter_seed(self):
+        """User-provided seed in generation_params takes precedence."""
+        pytest.importorskip("openai")
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import OpenAIModelAdapter
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = "test"
+        mock_message.tool_calls = None
+        mock_message.role = "assistant"
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_choice.finish_reason = "stop"
+        mock_response.choices = [mock_choice]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+        mock_client.chat.completions.create.return_value = mock_response
+
+        adapter = OpenAIModelAdapter(client=mock_client, model_id="gpt-4", seed=42)
+        adapter.chat(
+            [{"role": "user", "content": "test"}],
+            generation_params={"seed": 999},  # Should override adapter seed
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs.get("seed") == 999  # User's seed, not adapter's
+
+    def test_litellm_adapter_passes_seed_to_api(self):
+        """LiteLLM adapter includes seed in API call."""
+        pytest.importorskip("litellm")
+        from unittest.mock import patch, MagicMock
+        from maseval.interface.inference import LiteLLMModelAdapter
+
+        mock_response = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = "test"
+        mock_message.tool_calls = None
+        mock_message.role = "assistant"
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_choice.finish_reason = "stop"
+        mock_response.choices = [mock_choice]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+
+        with patch("litellm.completion", return_value=mock_response) as mock_completion:
+            adapter = LiteLLMModelAdapter(model_id="gpt-4", seed=42)
+            adapter.chat([{"role": "user", "content": "test"}])
+
+            call_kwargs = mock_completion.call_args[1]
+            assert call_kwargs.get("seed") == 42
+
+    def test_litellm_adapter_no_seed_when_not_set(self):
+        """LiteLLM adapter doesn't include seed when not set."""
+        pytest.importorskip("litellm")
+        from unittest.mock import patch, MagicMock
+        from maseval.interface.inference import LiteLLMModelAdapter
+
+        mock_response = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = "test"
+        mock_message.tool_calls = None
+        mock_message.role = "assistant"
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_choice.finish_reason = "stop"
+        mock_response.choices = [mock_choice]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+
+        with patch("litellm.completion", return_value=mock_response) as mock_completion:
+            adapter = LiteLLMModelAdapter(model_id="gpt-4")  # No seed
+            adapter.chat([{"role": "user", "content": "test"}])
+
+            call_kwargs = mock_completion.call_args[1]
+            assert "seed" not in call_kwargs
+
+    def test_litellm_user_seed_overrides_adapter_seed(self):
+        """LiteLLM user-provided seed in generation_params takes precedence."""
+        pytest.importorskip("litellm")
+        from unittest.mock import patch, MagicMock
+        from maseval.interface.inference import LiteLLMModelAdapter
+
+        mock_response = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = "test"
+        mock_message.tool_calls = None
+        mock_message.role = "assistant"
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_choice.finish_reason = "stop"
+        mock_response.choices = [mock_choice]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+
+        with patch("litellm.completion", return_value=mock_response) as mock_completion:
+            adapter = LiteLLMModelAdapter(model_id="gpt-4", seed=42)
+            adapter.chat(
+                [{"role": "user", "content": "test"}],
+                generation_params={"seed": 999},
+            )
+
+            call_kwargs = mock_completion.call_args[1]
+            assert call_kwargs.get("seed") == 999
+
+    def test_google_adapter_passes_seed_to_config(self):
+        """Google GenAI adapter includes seed in generation config."""
+        pytest.importorskip("google.genai")
+        import sys
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import GoogleGenAIModelAdapter
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "test"
+        mock_response.candidates = []
+        mock_response.usage_metadata = None
+        mock_client.models.generate_content.return_value = mock_response
+
+        # Track what gets passed to GenerateContentConfig
+        captured_config_kwargs = {}
+
+        def capture_config(**kwargs):
+            captured_config_kwargs.update(kwargs)
+            return MagicMock()
+
+        # Create mock genai module structure
+        mock_genai = MagicMock()
+        mock_genai.types.GenerateContentConfig = capture_config
+
+        # Temporarily replace the google.genai module
+        original_google = sys.modules.get("google")
+        original_genai = sys.modules.get("google.genai")
+
+        mock_google = MagicMock()
+        mock_google.genai = mock_genai
+        sys.modules["google"] = mock_google
+        sys.modules["google.genai"] = mock_genai
+
+        try:
+            adapter = GoogleGenAIModelAdapter(client=mock_client, model_id="gemini-pro", seed=42)
+            adapter.chat([{"role": "user", "content": "test"}])
+
+            # Verify seed was passed to GenerateContentConfig
+            assert captured_config_kwargs.get("seed") == 42
+        finally:
+            # Restore original modules
+            if original_google is not None:
+                sys.modules["google"] = original_google
+            elif "google" in sys.modules:
+                del sys.modules["google"]
+            if original_genai is not None:
+                sys.modules["google.genai"] = original_genai
+            elif "google.genai" in sys.modules:
+                del sys.modules["google.genai"]
+
+    def test_google_adapter_no_seed_when_not_set(self):
+        """Google GenAI adapter doesn't include seed when not set."""
+        pytest.importorskip("google.genai")
+        import sys
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import GoogleGenAIModelAdapter
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "test"
+        mock_response.candidates = []
+        mock_response.usage_metadata = None
+        mock_client.models.generate_content.return_value = mock_response
+
+        # Track what gets passed to GenerateContentConfig
+        captured_config_kwargs = {}
+
+        def capture_config(**kwargs):
+            captured_config_kwargs.update(kwargs)
+            return MagicMock()
+
+        # Create mock genai module structure
+        mock_genai = MagicMock()
+        mock_genai.types.GenerateContentConfig = capture_config
+
+        # Temporarily replace the google.genai module
+        original_google = sys.modules.get("google")
+        original_genai = sys.modules.get("google.genai")
+
+        mock_google = MagicMock()
+        mock_google.genai = mock_genai
+        sys.modules["google"] = mock_google
+        sys.modules["google.genai"] = mock_genai
+
+        try:
+            adapter = GoogleGenAIModelAdapter(client=mock_client, model_id="gemini-pro")  # No seed
+            adapter.chat([{"role": "user", "content": "test"}])
+
+            # Verify seed was NOT passed
+            assert "seed" not in captured_config_kwargs
+        finally:
+            # Restore original modules
+            if original_google is not None:
+                sys.modules["google"] = original_google
+            elif "google" in sys.modules:
+                del sys.modules["google"]
+            if original_genai is not None:
+                sys.modules["google.genai"] = original_genai
+            elif "google.genai" in sys.modules:
+                del sys.modules["google.genai"]
+
+
 # ==================== Cross-Adapter Tests ====================
 
 

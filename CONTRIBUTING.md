@@ -85,6 +85,18 @@ ruff check . --fix
 
 If you haven't activated your virtual environment, you can use `uv run ruff format .` and `uv run ruff check . --fix` instead.
 
+For convenience, you can enable **pre-commit hooks** to automatically format and lint code on every commit:
+
+```bash
+uv run pre-commit install
+```
+
+This is optional—CI will catch any issues regardless. But if enabled, the hooks will:
+- **Format** code with `ruff format` (using project settings from `pyproject.toml`)
+- **Lint and auto-fix** issues with `ruff check --fix`
+
+> **Note**: The pre-commit hooks intentionally skip removing unused imports (`F401`) and unused variables (`F841`) to avoid disrupting work-in-progress code. Run `uv run ruff check . --fix` manually before opening a PR to clean these up.
+
 ### 3. Dependency Management
 
 Dependencies are defined in `pyproject.toml` and locked in `uv.lock`. Understanding the different dependency types is important:

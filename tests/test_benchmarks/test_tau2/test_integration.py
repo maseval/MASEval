@@ -39,7 +39,7 @@ class MockModel(ModelAdapter):
 
 
 class IntegrationTau2Benchmark(Tau2Benchmark):
-    def setup_agents(self, agent_data, environment, task, user):
+    def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
         agent = MockAgent(agent_instance=None, name="TestAgent")
         return [agent], {"TestAgent": agent}
 

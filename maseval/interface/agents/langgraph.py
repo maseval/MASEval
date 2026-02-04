@@ -8,9 +8,9 @@ import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict
 
-from maseval import AgentAdapter, MessageHistory, User
+from maseval import AgentAdapter, MessageHistory, LLMUser
 
-__all__ = ["LangGraphAgentAdapter", "LangGraphUser"]
+__all__ = ["LangGraphAgentAdapter", "LangGraphLLMUser"]
 
 # Only import langgraph types for type checking, not at runtime
 if TYPE_CHECKING:
@@ -371,16 +371,17 @@ class LangGraphAgentAdapter(AgentAdapter):
         return MessageHistory(history_messages)
 
 
-class LangGraphUser(User):
-    """A LangGraph-specific user that provides a tool for user interaction.
+class LangGraphLLMUser(LLMUser):
+    """A LangGraph-specific LLM user that provides a tool for user interaction.
 
+    Extends LLMUser to provide a LangChain-compatible tool via get_tool().
     Requires langgraph to be installed.
 
     Example:
         ```python
-        from maseval.interface.agents.langgraph import LangGraphUser
+        from maseval.interface.agents.langgraph import LangGraphLLMUser
 
-        user = LangGraphUser(...)
+        user = LangGraphLLMUser(...)
         tool = user.get_tool()  # Returns a LangChain tool
         ```
     """
@@ -402,6 +403,6 @@ class LangGraphUser(User):
             Returns:
                 The user's response
             """
-            return user_instance.simulate_response(question)
+            return user_instance.respond(question)
 
         return ask_user

@@ -49,7 +49,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from typing_extensions import TypedDict, Annotated
 
 # MASEval imports
-from maseval import AgentAdapter, Environment, Task, User
+from maseval import AgentAdapter, Environment, Task, User, SeedGenerator
 from maseval.core.callbacks.result_logger import FileResultLogger
 from maseval.core.config import ConfigurableMixin
 from maseval.core.tracing import TraceableMixin
@@ -148,7 +148,7 @@ class SmolagentsMACSUser(MACSUser):
             output_type = "string"
 
             def forward(self, question: str) -> str:
-                return user.simulate_response(question)
+                return user.respond(question)
 
         return UserInputTool()
 
@@ -179,6 +179,7 @@ class SmolagentsMACSBenchmark(MACSBenchmark):
         agent_data: Dict[str, Any],
         environment: Environment,
         task: Task,
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> SmolagentsMACSUser:
         """Create smolagents-compatible user simulator.
 
@@ -209,6 +210,7 @@ class SmolagentsMACSBenchmark(MACSBenchmark):
         environment: MACSEnvironment,  # type: ignore[override]
         task: Task,
         user: Optional[User],
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Tuple[List[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create smolagents multi-agent hierarchy.
 
@@ -393,7 +395,7 @@ class LangGraphMACSUser(MACSUser):
 
         def user_input(question: str) -> str:
             """Ask the user a question to understand their complete requirements."""
-            return self.simulate_response(question)
+            return self.respond(question)
 
         return StructuredTool.from_function(
             func=user_input,
@@ -433,6 +435,7 @@ class LangGraphMACSBenchmark(MACSBenchmark):
         agent_data: Dict[str, Any],
         environment: Environment,
         task: Task,
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> LangGraphMACSUser:
         """Create langgraph-compatible user simulator.
 
@@ -463,6 +466,7 @@ class LangGraphMACSBenchmark(MACSBenchmark):
         environment: MACSEnvironment,  # type: ignore[override]
         task: Task,
         user: Optional[User],
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Tuple[List[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create langgraph multi-agent hierarchy.
 

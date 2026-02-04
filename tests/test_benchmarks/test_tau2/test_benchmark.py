@@ -9,7 +9,7 @@ from maseval.benchmark.tau2 import Tau2Benchmark, Tau2User
 class DummyTau2Benchmark(Tau2Benchmark):
     """Subclass for testing abstract base class."""
 
-    def setup_agents(self, agent_data, environment, task, user):
+    def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
         return [], {}
 
     def get_model_adapter(self, model_id, **kwargs):

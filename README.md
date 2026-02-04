@@ -114,7 +114,7 @@ Examples are available in the [Documentation](https://maseval.readthedocs.io/en/
 
 ## Contribute
 
-We welcome any contributions. Please read the [CONTRIBUTING.md](https://github.com/parameterlab/MASEval/tree/fix-porting-issue?tab=contributing-ov-file) file to learn more!
+We welcome any contributions. Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file to learn more!
 
 ## Benchmarks
 

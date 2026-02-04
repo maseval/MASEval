@@ -64,6 +64,7 @@ class HuggingFaceModelAdapter(ModelAdapter):
         model: Callable[[str], str],
         model_id: Optional[str] = None,
         default_generation_params: Optional[Dict[str, Any]] = None,
+        seed: Optional[int] = None,
     ):
         """Initialize HuggingFace model adapter.
 
@@ -75,8 +76,10 @@ class HuggingFaceModelAdapter(ModelAdapter):
                 extract from the model's name_or_path attribute.
             default_generation_params: Default parameters for all calls.
                 Common parameters: max_new_tokens, temperature, top_p, do_sample.
+            seed: Seed for deterministic generation. Sets the random seed before
+                each generation call using transformers.set_seed().
         """
-        super().__init__()
+        super().__init__(seed=seed)
         self._model = model
         self._model_id = model_id or getattr(model, "name_or_path", "huggingface:unknown")
         self._default_generation_params = default_generation_params or {}
@@ -239,6 +242,15 @@ class HuggingFaceModelAdapter(ModelAdapter):
         Returns:
             The generated text.
         """
+        # Set seed before generation if configured
+        if self._seed is not None:
+            try:
+                from transformers import set_seed
+
+                set_seed(self._seed)
+            except ImportError:
+                pass  # transformers not available, skip seeding
+
         try:
             result = self._model(prompt, **params)
         except TypeError:

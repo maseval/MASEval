@@ -178,6 +178,7 @@ def main():
         "User": ["user"],
         "Simulation": ["simulator", "environment"],
         "Evaluation": ["evaluator"],
+        "Seeding": ["seeding"],
         "Infrastructure": ["benchmark", "callback", "callback_handler", "config", "exceptions", "history", "model", "task", "tracing"],
     }
 

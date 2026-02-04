@@ -159,7 +159,7 @@ class TestConfigCollection:
                 raise RuntimeError("Config gathering failed")
 
         class TestBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 from conftest import DummyAgent
 
                 agent = DummyAgent()

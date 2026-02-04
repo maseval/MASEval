@@ -33,7 +33,7 @@ from .core.simulator import (
     UserSimulatorError,
 )
 from .core.model import ModelAdapter, ChatResponse
-from .core.user import User, TerminationReason
+from .core.user import User, LLMUser, AgenticLLMUser, TerminationReason
 from .core.evaluator import Evaluator
 from .core.history import MessageHistory, ToolInvocationHistory
 from .core.tracing import TraceableMixin
@@ -50,6 +50,7 @@ from .core.exceptions import (
     validate_no_extra_arguments,
     validate_arguments_from_schema,
 )
+from .core.seeding import SeedGenerator, DefaultSeedGenerator, SeedingError
 
 __all__ = [
     # Tasks
@@ -75,6 +76,8 @@ __all__ = [
     "UserSimulatorError",
     # User simulation
     "User",
+    "LLMUser",
+    "AgenticLLMUser",
     "TerminationReason",
     # Evaluation
     "Evaluator",
@@ -104,4 +107,8 @@ __all__ = [
     "validate_required_arguments",
     "validate_no_extra_arguments",
     "validate_arguments_from_schema",
+    # Seeding
+    "SeedGenerator",
+    "DefaultSeedGenerator",
+    "SeedingError",
 ]

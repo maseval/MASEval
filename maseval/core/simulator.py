@@ -292,16 +292,19 @@ class LLMSimulator(ABC, TraceableMixin):
     def gather_traces(self) -> dict[str, Any]:
         """Gather execution traces from this simulator.
 
+        Output fields:
+
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp
+        - `simulator_type` - The specific simulator class
+        - `total_calls` - Number of simulation attempts
+        - `successful_calls` - Number of successful simulations
+        - `failed_calls` - Number of failed attempts
+        - `history` - Complete history of all simulation attempts with timestamps,
+          inputs, outputs, status, and error messages
+
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - simulator_type: The specific simulator class
-            - total_calls: Number of simulation attempts
-            - successful_calls: Number of successful simulations
-            - failed_calls: Number of failed attempts
-            - history: Complete history of all simulation attempts with timestamps,
-                      inputs, outputs, status, and error messages
+            Dictionary containing simulator execution traces.
         """
         total_calls = len(self.logs)
         successful = sum(1 for entry in self.logs if entry.get("status") == SimulatorCallStatus.Successful.value)
