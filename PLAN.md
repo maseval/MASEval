@@ -977,15 +977,29 @@ class TestReproducibility:
 
 #### MEDIUM PRIORITY: Model Adapter Seed Propagation
 
+The implementations in `openai.py`, `litellm.py`, and `google_genai.py` all include this logic:
+```python
+# Add seed if set and not already in params (user params take precedence)
+if self._seed is not None and "seed" not in params:
+    params["seed"] = self._seed
+```
+
+**Current tests only verify seed acceptance/storage, NOT that seeds are passed to APIs.**
+
 Add to `tests/test_core/test_model_adapter.py`:
 
 ```python
+@pytest.mark.core
 class TestModelAdapterSeedPropagation:
-    """Tests verifying seeds are passed to underlying APIs."""
+    """Tests verifying seeds are passed to underlying APIs.
+
+    These tests verify the actual behavior: that seeds set on adapters
+    are passed through to the underlying provider API calls.
+    """
 
     def test_openai_adapter_passes_seed_to_api(self):
         """OpenAI adapter includes seed in API call."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
         from maseval.interface.inference import OpenAIModelAdapter
 
         mock_client = MagicMock()
@@ -1001,21 +1015,35 @@ class TestModelAdapterSeedPropagation:
         call_kwargs = mock_client.chat.completions.create.call_args[1]
         assert call_kwargs.get("seed") == 42
 
-    def test_google_adapter_passes_seed_to_config(self):
-        """Google GenAI adapter includes seed in generation config."""
-        # Similar pattern for Google adapter
+    def test_openai_adapter_no_seed_when_not_set(self):
+        """OpenAI adapter doesn't include seed when not set."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import OpenAIModelAdapter
 
-    def test_litellm_adapter_passes_seed_to_api(self):
-        """LiteLLM adapter includes seed in API call."""
-        # Similar pattern for LiteLLM adapter
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="test", tool_calls=None))]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+        mock_client.chat.completions.create.return_value = mock_response
 
-    def test_user_generation_params_seed_overrides_adapter_seed(self):
+        adapter = OpenAIModelAdapter(client=mock_client, model_id="gpt-4")  # No seed
+        adapter.chat([{"role": "user", "content": "test"}])
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "seed" not in call_kwargs
+
+    def test_openai_user_seed_overrides_adapter_seed(self):
         """User-provided seed in generation_params takes precedence."""
         from unittest.mock import MagicMock
         from maseval.interface.inference import OpenAIModelAdapter
 
         mock_client = MagicMock()
-        # ... setup mock response ...
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="test", tool_calls=None))]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+        mock_client.chat.completions.create.return_value = mock_response
 
         adapter = OpenAIModelAdapter(client=mock_client, model_id="gpt-4", seed=42)
         adapter.chat(
@@ -1025,16 +1053,87 @@ class TestModelAdapterSeedPropagation:
 
         call_kwargs = mock_client.chat.completions.create.call_args[1]
         assert call_kwargs.get("seed") == 999  # User's seed, not adapter's
+
+    def test_litellm_adapter_passes_seed_to_api(self):
+        """LiteLLM adapter includes seed in API call."""
+        from unittest.mock import patch, MagicMock
+        from maseval.interface.inference import LiteLLMModelAdapter
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="test", tool_calls=None, role="assistant"))]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+
+        with patch("litellm.completion", return_value=mock_response) as mock_completion:
+            adapter = LiteLLMModelAdapter(model_id="gpt-4", seed=42)
+            adapter.chat([{"role": "user", "content": "test"}])
+
+            call_kwargs = mock_completion.call_args[1]
+            assert call_kwargs.get("seed") == 42
+
+    def test_google_adapter_passes_seed_to_config(self):
+        """Google GenAI adapter includes seed in generation config."""
+        from unittest.mock import MagicMock, patch
+        from maseval.interface.inference import GoogleGenAIModelAdapter
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "test"
+        mock_response.candidates = []
+        mock_response.usage_metadata = None
+        mock_client.models.generate_content.return_value = mock_response
+
+        with patch("google.genai.types.GenerateContentConfig") as mock_config:
+            adapter = GoogleGenAIModelAdapter(client=mock_client, model_id="gemini-pro", seed=42)
+            adapter.chat([{"role": "user", "content": "test"}])
+
+            # Verify seed was passed to GenerateContentConfig
+            config_kwargs = mock_config.call_args[1]
+            assert config_kwargs.get("seed") == 42
 ```
 
 ### Implementation Checklist
 
-- [ ] Create `tests/test_core/test_benchmark/test_seeding_integration.py` with high-priority tests
-- [ ] Add `TestBenchmarkSeedingInitialization` class (4 tests)
-- [ ] Add `TestSeedGeneratorPropagation` class (5 tests)
-- [ ] Add `TestSeedingConfigInReports` class (3 tests)
-- [ ] Add `TestSeedingAcrossRepetitions` class (2 tests)
-- [ ] Add `TestReproducibility` class (1 test)
-- [ ] Add `TestModelAdapterSeedPropagation` to `test_model_adapter.py` (4 tests)
-- [ ] Verify all new tests pass
-- [ ] Update coverage to ensure benchmark seeding integration is covered
+#### High Priority: Benchmark Seeding Integration ✅ COMPLETE
+- [x] Create `tests/test_core/test_benchmark/test_seeding_integration.py`
+- [x] Add `TestBenchmarkSeedingInitialization` class (4 tests)
+  - [x] `test_benchmark_seed_parameter_creates_generator`
+  - [x] `test_benchmark_seed_generator_parameter`
+  - [x] `test_benchmark_no_seed_no_generator`
+  - [x] `test_benchmark_seed_and_generator_raises_value_error`
+- [x] Add `TestSeedGeneratorPropagation` class (5 tests)
+  - [x] `test_seed_generator_passed_to_setup_environment`
+  - [x] `test_seed_generator_passed_to_setup_user`
+  - [x] `test_seed_generator_passed_to_setup_agents`
+  - [x] `test_seed_generator_passed_to_setup_evaluators`
+  - [x] `test_seed_generator_none_when_no_seed`
+- [x] Add `TestSeedingConfigInReports` class (3 tests)
+  - [x] `test_seeding_config_appears_in_report`
+  - [x] `test_seeding_config_includes_seed_log`
+  - [x] `test_no_seeding_config_when_disabled`
+- [x] Add `TestSeedingAcrossRepetitions` class (2 tests)
+  - [x] `test_different_seeds_per_repetition`
+  - [x] `test_same_seed_across_repetitions_when_per_rep_false`
+- [x] Add `TestReproducibility` class (2 tests)
+  - [x] `test_same_seed_produces_same_derived_seeds`
+  - [x] `test_different_seeds_produce_different_derived_seeds`
+- [x] Add `TestSeedGeneratorScoping` class (3 tests) - bonus tests
+  - [x] `test_seed_generator_scoped_to_task`
+  - [x] `test_seed_generator_scoped_to_repetition`
+  - [x] `test_child_generators_share_seed_log`
+
+#### Medium Priority: Model Adapter Seed Propagation ✅ COMPLETE
+- [x] Add `TestModelAdapterSeedPropagation` to `test_model_adapter.py` (8 tests)
+  - [x] `test_openai_adapter_passes_seed_to_api`
+  - [x] `test_openai_adapter_no_seed_when_not_set`
+  - [x] `test_openai_user_seed_overrides_adapter_seed`
+  - [x] `test_litellm_adapter_passes_seed_to_api`
+  - [x] `test_litellm_adapter_no_seed_when_not_set`
+  - [x] `test_litellm_user_seed_overrides_adapter_seed`
+  - [x] `test_google_adapter_passes_seed_to_config`
+  - [x] `test_google_adapter_no_seed_when_not_set`
+
+#### Verification ✅ COMPLETE
+- [x] Run full test suite to verify all new tests pass (1459 passed, 2 skipped)
+- [x] Run linter to confirm code quality (All checks passed!)
+- [x] Verify no regressions in existing tests
