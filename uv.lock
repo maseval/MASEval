@@ -2435,7 +2435,9 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "anthropic" },
+    { name = "are" },
     { name = "camel-ai" },
+    { name = "datasets" },
     { name = "google-genai" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
@@ -2462,7 +2464,9 @@ camel = [
 ]
 examples = [
     { name = "anthropic" },
+    { name = "are" },
     { name = "camel-ai" },
+    { name = "datasets" },
     { name = "google-genai" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
@@ -2531,7 +2535,9 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.40.0" },
+    { name = "are", marker = "extra == 'gaia2'", specifier = ">=1.2.0" },
     { name = "camel-ai", marker = "extra == 'camel'", specifier = ">=0.2.0" },
+    { name = "datasets", marker = "extra == 'gaia2'", specifier = ">=3.0.0" },
     { name = "gitpython", specifier = ">=3.1.0" },
     { name = "google-genai", marker = "extra == 'google-genai'", specifier = ">=1.37.0" },
     { name = "ipykernel", marker = "extra == 'examples'", specifier = ">=6.0.0" },
@@ -2544,7 +2550,7 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.0.0" },
     { name = "llama-index-core", marker = "extra == 'llamaindex'", specifier = ">=0.12.0" },
     { name = "maseval", extras = ["examples", "transformers", "wandb"], marker = "extra == 'all'" },
-    { name = "maseval", extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "litellm", "langfuse"], marker = "extra == 'examples'" },
+    { name = "maseval", extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "litellm", "langfuse", "gaia2"], marker = "extra == 'examples'" },
     { name = "mcp", marker = "extra == 'examples'", specifier = ">=1.22.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.107.2" },
     { name = "pydantic", specifier = ">=2.12.5" },
@@ -2556,7 +2562,7 @@ requires-dist = [
     { name = "typing-extensions", marker = "extra == 'examples'", specifier = ">=4.0.0" },
     { name = "wandb", marker = "extra == 'wandb'", specifier = ">=0.15.0" },
 ]
-provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "examples", "all"]
+provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "gaia2", "examples", "all"]
 
 [package.metadata.requires-dev]
 dev = [
