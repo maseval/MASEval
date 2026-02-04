@@ -10,6 +10,7 @@
 ## Reference
 
 **Paper**: "MultiAgentBench: Evaluating the Collaboration and Competition of LLM agents"
+
 - arXiv: https://arxiv.org/abs/2503.01935
 - Authors: Haofei Yu et al.
 - Publication Date: 2025
@@ -66,9 +67,3 @@ To update MARBLE to a newer version:
 4. `git checkout <new-commit-hash>`
 5. Run integration tests
 6. Update this file with new version info
-
-## Last Updated
-
-- **Date**: 2026-01-19
-- **Updated By**: Claude Code
-- **Version Tested**: Initial integration (not yet pinned)

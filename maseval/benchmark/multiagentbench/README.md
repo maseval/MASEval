@@ -135,15 +135,15 @@ for result in results:
 
 MultiAgentBench includes 7 domains with different requirements:
 
-| Domain | External Dependencies | Initial Support |
-|--------|----------------------|-----------------|
-| Research | None | Yes |
-| Bargaining | None | Yes |
-| Coding | Filesystem access | Yes |
-| Web | Network access | Yes |
-| WorldSimulation | None | Yes |
-| Database | Docker + PostgreSQL | Optional |
-| Minecraft | External game server | Deferred |
+| Domain          | External Dependencies | Initial Support |
+| --------------- | --------------------- | --------------- |
+| Research        | None                  | Yes             |
+| Bargaining      | None                  | Yes             |
+| Coding          | Filesystem access     | Yes             |
+| Web             | Network access        | Yes             |
+| WorldSimulation | None                  | Yes             |
+| Database        | Docker + PostgreSQL   | Optional        |
+| Minecraft       | External game server  | Deferred        |
 
 ### Domain-Specific Notes
 
