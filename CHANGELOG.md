@@ -12,19 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Benchmarks**
 
 - GAIA2 Benchmark: Integration with Meta's ARE (Agent Research Environments) platform for evaluating LLM-based agents on dynamic, multi-step scenarios (PR: #26)
-- `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator` components for framework-agnostic evaluation with ARE simulation (PR: #26)
-- `DefaultAgentGaia2Benchmark` with ReAct-style agent for direct comparison with ARE reference implementation (PR: #26)
-- Tool wrapper (`AREToolWrapper`) for MASEval tracing of ARE tools with simulation time tracking (PR: #26)
-- Data loading utilities: `load_tasks()`, `configure_model_ids()` for loading scenarios from HuggingFace (PR: #26)
-- Metrics: `compute_gaia2_metrics()` for GSR (Goal Success Rate) computation by capability type (PR: #26)
-- Support for 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, noise (PR: #26)
-- Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #26)
+  - `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator` components for framework-agnostic evaluation with ARE simulation (PR: #26)
+  - `DefaultAgentGaia2Benchmark` with ReAct-style agent for direct comparison with ARE reference implementation (PR: #26)
+  - Tool wrapper (`AREToolWrapper`) for MASEval tracing of ARE tools with simulation time tracking (PR: #26)
+  - Data loading utilities: `load_tasks()`, `configure_model_ids()` for loading scenarios from HuggingFace (PR: #26)
+  - Metrics: `compute_gaia2_metrics()` for GSR (Goal Success Rate) computation by capability type (PR: #26)
+  - Support for 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, noise (PR: #26)
+  - Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #26)
+
+- MultiAgentBench Benchmark: Integration with MARBLE MultiAgentBench for evaluating multi-agent collaboration across research, bargaining, coding, and database domains (PR: #25)
+  - `MultiAgentBenchBenchmark` abstract base class for framework-agnostic multi-agent evaluation with seeding support for evaluators and agents (PR: #25)
+  - `MarbleMultiAgentBenchBenchmark` for exact MARBLE reproduction mode using native MARBLE agents (note: MARBLE's internal LLM calls bypass MASEval seeding) (PR: #25)
+  - `MultiAgentBenchEnvironment` and `MultiAgentBenchEvaluator` components (PR: #25)
+  - Data loading utilities: `load_tasks()`, `configure_model_ids()`, `get_domain_info()`, `ensure_marble_exists()` (PR: #25)
+  - MARBLE adapter: `MarbleAgentAdapter` for wrapping MARBLE agents with MASEval tracing (PR: #25)
 
 **Examples**
 
 - Gaia2 benchmark example with Google GenAI and OpenAI model support (PR: #26)
 
-**Seeding System**
+**Core**
 
 - Added `SeedGenerator` abstract base class and `DefaultSeedGenerator` implementation for reproducible benchmark runs via SHA-256-based seed derivation (PR: #24)
 - Added `seed` and `seed_generator` parameters to `Benchmark.__init__` for enabling reproducibility (PR: #24)
@@ -33,21 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `SeedingError` exception for providers that don't support seeding (Anthropic models raise this if seed is provided) (PR: #24)
 - Added seed support to interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFaceModelAdapter` pass seeds to underlying APIs (PR: #24)
 
-**Benchmarks**
-
-- MultiAgentBench Benchmark: Integration with MARBLE MultiAgentBench for evaluating multi-agent collaboration across research, bargaining, coding, and database domains (PR: #25)
-- `MultiAgentBenchBenchmark` abstract base class for framework-agnostic multi-agent evaluation with seeding support for evaluators and agents (PR: #25)
-- `MarbleMultiAgentBenchBenchmark` for exact MARBLE reproduction mode using native MARBLE agents (note: MARBLE's internal LLM calls bypass MASEval seeding) (PR: #25)
-- `MultiAgentBenchEnvironment` and `MultiAgentBenchEvaluator` components (PR: #25)
-- Data loading utilities: `load_tasks()`, `configure_model_ids()`, `get_domain_info()`, `ensure_marble_exists()` (PR: #25)
-- MARBLE adapter: `MarbleAgentAdapter` for wrapping MARBLE agents with MASEval tracing (PR: #25)
-
 **Interface**
 
 - CAMEL-AI integration: `CamelAgentAdapter` and `CamelLLMUser` for evaluating CAMEL-AI ChatAgent-based systems (PR: #22)
-- Added `CamelAgentUser` for using a CAMEL ChatAgent as the user in agent-to-agent evaluation (PR: #22)
-- Added `camel_role_playing_execution_loop()` for benchmarks using CAMEL's RolePlaying semantics (PR: #22)
-- Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
+  - Added `CamelAgentUser` for using a CAMEL ChatAgent as the user in agent-to-agent evaluation (PR: #22)
+  - Added `camel_role_playing_execution_loop()` for benchmarks using CAMEL's RolePlaying semantics (PR: #22)
+  - Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
 
 ### Changed
 
