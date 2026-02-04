@@ -91,10 +91,10 @@ def setup_agents(self, agent_data, environment, task, user, seed_generator=None)
 
 **Use cases:**
 
-| `per_repetition` | Behavior | Use case |
-|------------------|----------|----------|
-| `True` (default) | Seed varies per repetition | Experimental agents, ablation studies |
-| `False` | Seed constant across repetitions | Baseline agents, control conditions |
+| `per_repetition` | Behavior                         | Use case                              |
+| ---------------- | -------------------------------- | ------------------------------------- |
+| `True` (default) | Seed varies per repetition       | Experimental agents, ablation studies |
+| `False`          | Seed constant across repetitions | Baseline agents, control conditions   |
 
 ## Hierarchical Namespacing
 
@@ -140,13 +140,13 @@ Child generators share the same seed log, so all derived seeds are recorded toge
 
 Not all providers support seeding. Here's the current status:
 
-| Provider | Support | Notes |
-|----------|---------|-------|
-| OpenAI | Best-effort | Seed parameter accepted, but determinism not guaranteed |
-| Google GenAI | Supported | Seed parameter passed to generation config |
-| LiteLLM | Pass-through | Passes seed to underlying provider |
-| HuggingFace | Supported | Uses `transformers.set_seed()` |
-| Anthropic | Not supported | Raises `SeedingError` if seed provided |
+| Provider     | Support       | Notes                                                   |
+| ------------ | ------------- | ------------------------------------------------------- |
+| OpenAI       | Best-effort   | Seed parameter accepted, but determinism not guaranteed |
+| Google GenAI | Supported     | Seed parameter passed to generation config              |
+| LiteLLM      | Pass-through  | Passes seed to underlying provider                      |
+| HuggingFace  | Supported     | Uses `transformers.set_seed()`                          |
+| Anthropic    | Not supported | Raises `SeedingError` if seed provided                  |
 
 If you pass a seed to an adapter that doesn't support seeding, it raises `SeedingError` at creation time:
 
