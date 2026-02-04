@@ -685,8 +685,8 @@ class TestMACSBenchmarkSeeding:
             assert kwargs["seed"] is not None
             assert isinstance(kwargs["seed"], int)
 
-    def test_setup_environment_passes_none_seed_when_no_generator(self, sample_agent_data, sample_task):
-        """Test that setup_environment passes None seed when seed_generator is None."""
+    def test_setup_environment_passes_none_seed_when_seeding_disabled(self, sample_agent_data, sample_task):
+        """Test that setup_environment passes None seed when seeding is disabled (global_seed=None)."""
         from maseval.core.seeding import DefaultSeedGenerator
 
         captured_kwargs = []

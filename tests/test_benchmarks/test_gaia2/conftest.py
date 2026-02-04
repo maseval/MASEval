@@ -23,6 +23,7 @@ from unittest.mock import MagicMock
 
 from conftest import DummyModelAdapter
 from maseval import AgentAdapter, Task, TaskQueue, ModelAdapter
+from maseval.core.seeding import SeedGenerator
 
 
 # =============================================================================
@@ -241,7 +242,7 @@ class ConcreteGaia2Benchmark:
                 environment: Gaia2Environment,
                 task: Task,
                 user: Optional[Any],
-                seed_generator: Optional[Any] = None,
+                seed_generator: SeedGenerator,
             ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
                 adapter = Gaia2AgentAdapter("test_agent")
                 adapter.set_responses(["Task completed successfully."])

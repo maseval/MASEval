@@ -179,7 +179,7 @@ class SmolagentsMACSBenchmark(MACSBenchmark):
         agent_data: Dict[str, Any],
         environment: Environment,
         task: Task,
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> SmolagentsMACSUser:
         """Create smolagents-compatible user simulator.
 
@@ -210,7 +210,7 @@ class SmolagentsMACSBenchmark(MACSBenchmark):
         environment: MACSEnvironment,  # type: ignore[override]
         task: Task,
         user: Optional[User],
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> Tuple[List[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create smolagents multi-agent hierarchy.
 
@@ -435,7 +435,7 @@ class LangGraphMACSBenchmark(MACSBenchmark):
         agent_data: Dict[str, Any],
         environment: Environment,
         task: Task,
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> LangGraphMACSUser:
         """Create langgraph-compatible user simulator.
 
@@ -466,7 +466,7 @@ class LangGraphMACSBenchmark(MACSBenchmark):
         environment: MACSEnvironment,  # type: ignore[override]
         task: Task,
         user: Optional[User],
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> Tuple[List[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create langgraph multi-agent hierarchy.
 

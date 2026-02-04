@@ -188,9 +188,8 @@ class TestSeedingConfigInReports:
 
         class SeedUsingBenchmark(DummyBenchmark):
             def setup_agents(self, agent_data, environment, task, user, seed_generator):
-                if seed_generator is not None:
-                    agent_gen = seed_generator.child("agents")
-                    agent_gen.derive_seed("test_agent")
+                agent_gen = seed_generator.child("agents")
+                agent_gen.derive_seed("test_agent")
                 agent = DummyAgent()
                 adapter = DummyAgentAdapter(agent, "test_agent")
                 return [adapter], {"test_agent": adapter}
@@ -237,9 +236,8 @@ class TestSeedingAcrossRepetitions:
 
         class CapturingBenchmark(DummyBenchmark):
             def setup_agents(self, agent_data, environment, task, user, seed_generator):
-                if seed_generator is not None:
-                    seed = seed_generator.derive_seed("agent", per_repetition=True)
-                    captured_seeds.append(seed)
+                seed = seed_generator.derive_seed("agent", per_repetition=True)
+                captured_seeds.append(seed)
                 return super().setup_agents(agent_data, environment, task, user, seed_generator)
 
         tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
@@ -257,9 +255,8 @@ class TestSeedingAcrossRepetitions:
 
         class CapturingBenchmark(DummyBenchmark):
             def setup_agents(self, agent_data, environment, task, user, seed_generator):
-                if seed_generator is not None:
-                    seed = seed_generator.derive_seed("baseline", per_repetition=False)
-                    captured_seeds.append(seed)
+                seed = seed_generator.derive_seed("baseline", per_repetition=False)
+                captured_seeds.append(seed)
                 return super().setup_agents(agent_data, environment, task, user, seed_generator)
 
         tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
@@ -288,9 +285,8 @@ class TestReproducibility:
                 self._capture_list = capture_list
 
             def setup_agents(self, agent_data, environment, task, user, seed_generator):
-                if seed_generator is not None:
-                    seed = seed_generator.derive_seed("agent")
-                    self._capture_list.append(seed)
+                seed = seed_generator.derive_seed("agent")
+                self._capture_list.append(seed)
                 return super().setup_agents(agent_data, environment, task, user, seed_generator)
 
         tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
@@ -317,9 +313,8 @@ class TestReproducibility:
                 self._capture_list = capture_list
 
             def setup_agents(self, agent_data, environment, task, user, seed_generator):
-                if seed_generator is not None:
-                    seed = seed_generator.derive_seed("agent")
-                    self._capture_list.append(seed)
+                seed = seed_generator.derive_seed("agent")
+                self._capture_list.append(seed)
                 return super().setup_agents(agent_data, environment, task, user, seed_generator)
 
         tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
@@ -353,9 +348,8 @@ class TestSeedGeneratorScoping:
 
         class CapturingBenchmark(DummyBenchmark):
             def setup_agents(self, agent_data, environment, task, user, seed_generator):
-                if seed_generator is not None:
-                    # Access internal state to verify task scoping
-                    task_ids_seen.append(seed_generator._task_id)
+                # Access internal state to verify task scoping
+                task_ids_seen.append(seed_generator._task_id)
                 return super().setup_agents(agent_data, environment, task, user, seed_generator)
 
         tasks = TaskQueue.from_list(
@@ -379,9 +373,8 @@ class TestSeedGeneratorScoping:
 
         class CapturingBenchmark(DummyBenchmark):
             def setup_agents(self, agent_data, environment, task, user, seed_generator):
-                if seed_generator is not None:
-                    # Access internal state to verify rep scoping
-                    rep_indices_seen.append(seed_generator._rep_index)
+                # Access internal state to verify rep scoping
+                rep_indices_seen.append(seed_generator._rep_index)
                 return super().setup_agents(agent_data, environment, task, user, seed_generator)
 
         tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
@@ -399,15 +392,14 @@ class TestSeedGeneratorScoping:
             captured_config = None
 
             def setup_agents(self, agent_data, environment, task, user, seed_generator):
-                if seed_generator is not None:
-                    # Create multiple child generators
-                    agent_gen = seed_generator.child("agents")
-                    env_gen = seed_generator.child("environment")
+                # Create multiple child generators
+                agent_gen = seed_generator.child("agents")
+                env_gen = seed_generator.child("environment")
 
-                    # Derive seeds from each
-                    agent_gen.derive_seed("orchestrator")
-                    agent_gen.derive_seed("worker")
-                    env_gen.derive_seed("tool_weather")
+                # Derive seeds from each
+                agent_gen.derive_seed("orchestrator")
+                agent_gen.derive_seed("worker")
+                env_gen.derive_seed("tool_weather")
 
                 return super().setup_agents(agent_data, environment, task, user, seed_generator)
 

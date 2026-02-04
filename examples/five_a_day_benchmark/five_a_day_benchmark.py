@@ -729,7 +729,7 @@ class FiveADayBenchmark(Benchmark):
     Supports single-agent and multi-agent (orchestrator+specialist) configurations.
     """
 
-    def setup_environment(self, agent_data: Dict[str, Any], task: Task, seed_generator: Optional[SeedGenerator] = None) -> Environment:
+    def setup_environment(self, agent_data: Dict[str, Any], task: Task, seed_generator: SeedGenerator) -> Environment:
         """Create environment from task data."""
         # Pass full task data to environment
         task_data = {
@@ -753,8 +753,8 @@ class FiveADayBenchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: Environment,
         task: Task,
-        user=None,
-        seed_generator: Optional[SeedGenerator] = None,
+        user,
+        seed_generator: SeedGenerator,
     ) -> tuple[List[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create framework-specific agent with tools from environment.
 
@@ -775,14 +775,13 @@ class FiveADayBenchmark(Benchmark):
         primary_spec = next(a for a in agents_specs if a["agent_id"] == primary_agent_id)
         specialist_specs = [a for a in agents_specs if a["agent_id"] != primary_agent_id]
 
-        # Derive seeds for agents using seed_generator if available
+        # Derive seeds for agents using seed_generator
         # Use child("agents") to create logical paths like "agents/primary_agent"
-        seeds = None
-        if seed_generator is not None:
-            agent_gen = seed_generator.child("agents")
-            seeds = {primary_spec["agent_id"]: agent_gen.derive_seed(primary_spec["agent_id"])}
-            for spec in specialist_specs:
-                seeds[spec["agent_id"]] = agent_gen.derive_seed(spec["agent_id"])
+        # derive_seed() returns None if seeding is disabled
+        agent_gen = seed_generator.child("agents")
+        seeds = {primary_spec["agent_id"]: agent_gen.derive_seed(primary_spec["agent_id"])}
+        for spec in specialist_specs:
+            seeds[spec["agent_id"]] = agent_gen.derive_seed(spec["agent_id"])
 
         # Build agent using unified interface - now returns (primary_adapter, all_adapters_dict)
         builder = get_agent_builder(framework, agent_type)
@@ -791,7 +790,7 @@ class FiveADayBenchmark(Benchmark):
         # Return primary adapter to run, and all adapters for trace registration
         return [primary_adapter], all_adapters_dict
 
-    def setup_evaluators(self, environment, task, agents, user, seed_generator: Optional[SeedGenerator] = None) -> Sequence[Evaluator]:
+    def setup_evaluators(self, environment, task, agents, user, seed_generator: SeedGenerator) -> Sequence[Evaluator]:
         """Create evaluators based on task's evaluation_data.evaluators list."""
         if not task.evaluation_data["evaluators"]:
             return []

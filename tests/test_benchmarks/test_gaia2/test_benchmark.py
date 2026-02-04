@@ -543,8 +543,8 @@ class TestGaia2BenchmarkSeeding:
         assert captured_kwargs[0]["seed"] is not None
         assert isinstance(captured_kwargs[0]["seed"], int)
 
-    def test_setup_agents_passes_none_seed_when_no_generator(self, sample_gaia2_task):
-        """Test that setup_agents passes None seed when seed_generator is None."""
+    def test_setup_agents_passes_none_seed_when_seeding_disabled(self, sample_gaia2_task):
+        """Test that setup_agents passes None seed when seeding is disabled (global_seed=None)."""
         from maseval.benchmark.gaia2 import DefaultAgentGaia2Benchmark
 
         from maseval.core.seeding import DefaultSeedGenerator

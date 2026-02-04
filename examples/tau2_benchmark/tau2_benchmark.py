@@ -173,7 +173,7 @@ class GoogleGenAITau2Benchmark(DefaultAgentTau2Benchmark):
         agent_data: Dict[str, Any],
         environment: Tau2Environment,
         task: Task,
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> DefaultTau2User:
         """Create user simulator with tool support for default agent."""
         user_data = task.user_data
@@ -213,7 +213,7 @@ class GoogleGenAITau2Benchmark(DefaultAgentTau2Benchmark):
         environment: Tau2Environment,
         task: Task,
         user: Optional[DefaultTau2User],
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ):
         """Create the default agent with user tool support."""
         agents_to_run, agents_dict = super().setup_agents(agent_data, environment, task, user, seed_generator)
@@ -248,7 +248,7 @@ class OpenAITau2Benchmark(DefaultAgentTau2Benchmark):
         agent_data: Dict[str, Any],
         environment: Tau2Environment,
         task: Task,
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> DefaultTau2User:
         """Create user simulator with tool support for default agent."""
         user_data = task.user_data
@@ -288,7 +288,7 @@ class OpenAITau2Benchmark(DefaultAgentTau2Benchmark):
         environment: Tau2Environment,
         task: Task,
         user: Optional[DefaultTau2User],
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ):
         """Create the default agent with user tool support."""
         agents_to_run, agents_dict = super().setup_agents(agent_data, environment, task, user, seed_generator)
@@ -372,7 +372,7 @@ class SmolagentsTau2Benchmark(Tau2Benchmark):
         agent_data: Dict[str, Any],
         environment: Tau2Environment,
         task: Task,
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> SmolagentsTau2User:
         """Create smolagents-compatible user simulator."""
         user_data = task.user_data
@@ -411,7 +411,7 @@ class SmolagentsTau2Benchmark(Tau2Benchmark):
         environment: Tau2Environment,
         task: Task,
         user: Optional[User],
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> Tuple[List[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create smolagents customer service agent."""
         model_id = agent_data.get("model_id", "gemini-2.5-flash")
@@ -546,7 +546,7 @@ class LangGraphTau2Benchmark(Tau2Benchmark):
         agent_data: Dict[str, Any],
         environment: Tau2Environment,
         task: Task,
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> LangGraphTau2User:
         """Create langgraph-compatible user simulator."""
         user_data = task.user_data
@@ -585,7 +585,7 @@ class LangGraphTau2Benchmark(Tau2Benchmark):
         environment: Tau2Environment,
         task: Task,
         user: Optional[User],
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> Tuple[List[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create langgraph customer service agent."""
         model_id = agent_data.get("model_id", "gemini-2.5-flash")

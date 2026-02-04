@@ -881,7 +881,7 @@ class MACSBenchmark(Benchmark):
             environment: MACSEnvironment with tools
             task: Current task
             user: Optional user simulator
-            seed_generator: Optional seed generator for deriving agent seeds
+            seed_generator: Seed generator for deriving agent seeds
 
         Returns:
             Tuple of (ordered agent list, agent dict keyed by ID)

@@ -928,7 +928,7 @@ class DefaultAgentTau2Benchmark(Tau2Benchmark):
             environment: Tau2Environment with real tools
             task: Current task
             user: Optional user simulator
-            seed_generator: Optional seed generator for deriving agent seeds
+            seed_generator: Seed generator for deriving agent seeds
 
         Returns:
             Tuple of (agent list, agent dict)

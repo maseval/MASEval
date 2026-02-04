@@ -20,6 +20,7 @@ from maseval import (
     User,
 )
 from maseval.core.callback import BenchmarkCallback
+from maseval.core.seeding import SeedGenerator
 
 from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR
 from maseval.benchmark.multiagentbench.environment import MultiAgentBenchEnvironment
@@ -127,14 +128,14 @@ class MultiAgentBenchBenchmark(Benchmark):
         self,
         agent_data: Dict[str, Any],
         task: Task,
-        seed_generator,
+        seed_generator: SeedGenerator,
     ) -> Environment:
         """Create the MultiAgentBench environment.
 
         Args:
             agent_data: Agent configuration
             task: The task to set up
-            seed_generator: Optional seed generator for reproducibility
+            seed_generator: Seed generator for reproducibility
 
         Returns:
             MultiAgentBenchEnvironment instance
@@ -148,7 +149,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: Environment,
         task: Task,
-        seed_generator,
+        seed_generator: SeedGenerator,
     ) -> Optional[User]:
         """MultiAgentBench tasks don't use user simulators.
 
@@ -158,7 +159,7 @@ class MultiAgentBenchBenchmark(Benchmark):
             agent_data: Agent configuration
             environment: The environment instance
             task: The task
-            seed_generator: Optional seed generator (unused)
+            seed_generator: Seed generator (unused)
 
         Returns:
             None
@@ -172,7 +173,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         environment: Environment,
         task: Task,
         user: Optional[User],
-        seed_generator,
+        seed_generator: SeedGenerator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create agents for the task (implement in subclass).
 
@@ -188,9 +189,10 @@ class MultiAgentBenchBenchmark(Benchmark):
             environment: The environment instance
             task: The task containing agent specs
             user: User simulator (None for MultiAgentBench)
-            seed_generator: Optional seed generator for deriving deterministic seeds.
+            seed_generator: Seed generator for deriving deterministic seeds.
                 Use `seed_generator.child("agents")` to create a namespace, then
-                `derive_seed(agent_id)` for each agent's model.
+                `derive_seed(agent_id)` for each agent's model. Returns None if
+                seeding is disabled.
 
         Returns:
             Tuple of (agents_to_run, agents_dict)
@@ -215,7 +217,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
-        seed_generator,
+        seed_generator: SeedGenerator,
     ) -> Sequence[Evaluator]:
         """Create evaluators for the task.
 
@@ -224,7 +226,7 @@ class MultiAgentBenchBenchmark(Benchmark):
             task: The task with evaluation data
             agents: The agents
             user: User simulator (None for MultiAgentBench)
-            seed_generator: Optional seed generator for reproducibility
+            seed_generator: Seed generator for reproducibility
 
         Returns:
             List of evaluators
@@ -233,8 +235,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         eval_model_id = task.evaluation_data.get("model_id", "gpt-4o-mini")
 
         # Derive seed for evaluator model (returns None if seeding disabled)
-        eval_gen = seed_generator.child("evaluators")
-        evaluator_seed = eval_gen.derive_seed("multiagentbench_evaluator")
+        evaluator_seed = seed_generator.derive_seed("evaluators/multiagentbench_evaluator")
 
         # Create model adapter for evaluation
         model_adapter = self.get_model_adapter(
@@ -384,7 +385,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         environment: Environment,
         task: Task,
         user: Optional[User],
-        seed_generator,
+        seed_generator: SeedGenerator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create MARBLE agents wrapped in MASEval adapters.
 
@@ -400,7 +401,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             environment: The environment
             task: The task with agent specifications
             user: User simulator (None)
-            seed_generator: Optional seed generator (not used for MARBLE agents,
+            seed_generator: Seed generator (not used for MARBLE agents,
                 but seeding is applied to evaluators)
 
         Returns:
