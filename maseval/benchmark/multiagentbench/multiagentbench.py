@@ -49,14 +49,13 @@ class MultiAgentBenchBenchmark(Benchmark):
     Example:
         ```python
         class MyMultiAgentBenchmark(MultiAgentBenchBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
-                # Derive seeds for agents if seeding is enabled
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
+                # Derive seeds for agents (returns None if seeding disabled)
+                agents_gen = seed_generator.child("agents")
                 agent_seeds = {}
-                if seed_generator is not None:
-                    agents_gen = seed_generator.child("agents")
-                    for config in task.environment_data.get("agents", []):
-                        agent_id = config.get("agent_id")
-                        agent_seeds[agent_id] = agents_gen.derive_seed(agent_id)
+                for config in task.environment_data.get("agents", []):
+                    agent_id = config.get("agent_id")
+                    agent_seeds[agent_id] = agents_gen.derive_seed(agent_id)
 
                 # Create agents using your framework with seeds
                 agents_list = []
@@ -128,7 +127,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         self,
         agent_data: Dict[str, Any],
         task: Task,
-        seed_generator=None,
+        seed_generator,
     ) -> Environment:
         """Create the MultiAgentBench environment.
 
@@ -149,7 +148,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: Environment,
         task: Task,
-        seed_generator=None,
+        seed_generator,
     ) -> Optional[User]:
         """MultiAgentBench tasks don't use user simulators.
 
@@ -173,7 +172,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         environment: Environment,
         task: Task,
         user: Optional[User],
-        seed_generator=None,
+        seed_generator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create agents for the task (implement in subclass).
 
@@ -198,12 +197,12 @@ class MultiAgentBenchBenchmark(Benchmark):
 
         Example:
             ```python
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
-                agents_gen = seed_generator.child("agents") if seed_generator else None
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
+                agents_gen = seed_generator.child("agents")
 
                 for config in task.environment_data.get("agents", []):
                     agent_id = config.get("agent_id")
-                    seed = agents_gen.derive_seed(agent_id) if agents_gen else None
+                    seed = agents_gen.derive_seed(agent_id)  # Returns None if seeding disabled
                     model = self.get_model_adapter(model_id, seed=seed)
                     # Create agent with seeded model...
             ```
@@ -216,7 +215,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
-        seed_generator=None,
+        seed_generator,
     ) -> Sequence[Evaluator]:
         """Create evaluators for the task.
 
@@ -233,11 +232,9 @@ class MultiAgentBenchBenchmark(Benchmark):
         # Get evaluation model ID from task or default
         eval_model_id = task.evaluation_data.get("model_id", "gpt-4o-mini")
 
-        # Derive seed for evaluator model if seeding is enabled
-        evaluator_seed = None
-        if seed_generator is not None:
-            eval_gen = seed_generator.child("evaluators")
-            evaluator_seed = eval_gen.derive_seed("multiagentbench_evaluator")
+        # Derive seed for evaluator model (returns None if seeding disabled)
+        eval_gen = seed_generator.child("evaluators")
+        evaluator_seed = eval_gen.derive_seed("multiagentbench_evaluator")
 
         # Create model adapter for evaluation
         model_adapter = self.get_model_adapter(
@@ -387,7 +384,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         environment: Environment,
         task: Task,
         user: Optional[User],
-        seed_generator=None,
+        seed_generator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create MARBLE agents wrapped in MASEval adapters.
 

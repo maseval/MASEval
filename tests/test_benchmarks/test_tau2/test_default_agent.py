@@ -530,7 +530,10 @@ class TestDefaultAgentTau2BenchmarkSetupAgents:
 
     def test_setup_agents_basic(self, sample_task):
         """Test basic agent setup."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = DummyDefaultAgentBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         with patch.object(Tau2Environment, "__init__", return_value=None):
             mock_env = MagicMock(spec=Tau2Environment)
@@ -542,6 +545,7 @@ class TestDefaultAgentTau2BenchmarkSetupAgents:
                 mock_env,
                 sample_task,
                 None,
+                seed_gen,
             )
 
         assert len(agents_to_run) == 1
@@ -550,18 +554,24 @@ class TestDefaultAgentTau2BenchmarkSetupAgents:
 
     def test_setup_agents_missing_model_id(self, sample_task):
         """Test that missing model_id raises ValueError."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = DummyDefaultAgentBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         mock_env = MagicMock(spec=Tau2Environment)
         mock_env.create_tools.return_value = {}
         mock_env.policy = "Policy"
 
         with pytest.raises(ValueError, match="model_id not configured"):
-            benchmark.setup_agents({}, mock_env, sample_task, None)
+            benchmark.setup_agents({}, mock_env, sample_task, None, seed_gen)
 
     def test_setup_agents_with_llm_args(self, sample_task):
         """Test agent setup with custom llm_args."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = DummyDefaultAgentBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         mock_env = MagicMock(spec=Tau2Environment)
         mock_env.create_tools.return_value = {}
@@ -572,6 +582,7 @@ class TestDefaultAgentTau2BenchmarkSetupAgents:
             mock_env,
             sample_task,
             None,
+            seed_gen,
         )
 
         agent = agents_dict["default_agent"]._agent  # type: ignore[unresolved-attribute]
@@ -579,7 +590,10 @@ class TestDefaultAgentTau2BenchmarkSetupAgents:
 
     def test_setup_agents_with_max_tool_calls(self, sample_task):
         """Test agent setup with custom max_tool_calls."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = DummyDefaultAgentBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         mock_env = MagicMock(spec=Tau2Environment)
         mock_env.create_tools.return_value = {}
@@ -590,6 +604,7 @@ class TestDefaultAgentTau2BenchmarkSetupAgents:
             mock_env,
             sample_task,
             None,
+            seed_gen,
         )
 
         agent = agents_dict["default_agent"]._agent  # type: ignore[unresolved-attribute]
@@ -728,12 +743,15 @@ class TestTau2BenchmarkMethods:
 
     def test_setup_environment(self, sample_task):
         """Test setup_environment creates Tau2Environment."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = DummyDefaultAgentBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         with patch("maseval.benchmark.tau2.tau2.Tau2Environment") as mock_env_cls:
             mock_env_cls.return_value = MagicMock()
 
-            _env = benchmark.setup_environment({}, sample_task)
+            _env = benchmark.setup_environment({}, sample_task, seed_gen)
 
             mock_env_cls.assert_called_once_with(
                 task_data=sample_task.environment_data,
@@ -741,7 +759,10 @@ class TestTau2BenchmarkMethods:
 
     def test_setup_user_with_dict_instructions(self):
         """Test setup_user with dict instructions."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = DummyDefaultAgentBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         task = Task(
             query="Hello",
@@ -762,7 +783,7 @@ class TestTau2BenchmarkMethods:
         mock_env = MagicMock(spec=Tau2Environment)
         mock_env.create_user_tools.return_value = {}
 
-        user = benchmark.setup_user({}, mock_env, task)
+        user = benchmark.setup_user({}, mock_env, task, seed_gen)
 
         assert user is not None
         assert isinstance(user, Tau2User)
@@ -773,7 +794,10 @@ class TestTau2BenchmarkMethods:
 
     def test_setup_user_with_string_instructions(self):
         """Test setup_user with string instructions."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = DummyDefaultAgentBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         task = Task(
             query="Hello",
@@ -789,7 +813,7 @@ class TestTau2BenchmarkMethods:
         mock_env = MagicMock(spec=Tau2Environment)
         mock_env.create_user_tools.return_value = {}
 
-        user = benchmark.setup_user({}, mock_env, task)
+        user = benchmark.setup_user({}, mock_env, task, seed_gen)
 
         assert user is not None
         assert isinstance(user, Tau2User)
@@ -797,7 +821,10 @@ class TestTau2BenchmarkMethods:
 
     def test_setup_user_empty_instructions(self):
         """Test setup_user with no instructions."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = DummyDefaultAgentBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         task = Task(
             query="Hello",
@@ -810,7 +837,7 @@ class TestTau2BenchmarkMethods:
         mock_env = MagicMock(spec=Tau2Environment)
         mock_env.create_user_tools.return_value = {}
 
-        user = benchmark.setup_user({}, mock_env, task)
+        user = benchmark.setup_user({}, mock_env, task, seed_gen)
 
         assert user is not None
         assert isinstance(user, Tau2User)
@@ -818,13 +845,16 @@ class TestTau2BenchmarkMethods:
 
     def test_setup_evaluators(self, sample_task):
         """Test setup_evaluators creates Tau2Evaluator."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = DummyDefaultAgentBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         with patch("maseval.benchmark.tau2.tau2.Tau2Environment") as mock_env_cls:
             mock_env = MagicMock(spec=Tau2Environment)
             mock_env_cls.return_value = mock_env
 
-            evaluators = benchmark.setup_evaluators(mock_env, sample_task, [], None)
+            evaluators = benchmark.setup_evaluators(mock_env, sample_task, [], None, seed_gen)
 
             assert len(evaluators) == 1
             assert isinstance(evaluators[0], Tau2Evaluator)

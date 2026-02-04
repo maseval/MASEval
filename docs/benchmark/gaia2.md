@@ -46,7 +46,7 @@ configure_model_ids(tasks, evaluator_model_id="gpt-4o")
 
 # Create your framework-specific benchmark subclass
 class MyGaia2Benchmark(Gaia2Benchmark):
-    def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+    def setup_agents(self, agent_data, environment, task, user, seed_generator):
         tools = environment.create_tools()
         # Create your agent with these tools
         ...

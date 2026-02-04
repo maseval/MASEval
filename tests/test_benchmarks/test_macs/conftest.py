@@ -150,7 +150,7 @@ class ConcreteMACSBenchmark(MACSBenchmark):
         environment: MACSEnvironment,
         task: Task,
         user: Optional[User],
-        seed_generator=None,
+        seed_generator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create test agents using MACSAgentAdapter."""
         adapter = MACSAgentAdapter("macs_test_agent")
@@ -591,3 +591,15 @@ def macs_benchmark(sample_agent_data, dummy_model):
     Returns tuple (benchmark, agent_data) for use with run().
     """
     return ConcreteMACSBenchmark(dummy_model), sample_agent_data
+
+
+@pytest.fixture
+def seed_gen():
+    """Seed generator fixture for direct setup method calls.
+
+    When seeding is disabled (global_seed=None), derive_seed() returns None.
+    This fixture is for tests that call setup methods directly outside of run().
+    """
+    from maseval.core.seeding import DefaultSeedGenerator
+
+    return DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)

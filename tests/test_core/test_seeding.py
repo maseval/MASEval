@@ -359,3 +359,78 @@ class TestSeedingError:
         """SeedingError is an Exception subclass."""
         error = SeedingError("test")
         assert isinstance(error, Exception)
+
+
+# ==================== None Seed (Disabled Seeding) Tests ====================
+
+
+class TestNoneSeedDisablesSeeding:
+    """Tests for DefaultSeedGenerator with global_seed=None (seeding disabled)."""
+
+    def test_global_seed_none_allowed(self):
+        """DefaultSeedGenerator accepts global_seed=None."""
+        gen = DefaultSeedGenerator(global_seed=None)
+        assert gen.global_seed is None
+
+    def test_derive_seed_returns_none_when_disabled(self):
+        """derive_seed() returns None when global_seed is None."""
+        gen = DefaultSeedGenerator(global_seed=None).for_task("task_1").for_repetition(0)
+        seed = gen.derive_seed("agent")
+        assert seed is None
+
+    def test_derive_seed_skips_validation_when_disabled(self):
+        """derive_seed() skips task_id/rep_index validation when global_seed is None."""
+        gen = DefaultSeedGenerator(global_seed=None)
+        # Should not raise even without for_task() or for_repetition()
+        seed = gen.derive_seed("agent")
+        assert seed is None
+
+    def test_derive_seed_per_rep_false_returns_none_when_disabled(self):
+        """derive_seed(per_repetition=False) returns None when global_seed is None."""
+        gen = DefaultSeedGenerator(global_seed=None).for_task("task_1")
+        seed = gen.derive_seed("baseline", per_repetition=False)
+        assert seed is None
+
+    def test_child_inherits_none_seed(self):
+        """child() generators also return None when global_seed is None."""
+        gen = DefaultSeedGenerator(global_seed=None).for_task("task_1").for_repetition(0)
+        child = gen.child("agents")
+        seed = child.derive_seed("orchestrator")
+        assert seed is None
+
+    def test_seed_log_empty_when_disabled(self):
+        """seed_log remains empty when global_seed is None."""
+        gen = DefaultSeedGenerator(global_seed=None).for_task("task_1").for_repetition(0)
+        gen.derive_seed("agent")
+        gen.derive_seed("environment")
+        # Seeds are not logged when None
+        assert gen.seed_log == {}
+
+    def test_for_task_preserves_none_seed(self):
+        """for_task() preserves global_seed=None."""
+        gen = DefaultSeedGenerator(global_seed=None)
+        task_gen = gen.for_task("task_1")
+        assert task_gen.global_seed is None
+
+    def test_for_repetition_preserves_none_seed(self):
+        """for_repetition() preserves global_seed=None."""
+        gen = DefaultSeedGenerator(global_seed=None).for_task("task_1")
+        rep_gen = gen.for_repetition(0)
+        assert rep_gen.global_seed is None
+
+    def test_gather_config_with_none_seed(self):
+        """gather_config() works with global_seed=None."""
+        gen = DefaultSeedGenerator(global_seed=None).for_task("task_1").for_repetition(0)
+        gen.derive_seed("agent")
+
+        config = gen.gather_config()
+
+        assert config["global_seed"] is None
+        assert config["task_id"] == "task_1"
+        assert config["rep_index"] == 0
+        assert config["seeds"] == {}
+
+    def test_default_global_seed_is_none(self):
+        """DefaultSeedGenerator defaults to global_seed=None."""
+        gen = DefaultSeedGenerator()
+        assert gen.global_seed is None

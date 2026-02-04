@@ -77,7 +77,7 @@ from maseval.benchmark.multiagentbench import (
 )
 
 class MyMultiAgentBenchmark(MultiAgentBenchBenchmark):
-    def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+    def setup_agents(self, agent_data, environment, task, user, seed_generator):
         # Your framework-specific agent creation
         ...
 

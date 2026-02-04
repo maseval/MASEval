@@ -248,15 +248,14 @@ class Benchmark(ABC):
         self.fail_on_evaluation_error = fail_on_evaluation_error
         self.fail_on_setup_error = fail_on_setup_error
 
-        # Seeding configuration
+        # Seeding configuration - always create a generator (with global_seed=None if seeding disabled)
         if seed is not None and seed_generator is not None:
             raise ValueError("Cannot provide both `seed` and `seed_generator`. Use one or the other.")
         if seed_generator is not None:
-            self._seed_generator: Optional[SeedGenerator] = seed_generator
-        elif seed is not None:
-            self._seed_generator = DefaultSeedGenerator(global_seed=seed)
+            self._seed_generator: SeedGenerator = seed_generator
         else:
-            self._seed_generator = None
+            # Create generator with seed (can be None to disable seeding)
+            self._seed_generator = DefaultSeedGenerator(global_seed=seed)
 
         # Gather benchmark-level configuration (system, git, packages, etc.)
         self.benchmark_level_config = gather_benchmark_config()
@@ -273,15 +272,16 @@ class Benchmark(ABC):
         self.reports: List[Dict[str, Any]] = []
 
     @property
-    def seed_generator(self) -> Optional[SeedGenerator]:
-        """Current seed generator, or None if seeding is disabled.
+    def seed_generator(self) -> SeedGenerator:
+        """The seed generator for this benchmark.
 
         The seed generator is configured at benchmark initialization via the `seed`
-        or `seed_generator` parameters. During task execution, scoped generators
-        are passed to setup methods.
+        or `seed_generator` parameters. When `seed=None` (the default), the generator's
+        `derive_seed()` method returns `None`, effectively disabling seeding while
+        maintaining a uniform interface.
 
         Returns:
-            The root `SeedGenerator` instance, or `None` if seeding is disabled.
+            The root `SeedGenerator` instance.
         """
         return self._seed_generator
 
@@ -523,7 +523,7 @@ class Benchmark(ABC):
         self,
         agent_data: Dict[str, Any],
         task: Task,
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> Environment:
         """Create and initialize the environment for a task.
 
@@ -538,9 +538,9 @@ class Benchmark(ABC):
                 and other settings that may influence environment setup (e.g., framework type).
             task: The Task object containing environment_data, query, and metadata needed to
                 construct the environment.
-            seed_generator: Optional seed generator for deriving deterministic seeds for
-                environment components (tools, simulators, etc.). Use `derive_seed()` to get
-                seeds for individual components. None if seeding is disabled.
+            seed_generator: Seed generator for deriving deterministic seeds for environment
+                components (tools, simulators, etc.). Use `derive_seed()` to get seeds for
+                individual components. Returns `None` if seeding is disabled (global_seed=None).
 
         Returns:
             An Environment instance with initialized state and tools for this specific task.
@@ -557,17 +557,17 @@ class Benchmark(ABC):
             - Use seed_generator to derive seeds for tool simulators
 
             ```python
-            def setup_environment(self, agent_data, task, seed_generator=None):
+            def setup_environment(self, agent_data, task, seed_generator):
                 env = TravelEnvironment(task.environment_data)
 
-                if seed_generator is not None:
-                    # Use nested child() for logical paths like "environment/tools/weather"
-                    env_gen = seed_generator.child("environment")
-                    tools_gen = env_gen.child("tools")
-                    for tool in env.tools:
-                        tool_seed = tools_gen.derive_seed(tool.name)
-                        tool_model = self.get_model_adapter(model_id, seed=tool_seed)
-                        tool.set_simulator(tool_model)
+                # Use nested child() for logical paths like "environment/tools/weather"
+                # derive_seed() returns None if seeding is disabled
+                env_gen = seed_generator.child("environment")
+                tools_gen = env_gen.child("tools")
+                for tool in env.tools:
+                    tool_seed = tools_gen.derive_seed(tool.name)  # Optional[int]
+                    tool_model = self.get_model_adapter(model_id, seed=tool_seed)
+                    tool.set_simulator(tool_model)
 
                 return env
             ```
@@ -581,7 +581,7 @@ class Benchmark(ABC):
         agent_data: Dict[str, Any],
         environment: Environment,
         task: Task,
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> Optional[User]:
         """Create an optional user simulator for interactive tasks.
 
@@ -595,8 +595,8 @@ class Benchmark(ABC):
                 influence user simulator setup (e.g., framework type for creating compatible tools).
             environment: The environment instance created for this task.
             task: The Task object with user profile data or scenario information.
-            seed_generator: Optional seed generator for deriving deterministic seeds for
-                the user simulator. None if seeding is disabled.
+            seed_generator: Seed generator for deriving deterministic seeds for the user simulator.
+                `derive_seed()` returns `None` if seeding is disabled (global_seed=None).
 
         Returns:
             A User instance that can respond to agent queries, or None if not needed.
@@ -607,18 +607,17 @@ class Benchmark(ABC):
             systems requiring user input during execution.
 
             ```python
-            def setup_user(self, agent_data, environment, task, seed_generator=None):
-                user_seed = None
-                if seed_generator is not None:
-                    # Use child() to create logical namespace - results in "simulators/user"
-                    sim_gen = seed_generator.child("simulators")
-                    user_seed = sim_gen.derive_seed("user")
+            def setup_user(self, agent_data, environment, task, seed_generator):
+                # Use child() to create logical namespace - results in "simulators/user"
+                # derive_seed() returns None if seeding is disabled
+                sim_gen = seed_generator.child("simulators")
+                user_seed = sim_gen.derive_seed("user")  # Optional[int]
 
                 user_model = self.get_model_adapter(model_id, seed=user_seed)
                 return LLMUser(model=user_model, ...)
 
             # Or skip user simulation entirely
-            def setup_user(self, agent_data, environment, task, seed_generator=None):
+            def setup_user(self, agent_data, environment, task, seed_generator):
                 return None
             ```
 
@@ -633,7 +632,7 @@ class Benchmark(ABC):
         environment: Environment,
         task: Task,
         user: Optional[User],
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Instantiate and configure the agent system for a task.
 
@@ -647,10 +646,10 @@ class Benchmark(ABC):
             environment: The initialized environment providing tools to the agents.
             task: The Task object with query and metadata.
             user: Optional user simulator for agent-user interactions.
-            seed_generator: Optional seed generator for deriving deterministic seeds for
-                agents and their models. Use `per_repetition=True` for agents that should
-                vary across repetitions, or `per_repetition=False` for baseline agents that
-                should remain constant. None if seeding is disabled.
+            seed_generator: Seed generator for deriving deterministic seeds for agents and their
+                models. Use `per_repetition=True` for agents that should vary across repetitions,
+                or `per_repetition=False` for baseline agents that should remain constant.
+                `derive_seed()` returns `None` if seeding is disabled (global_seed=None).
 
         Returns:
             A tuple of (agents_to_run, agents_dict) where:
@@ -670,23 +669,20 @@ class Benchmark(ABC):
               called indirectly through the orchestrator
 
             ```python
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
-                if seed_generator is not None:
-                    # Use child() for logical paths like "agents/experimental"
-                    agent_gen = seed_generator.child("agents")
-                    # Vary experimental agent per rep, keep baseline constant
-                    experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
-                    baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
+                # Use child() for logical paths like "agents/experimental"
+                # derive_seed() returns None if seeding is disabled
+                agent_gen = seed_generator.child("agents")
 
-                    # For worker agents, nest further: "agents/workers/analyst"
-                    worker_gen = agent_gen.child("workers")
-                    analyst_seed = worker_gen.derive_seed("analyst")
-                else:
-                    experimental_seed = None
-                    baseline_seed = None
-                    analyst_seed = None
+                # Vary experimental agent per rep, keep baseline constant
+                experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
+                baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
 
-                # Create agents with seeds
+                # For worker agents, nest further: "agents/workers/analyst"
+                worker_gen = agent_gen.child("workers")
+                analyst_seed = worker_gen.derive_seed("analyst")
+
+                # Create agents with seeds (model adapters accept Optional[int])
                 model = self.get_model_adapter(model_id, seed=experimental_seed)
                 # ... create agents ...
 
@@ -702,7 +698,7 @@ class Benchmark(ABC):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ) -> Sequence[Evaluator]:
         """Create evaluators to assess agent performance on a task.
 
@@ -711,8 +707,9 @@ class Benchmark(ABC):
             task: The Task object with evaluation criteria in evaluation_data.
             agents: The agents that will execute the task (useful for context in evaluation).
             user: Optional user simulator, if evaluation needs user interaction data.
-            seed_generator: Optional seed generator for deriving deterministic seeds for
-                evaluators that use LLMs (e.g., LLM judges). None if seeding is disabled.
+            seed_generator: Seed generator for deriving deterministic seeds for evaluators
+                that use LLMs (e.g., LLM judges). `derive_seed()` returns `None` if seeding
+                is disabled (global_seed=None).
 
         Returns:
             A sequence of Evaluator instances that will be called with execution traces.
@@ -723,12 +720,11 @@ class Benchmark(ABC):
             efficiency, conversation quality, etc.).
 
             ```python
-            def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
-                judge_seed = None
-                if seed_generator is not None:
-                    # Use child() to create logical namespace - results in "evaluators/judge"
-                    eval_gen = seed_generator.child("evaluators")
-                    judge_seed = eval_gen.derive_seed("judge")
+            def setup_evaluators(self, environment, task, agents, user, seed_generator):
+                # Use child() to create logical namespace - results in "evaluators/judge"
+                # derive_seed() returns None if seeding is disabled
+                eval_gen = seed_generator.child("evaluators")
+                judge_seed = eval_gen.derive_seed("judge")  # Optional[int]
 
                 return [
                     SuccessEvaluator(task.evaluation_data["gold_answer"]),
@@ -1011,9 +1007,7 @@ class Benchmark(ABC):
         context = TaskContext(deadline=timeout)
 
         # Create scoped seed generator for this task+repetition
-        task_seed_gen: Optional[SeedGenerator] = None
-        if self._seed_generator is not None:
-            task_seed_gen = self._seed_generator.for_task(str(task.id)).for_repetition(repeat_idx)
+        task_seed_gen = self._seed_generator.for_task(str(task.id)).for_repetition(repeat_idx)
 
         try:
             # 1. Setup
@@ -1043,8 +1037,7 @@ class Benchmark(ABC):
                     self.register("agents", agent_name, agent)
 
             # Register seed generator for config collection
-            if task_seed_gen is not None:
-                self.register("seeding", "seed_generator", task_seed_gen)
+            self.register("seeding", "seed_generator", task_seed_gen)
 
             # Check timeout after setup
             context.check_timeout()

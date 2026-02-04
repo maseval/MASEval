@@ -16,16 +16,21 @@ Example:
     generator = DefaultSeedGenerator(global_seed=42)
     benchmark = MyBenchmark(seed_generator=generator)
 
-    # In setup methods, derive seeds for components using hierarchical paths
-    def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
-        if seed_generator is not None:
-            # Use child() for hierarchical namespacing - creates paths like "agents/orchestrator"
-            agent_gen = seed_generator.child("agents")
-            orchestrator_seed = agent_gen.derive_seed("orchestrator")
+    # Disable seeding (derive_seed returns None)
+    benchmark = MyBenchmark(seed=None)
 
-            # per_repetition controls variance across repetitions
-            experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
-            baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
+    # In setup methods, derive seeds for components using hierarchical paths
+    def setup_agents(self, agent_data, environment, task, user, seed_generator):
+        # Use child() for hierarchical namespacing - creates paths like "agents/orchestrator"
+        agent_gen = seed_generator.child("agents")
+        orchestrator_seed = agent_gen.derive_seed("orchestrator")  # Optional[int]
+
+        # per_repetition controls variance across repetitions
+        experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
+        baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
+
+        # Seeds flow directly to model adapters (which accept Optional[int])
+        model = self.get_model_adapter(model_id, seed=orchestrator_seed)
     ```
 """
 
@@ -61,10 +66,13 @@ class SeedGenerator(ABC, ConfigurableMixin):
     Implementations must be thread-safe. The recommended pattern is to create isolated
     state in `for_task()` so each task repetition has its own generator instance.
 
+    When `global_seed` is `None`, seeding is disabled and `derive_seed()` returns `None`.
+    This allows seeds to flow through to model adapters which already accept `Optional[int]`.
+
     Subclasses must implement:
 
-    - `global_seed` - Property returning the root seed
-    - `derive_seed()` - Derive a seed for a named component
+    - `global_seed` - Property returning the root seed (or `None` if disabled)
+    - `derive_seed()` - Derive a seed for a named component (returns `None` if disabled)
     - `for_task()` - Create a generator scoped to a specific task
     - `for_repetition()` - Create a generator scoped to a specific repetition
     - `seed_log` - Property returning all derived seeds
@@ -72,12 +80,12 @@ class SeedGenerator(ABC, ConfigurableMixin):
 
     @property
     @abstractmethod
-    def global_seed(self) -> int:
-        """Root seed for the entire benchmark run."""
+    def global_seed(self) -> Optional[int]:
+        """Root seed for the entire benchmark run, or `None` if seeding is disabled."""
         pass
 
     @abstractmethod
-    def derive_seed(self, name: str, per_repetition: bool = True) -> int:
+    def derive_seed(self, name: str, per_repetition: bool = True) -> Optional[int]:
         """Derive a seed for a named component.
 
         Args:
@@ -87,10 +95,12 @@ class SeedGenerator(ABC, ConfigurableMixin):
                 seed is constant across repetitions of the same task.
 
         Returns:
-            Deterministic seed derived from the generator's state and name.
+            Deterministic seed derived from the generator's state and name,
+            or `None` if `global_seed` is `None` (seeding disabled).
 
         Raises:
-            SeedingError: If required context (task_id, rep_index) is not set.
+            SeedingError: If `global_seed` is set but required context (task_id, rep_index)
+                is not set.
         """
         pass
 
@@ -155,6 +165,9 @@ class DefaultSeedGenerator(SeedGenerator):
     Derives deterministic seeds from hierarchical paths. Thread-safe and immutable
     after construction (derives seeds via pure functions).
 
+    When `global_seed` is `None`, seeding is disabled and `derive_seed()` returns `None`.
+    This allows seeds to flow directly to model adapters which already accept `Optional[int]`.
+
     Provides `child()` method for hierarchical namespacing (not part of the ABC).
     Override `_compute_seed()` to customize the hash algorithm while keeping
     the rest of the infrastructure (logging, scoping, validation).
@@ -163,8 +176,11 @@ class DefaultSeedGenerator(SeedGenerator):
 
     Example:
         ```python
-        # Create root generator
+        # Create root generator with seeding enabled
         gen = DefaultSeedGenerator(global_seed=42)
+
+        # Or disable seeding (derive_seed returns None)
+        gen = DefaultSeedGenerator(global_seed=None)
 
         # Scope to task and repetition
         task_gen = gen.for_task("task_001").for_repetition(0)
@@ -174,10 +190,8 @@ class DefaultSeedGenerator(SeedGenerator):
         orchestrator_seed = agent_gen.derive_seed("orchestrator")  # Path: "agents/orchestrator"
         baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)  # Constant
 
-        # Nested child() for deeper hierarchies - creates "environment/tools/weather"
-        env_gen = task_gen.child("environment")
-        tools_gen = env_gen.child("tools")
-        weather_seed = tools_gen.derive_seed("weather")  # Path: "environment/tools/weather"
+        # Seeds flow directly to model adapters
+        model = get_model_adapter(model_id, seed=orchestrator_seed)  # Works with None
         ```
 
     Thread Safety:
@@ -209,7 +223,7 @@ class DefaultSeedGenerator(SeedGenerator):
 
     def __init__(
         self,
-        global_seed: int,
+        global_seed: Optional[int] = None,
         task_id: Optional[str] = None,
         rep_index: Optional[int] = None,
         path_prefix: str = "",
@@ -218,7 +232,8 @@ class DefaultSeedGenerator(SeedGenerator):
         """Initialize a DefaultSeedGenerator.
 
         Args:
-            global_seed: Root seed for the entire benchmark run.
+            global_seed: Root seed for the entire benchmark run, or `None` to disable seeding.
+                When `None`, `derive_seed()` returns `None` for all components.
             task_id: Current task identifier (set via `for_task()`).
             rep_index: Current repetition index (set via `for_repetition()`).
             path_prefix: Accumulated path from parent generators.
@@ -233,11 +248,11 @@ class DefaultSeedGenerator(SeedGenerator):
         self._shared_log = _shared_log if _shared_log is not None else {}
 
     @property
-    def global_seed(self) -> int:
-        """Root seed for the entire benchmark run."""
+    def global_seed(self) -> Optional[int]:
+        """Root seed for the entire benchmark run, or `None` if seeding is disabled."""
         return self._global_seed
 
-    def derive_seed(self, name: str, per_repetition: bool = True) -> int:
+    def derive_seed(self, name: str, per_repetition: bool = True) -> Optional[int]:
         """Derive a seed for a named component.
 
         Args:
@@ -246,12 +261,17 @@ class DefaultSeedGenerator(SeedGenerator):
                 seed is constant across repetitions of the same task.
 
         Returns:
-            Deterministic seed derived from (global_seed, task_id, [rep_index], path, name).
+            Deterministic seed derived from (global_seed, task_id, [rep_index], path, name),
+            or `None` if `global_seed` is `None` (seeding disabled).
 
         Raises:
-            SeedingError: If task_id is not set (call `for_task()` first),
+            SeedingError: If `global_seed` is set but task_id is not set (call `for_task()` first),
                 or if `per_repetition=True` and rep_index is not set.
         """
+        # If seeding is disabled, return None without validation
+        if self._global_seed is None:
+            return None
+
         if self._task_id is None:
             raise SeedingError("task_id not set. Call for_task() first.")
         if per_repetition and self._rep_index is None:
@@ -375,10 +395,10 @@ class DefaultSeedGenerator(SeedGenerator):
 
         - `type` - Component class name
         - `gathered_at` - ISO timestamp
-        - `global_seed` - The root seed
+        - `global_seed` - The root seed (or `None` if disabled)
         - `task_id` - Current task ID (if set)
         - `rep_index` - Current repetition index (if set)
-        - `seeds` - Dictionary of all derived seeds
+        - `seeds` - Dictionary of all derived seeds (empty if seeding disabled)
 
         Returns:
             Dictionary containing seed generator configuration.

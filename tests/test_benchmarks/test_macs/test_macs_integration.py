@@ -47,10 +47,13 @@ class TestFullBenchmarkIntegration:
         benchmark = ConcreteMACSBenchmark(model)
 
         # Setup phase
-        env = benchmark.setup_environment(sample_agent_data, travel_task)
-        user = benchmark.setup_user(sample_agent_data, env, travel_task)
-        agents_list, agents_dict = benchmark.setup_agents(sample_agent_data, env, travel_task, user)
-        evaluators = benchmark.setup_evaluators(env, travel_task, agents_list, user)
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
+        env = benchmark.setup_environment(sample_agent_data, travel_task, seed_gen)
+        user = benchmark.setup_user(sample_agent_data, env, travel_task, seed_gen)
+        agents_list, agents_dict = benchmark.setup_agents(sample_agent_data, env, travel_task, user, seed_gen)
+        evaluators = benchmark.setup_evaluators(env, travel_task, agents_list, user, seed_gen)
 
         # Verify setup
         assert isinstance(env, MACSEnvironment)
@@ -112,8 +115,11 @@ class TestDataLoadingIntegration:
             metadata={"scenario": "Travel booking scenario"},
         )
 
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = ConcreteMACSBenchmark(macs_model)
-        env = benchmark.setup_environment(sample_agent_data, task)
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
+        env = benchmark.setup_environment(sample_agent_data, task, seed_gen)
 
         assert "search" in env.tools
 

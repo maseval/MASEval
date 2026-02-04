@@ -24,7 +24,7 @@ Usage:
 
     # Create your framework-specific benchmark subclass
     class MyMACSBenchmark(MACSBenchmark):
-        def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+        def setup_agents(self, agent_data, environment, task, user, seed_generator):
             # Your framework-specific agent creation
             ...
 
@@ -793,7 +793,7 @@ class MACSBenchmark(Benchmark):
         self,
         agent_data: Dict[str, Any],
         task: Task,
-        seed_generator=None,
+        seed_generator,
     ) -> MACSEnvironment:
         """Create environment for a task.
 
@@ -804,18 +804,14 @@ class MACSBenchmark(Benchmark):
         """
         tool_model_id = self._get_tool_model_id(task)
 
-        # Create seed generator for tools if seeding is enabled
-        tools_gen = None
-        if seed_generator is not None:
-            env_gen = seed_generator.child("environment")
-            tools_gen = env_gen.child("tools")
+        # Create seed generator for tools (derive_seed returns None if seeding disabled)
+        env_gen = seed_generator.child("environment")
+        tools_gen = env_gen.child("tools")
 
         # Create a factory that captures the model_id and seed_generator from task data
         # tool_name is passed by create_tools() with "tool_" prefix
         def tool_model_factory(tool_name: str) -> ModelAdapter:
-            tool_seed = None
-            if tools_gen is not None:
-                tool_seed = tools_gen.derive_seed(tool_name)
+            tool_seed = tools_gen.derive_seed(tool_name)
             return self.get_model_adapter(
                 tool_model_id,
                 register_name=tool_name,
@@ -832,7 +828,7 @@ class MACSBenchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: MACSEnvironment,
         task: Task,
-        seed_generator=None,
+        seed_generator,
     ) -> MACSUser:
         """Create MACS user simulator.
 
@@ -855,11 +851,9 @@ class MACSBenchmark(Benchmark):
         scenario = task.metadata.get("scenario", "")
         user_model_id = self._get_user_model_id(task)
 
-        # Derive seed for user simulator if seeding is enabled
-        user_seed = None
-        if seed_generator is not None:
-            sim_gen = seed_generator.child("simulators")
-            user_seed = sim_gen.derive_seed("user")
+        # Derive seed for user simulator (returns None if seeding disabled)
+        sim_gen = seed_generator.child("simulators")
+        user_seed = sim_gen.derive_seed("user")
 
         return MACSUser(
             model=self.get_model_adapter(
@@ -878,7 +872,7 @@ class MACSBenchmark(Benchmark):
         environment: MACSEnvironment,
         task: Task,
         user: Optional[User],
-        seed_generator=None,
+        seed_generator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create agents for this task. Must be implemented by subclass.
 
@@ -900,7 +894,7 @@ class MACSBenchmark(Benchmark):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
-        seed_generator=None,
+        seed_generator,
     ) -> Sequence[Evaluator]:
         """Create user-side and system-side evaluators.
 
@@ -909,13 +903,10 @@ class MACSBenchmark(Benchmark):
         """
         evaluator_model_id = self._get_evaluator_model_id(task)
 
-        # Derive seeds for evaluators if seeding is enabled
-        user_gsr_seed = None
-        system_gsr_seed = None
-        if seed_generator is not None:
-            eval_gen = seed_generator.child("evaluators")
-            user_gsr_seed = eval_gen.derive_seed("user_gsr")
-            system_gsr_seed = eval_gen.derive_seed("system_gsr")
+        # Derive seeds for evaluators (returns None if seeding disabled)
+        eval_gen = seed_generator.child("evaluators")
+        user_gsr_seed = eval_gen.derive_seed("user_gsr")
+        system_gsr_seed = eval_gen.derive_seed("system_gsr")
 
         return [
             MACSEvaluator(

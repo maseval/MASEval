@@ -41,13 +41,15 @@ class TestBenchmarkSeedingInitialization:
         assert benchmark.seed_generator is custom_gen
         assert benchmark.seed_generator.global_seed == 123
 
-    def test_benchmark_no_seed_no_generator(self):
-        """No seed or seed_generator results in None."""
+    def test_benchmark_no_seed_has_generator_with_none_global_seed(self):
+        """No seed results in a seed generator with global_seed=None."""
         from conftest import DummyBenchmark
 
         benchmark = DummyBenchmark()
 
-        assert benchmark.seed_generator is None
+        # Always have a seed generator, but global_seed is None when seeding disabled
+        assert benchmark.seed_generator is not None
+        assert benchmark.seed_generator.global_seed is None
 
     def test_benchmark_seed_and_generator_raises_value_error(self):
         """Providing both seed and seed_generator raises ValueError."""
@@ -72,7 +74,7 @@ class TestSeedGeneratorPropagation:
         captured = {}
 
         class CapturingBenchmark(DummyBenchmark):
-            def setup_environment(self, agent_data, task, seed_generator=None):
+            def setup_environment(self, agent_data, task, seed_generator):
                 captured["seed_generator"] = seed_generator
                 return DummyEnvironment(task.environment_data)
 
@@ -90,7 +92,7 @@ class TestSeedGeneratorPropagation:
         captured = {}
 
         class CapturingBenchmark(DummyBenchmark):
-            def setup_user(self, agent_data, environment, task, seed_generator=None):
+            def setup_user(self, agent_data, environment, task, seed_generator):
                 captured["seed_generator"] = seed_generator
                 return None
 
@@ -107,7 +109,7 @@ class TestSeedGeneratorPropagation:
         captured = {}
 
         class CapturingBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 captured["seed_generator"] = seed_generator
                 agent = DummyAgent()
                 adapter = DummyAgentAdapter(agent, "test_agent")
@@ -126,7 +128,7 @@ class TestSeedGeneratorPropagation:
         captured = {}
 
         class CapturingBenchmark(DummyBenchmark):
-            def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator):
                 captured["seed_generator"] = seed_generator
                 return [DummyEvaluator(task, environment, user)]
 
@@ -136,22 +138,25 @@ class TestSeedGeneratorPropagation:
 
         assert captured["seed_generator"] is not None
 
-    def test_seed_generator_none_when_no_seed(self):
-        """seed_generator is None in setup methods when seeding disabled."""
+    def test_seed_generator_has_none_global_seed_when_no_seed(self):
+        """seed_generator has global_seed=None when seeding disabled."""
         from conftest import DummyBenchmark
 
         captured = {}
 
         class CapturingBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 captured["seed_generator"] = seed_generator
+                captured["global_seed"] = seed_generator.global_seed
                 return super().setup_agents(agent_data, environment, task, user, seed_generator)
 
         tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
         benchmark = CapturingBenchmark()  # No seed
         benchmark.run(tasks, agent_data={})
 
-        assert captured["seed_generator"] is None
+        # seed_generator is always provided, but global_seed is None
+        assert captured["seed_generator"] is not None
+        assert captured["global_seed"] is None
 
 
 # =============================================================================
@@ -182,7 +187,7 @@ class TestSeedingConfigInReports:
         from conftest import DummyBenchmark, DummyAgent, DummyAgentAdapter
 
         class SeedUsingBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 if seed_generator is not None:
                     agent_gen = seed_generator.child("agents")
                     agent_gen.derive_seed("test_agent")
@@ -199,8 +204,8 @@ class TestSeedingConfigInReports:
         seeds = config["seeding"]["seed_generator"]["seeds"]
         assert "agents/test_agent" in seeds
 
-    def test_no_seeding_config_when_disabled(self):
-        """No seeding config when seeding is disabled."""
+    def test_seeding_config_shows_none_when_disabled(self):
+        """Seeding config shows global_seed=None when seeding is disabled."""
         from conftest import DummyBenchmark
 
         tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
@@ -209,9 +214,11 @@ class TestSeedingConfigInReports:
         reports = benchmark.run(tasks, agent_data={})
 
         config = reports[0]["config"]
-        # seeding key may exist but be empty, or not exist at all
-        if "seeding" in config:
-            assert config["seeding"] == {} or config["seeding"].get("seed_generator") is None
+        # seeding key exists with seed_generator config showing global_seed=None
+        assert "seeding" in config
+        assert "seed_generator" in config["seeding"]
+        assert config["seeding"]["seed_generator"]["global_seed"] is None
+        assert config["seeding"]["seed_generator"]["seeds"] == {}
 
 
 # =============================================================================
@@ -229,7 +236,7 @@ class TestSeedingAcrossRepetitions:
         captured_seeds = []
 
         class CapturingBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 if seed_generator is not None:
                     seed = seed_generator.derive_seed("agent", per_repetition=True)
                     captured_seeds.append(seed)
@@ -249,7 +256,7 @@ class TestSeedingAcrossRepetitions:
         captured_seeds = []
 
         class CapturingBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 if seed_generator is not None:
                     seed = seed_generator.derive_seed("baseline", per_repetition=False)
                     captured_seeds.append(seed)
@@ -280,7 +287,7 @@ class TestReproducibility:
                 super().__init__(*args, **kwargs)
                 self._capture_list = capture_list
 
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 if seed_generator is not None:
                     seed = seed_generator.derive_seed("agent")
                     self._capture_list.append(seed)
@@ -309,7 +316,7 @@ class TestReproducibility:
                 super().__init__(*args, **kwargs)
                 self._capture_list = capture_list
 
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 if seed_generator is not None:
                     seed = seed_generator.derive_seed("agent")
                     self._capture_list.append(seed)
@@ -345,7 +352,7 @@ class TestSeedGeneratorScoping:
         task_ids_seen = []
 
         class CapturingBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 if seed_generator is not None:
                     # Access internal state to verify task scoping
                     task_ids_seen.append(seed_generator._task_id)
@@ -371,7 +378,7 @@ class TestSeedGeneratorScoping:
         rep_indices_seen = []
 
         class CapturingBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 if seed_generator is not None:
                     # Access internal state to verify rep scoping
                     rep_indices_seen.append(seed_generator._rep_index)
@@ -391,7 +398,7 @@ class TestSeedGeneratorScoping:
         class SeedUsingBenchmark(DummyBenchmark):
             captured_config = None
 
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 if seed_generator is not None:
                     # Create multiple child generators
                     agent_gen = seed_generator.child("agents")

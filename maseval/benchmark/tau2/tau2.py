@@ -26,7 +26,7 @@ Usage:
 
     # Create your framework-specific benchmark subclass
     class MyTau2Benchmark(Tau2Benchmark):
-        def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+        def setup_agents(self, agent_data, environment, task, user, seed_generator):
             # Your framework-specific agent creation
             ...
 
@@ -219,7 +219,7 @@ class Tau2Benchmark(Benchmark):
 
     Example:
         class MyTau2Benchmark(Tau2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 # Setup your agents here
                 ...
 
@@ -297,7 +297,7 @@ class Tau2Benchmark(Benchmark):
         self,
         agent_data: Dict[str, Any],
         task: Task,
-        seed_generator=None,
+        seed_generator,
     ) -> Tau2Environment:
         """Create environment for a task.
 
@@ -318,7 +318,7 @@ class Tau2Benchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: Tau2Environment,
         task: Task,
-        seed_generator=None,
+        seed_generator,
     ) -> Optional[User]:
         """Create Tau2 user simulator.
 
@@ -364,11 +364,9 @@ class Tau2Benchmark(Benchmark):
 
         user_model_id = self._get_user_model_id(task)
 
-        # Derive seed for user simulator if seeding is enabled
-        user_seed = None
-        if seed_generator is not None:
-            sim_gen = seed_generator.child("simulators")
-            user_seed = sim_gen.derive_seed("user")
+        # Derive seed for user simulator (returns None if seeding disabled)
+        sim_gen = seed_generator.child("simulators")
+        user_seed = sim_gen.derive_seed("user")
 
         # Get user tools from environment
         user_tools = environment.create_user_tools()
@@ -391,7 +389,7 @@ class Tau2Benchmark(Benchmark):
         environment: Tau2Environment,
         task: Task,
         user: Optional[User],
-        seed_generator=None,
+        seed_generator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create agents for this task. Must be implemented by subclass.
 
@@ -412,7 +410,7 @@ class Tau2Benchmark(Benchmark):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
-        seed_generator=None,
+        seed_generator,
     ) -> Sequence[Evaluator]:
         """Create evaluator for the task.
 
@@ -921,7 +919,7 @@ class DefaultAgentTau2Benchmark(Tau2Benchmark):
         environment: Tau2Environment,
         task: Task,
         user: Optional[User],
-        seed_generator=None,
+        seed_generator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create the default tau2 agent.
 
@@ -945,11 +943,9 @@ class DefaultAgentTau2Benchmark(Tau2Benchmark):
         tools = environment.create_tools()
         policy = environment.policy
 
-        # Derive seed for agent model if seeding is enabled
-        agent_seed = None
-        if seed_generator is not None:
-            agent_gen = seed_generator.child("agents")
-            agent_seed = agent_gen.derive_seed("default_agent")
+        # Derive seed for agent model (returns None if seeding disabled)
+        agent_gen = seed_generator.child("agents")
+        agent_seed = agent_gen.derive_seed("default_agent")
 
         # Create model adapter
         model = self.get_model_adapter(model_id, register_name="agent_model", seed=agent_seed)

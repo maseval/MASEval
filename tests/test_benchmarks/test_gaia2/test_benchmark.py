@@ -31,7 +31,7 @@ class TestGaia2BenchmarkInit:
 
         # Create minimal concrete implementation
         class TestBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -47,7 +47,7 @@ class TestGaia2BenchmarkInit:
         from maseval.benchmark.gaia2 import Gaia2Benchmark
 
         class TestBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -72,18 +72,21 @@ class TestGaia2BenchmarkSetupUser:
         from maseval.benchmark.gaia2 import Gaia2Benchmark
 
         class TestBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
                 return DummyModelAdapter()
 
+        from maseval.core.seeding import DefaultSeedGenerator
+
         benchmark = TestBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
         # Mock environment
         mock_env = MagicMock()
 
-        result = benchmark.setup_user({}, mock_env, sample_gaia2_task)
+        result = benchmark.setup_user({}, mock_env, sample_gaia2_task, seed_gen)
 
         assert result is None
 
@@ -92,7 +95,7 @@ class TestGaia2BenchmarkSetupUser:
 class TestGaia2BenchmarkSetupEnvironment:
     """Tests for Gaia2Benchmark.setup_environment()."""
 
-    def test_creates_gaia2_environment(self, sample_gaia2_task):
+    def test_creates_gaia2_environment(self, sample_gaia2_task, seed_gen):
         """Test setup_environment creates Gaia2Environment."""
         import sys
         from unittest.mock import patch, MagicMock
@@ -121,7 +124,7 @@ class TestGaia2BenchmarkSetupEnvironment:
             sample_gaia2_task.environment_data["scenario"] = mock_scenario
 
             class TestBenchmark(Gaia2Benchmark):
-                def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                def setup_agents(self, agent_data, environment, task, user, seed_generator):
                     return [], {}
 
                 def get_model_adapter(self, model_id, **kwargs):
@@ -129,7 +132,7 @@ class TestGaia2BenchmarkSetupEnvironment:
 
             benchmark = TestBenchmark()
 
-            env = benchmark.setup_environment({}, sample_gaia2_task)
+            env = benchmark.setup_environment({}, sample_gaia2_task, seed_gen)
 
             assert isinstance(env, Gaia2Environment)
 
@@ -138,12 +141,12 @@ class TestGaia2BenchmarkSetupEnvironment:
 class TestGaia2BenchmarkSetupEvaluators:
     """Tests for Gaia2Benchmark.setup_evaluators()."""
 
-    def test_creates_gaia2_evaluator(self, sample_gaia2_task):
+    def test_creates_gaia2_evaluator(self, sample_gaia2_task, seed_gen):
         """Test setup_evaluators creates Gaia2Evaluator."""
         from maseval.benchmark.gaia2 import Gaia2Benchmark, Gaia2Evaluator
 
         class TestBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -152,17 +155,17 @@ class TestGaia2BenchmarkSetupEvaluators:
         benchmark = TestBenchmark()
         mock_env = MagicMock()
 
-        evaluators = benchmark.setup_evaluators(mock_env, sample_gaia2_task, [], None)
+        evaluators = benchmark.setup_evaluators(mock_env, sample_gaia2_task, [], None, seed_gen)
 
         assert len(evaluators) == 1
         assert isinstance(evaluators[0], Gaia2Evaluator)
 
-    def test_passes_model_if_configured(self, sample_gaia2_task):
+    def test_passes_model_if_configured(self, sample_gaia2_task, seed_gen):
         """Test evaluator receives model if model_id configured."""
         from maseval.benchmark.gaia2 import Gaia2Benchmark, Gaia2Evaluator
 
         class TestBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -181,7 +184,7 @@ class TestGaia2BenchmarkSetupEvaluators:
             metadata={},
         )
 
-        evaluators = benchmark.setup_evaluators(mock_env, task, [], None)
+        evaluators = benchmark.setup_evaluators(mock_env, task, [], None, seed_gen)
         gaia2_evaluator = evaluators[0]
         assert isinstance(gaia2_evaluator, Gaia2Evaluator)
         assert gaia2_evaluator.model is not None
@@ -196,7 +199,7 @@ class TestGaia2BenchmarkRunAgents:
         from maseval.benchmark.gaia2 import Gaia2Benchmark
 
         class TestBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -221,7 +224,7 @@ class TestGaia2BenchmarkRunAgents:
         from maseval.benchmark.gaia2 import Gaia2Benchmark
 
         class TestBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -243,7 +246,7 @@ class TestGaia2BenchmarkRunAgents:
         from maseval.benchmark.gaia2 import Gaia2Benchmark
 
         class TestBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -271,7 +274,7 @@ class TestGaia2BenchmarkEvaluate:
         from maseval.benchmark.gaia2 import Gaia2Benchmark
 
         class TestBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -334,7 +337,7 @@ class TestDefaultAgentGaia2BenchmarkInit:
 class TestDefaultAgentGaia2BenchmarkSetupAgents:
     """Tests for DefaultAgentGaia2Benchmark.setup_agents()."""
 
-    def test_creates_default_gaia2_agent(self, sample_gaia2_task):
+    def test_creates_default_gaia2_agent(self, sample_gaia2_task, seed_gen):
         """Test setup_agents creates DefaultGaia2Agent."""
         from maseval.benchmark.gaia2 import DefaultAgentGaia2Benchmark, DefaultGaia2AgentAdapter
 
@@ -348,13 +351,13 @@ class TestDefaultAgentGaia2BenchmarkSetupAgents:
         mock_env = MagicMock()
         mock_env.create_tools.return_value = {"tool1": lambda **kw: "result"}
 
-        agents, agent_dict = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None)
+        agents, agent_dict = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None, seed_gen)
 
         assert len(agents) == 1
         assert isinstance(agents[0], DefaultGaia2AgentAdapter)
         assert "gaia2_agent" in agent_dict
 
-    def test_merges_class_and_runtime_agent_data(self, sample_gaia2_task):
+    def test_merges_class_and_runtime_agent_data(self, sample_gaia2_task, seed_gen):
         """Test agent_data from class and runtime are merged."""
         from maseval.benchmark.gaia2 import DefaultAgentGaia2Benchmark
 
@@ -373,12 +376,13 @@ class TestDefaultAgentGaia2BenchmarkSetupAgents:
             mock_env,
             sample_gaia2_task,
             None,
+            seed_gen,
         )
 
         # The agent should use runtime model_id
         # We can't easily verify this without inspecting the agent's model
 
-    def test_raises_if_model_id_missing(self, sample_gaia2_task):
+    def test_raises_if_model_id_missing(self, sample_gaia2_task, seed_gen):
         """Test raises ValueError if model_id not configured."""
         from maseval.benchmark.gaia2 import DefaultAgentGaia2Benchmark
 
@@ -392,9 +396,9 @@ class TestDefaultAgentGaia2BenchmarkSetupAgents:
         mock_env.create_tools.return_value = {}
 
         with pytest.raises(ValueError, match="model_id not configured"):
-            benchmark.setup_agents({}, mock_env, sample_gaia2_task, None)
+            benchmark.setup_agents({}, mock_env, sample_gaia2_task, None, seed_gen)
 
-    def test_uses_default_iterations_from_constant(self, sample_gaia2_task):
+    def test_uses_default_iterations_from_constant(self, sample_gaia2_task, seed_gen):
         """Test uses _DEFAULT_MAX_ITERATIONS if not specified."""
         from maseval.benchmark.gaia2 import DefaultAgentGaia2Benchmark
         from maseval.benchmark.gaia2.gaia2 import _DEFAULT_MAX_ITERATIONS
@@ -408,12 +412,12 @@ class TestDefaultAgentGaia2BenchmarkSetupAgents:
         mock_env = MagicMock()
         mock_env.create_tools.return_value = {}
 
-        agents, _ = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None)
+        agents, _ = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None, seed_gen)
 
         # The agent should have default max_iterations
         assert agents[0].agent.max_iterations == _DEFAULT_MAX_ITERATIONS
 
-    def test_passes_custom_llm_args(self, sample_gaia2_task):
+    def test_passes_custom_llm_args(self, sample_gaia2_task, seed_gen):
         """Test custom llm_args are passed to agent."""
         from maseval.benchmark.gaia2 import DefaultAgentGaia2Benchmark
 
@@ -427,7 +431,7 @@ class TestDefaultAgentGaia2BenchmarkSetupAgents:
         mock_env = MagicMock()
         mock_env.create_tools.return_value = {}
 
-        agents, _ = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None)
+        agents, _ = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None, seed_gen)
 
         # Agent should have custom temperature (overrides default)
         assert agents[0].agent.llm_args["temperature"] == 0.9
@@ -471,7 +475,7 @@ class TestAgentAgnosticDesign:
         assert "DefaultGaia2Agent" not in source
         assert "DefaultGaia2AgentAdapter" not in source
 
-    def test_can_use_custom_agent(self, sample_gaia2_task):
+    def test_can_use_custom_agent(self, sample_gaia2_task, seed_gen):
         """Test Gaia2Benchmark works with custom agent implementation."""
         from maseval.benchmark.gaia2 import Gaia2Benchmark
 
@@ -487,7 +491,7 @@ class TestAgentAgnosticDesign:
                 return self.agent.run(query)
 
         class CustomBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 adapter = CustomAgentAdapter()
                 return [adapter], {"custom_agent": adapter}
 
@@ -498,7 +502,7 @@ class TestAgentAgnosticDesign:
         mock_env = MagicMock()
         mock_env.create_tools.return_value = {}
 
-        agents, agent_dict = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None)
+        agents, agent_dict = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None, seed_gen)
 
         assert len(agents) == 1
         assert agents[0].run("test") == "Custom response to: test"
@@ -543,6 +547,8 @@ class TestGaia2BenchmarkSeeding:
         """Test that setup_agents passes None seed when seed_generator is None."""
         from maseval.benchmark.gaia2 import DefaultAgentGaia2Benchmark
 
+        from maseval.core.seeding import DefaultSeedGenerator
+
         captured_kwargs = []
 
         class CapturingBenchmark(DefaultAgentGaia2Benchmark):
@@ -554,7 +560,9 @@ class TestGaia2BenchmarkSeeding:
         mock_env = MagicMock()
         mock_env.create_tools.return_value = {}
 
-        benchmark.setup_agents({}, mock_env, sample_gaia2_task, None, seed_generator=None)
+        # Use a seed generator with global_seed=None to test disabled seeding
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
+        benchmark.setup_agents({}, mock_env, sample_gaia2_task, None, seed_generator=seed_gen)
 
         assert len(captured_kwargs) == 1
         assert captured_kwargs[0].get("seed") is None
@@ -568,7 +576,7 @@ class TestGaia2BenchmarkSeeding:
         captured_kwargs = []
 
         class CapturingBenchmark(Gaia2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):

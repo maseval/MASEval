@@ -18,9 +18,10 @@ class TestMultiAgentBenchBenchmark:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """setup_environment should return MultiAgentBenchEnvironment."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
 
         assert isinstance(env, MultiAgentBenchEnvironment)
 
@@ -28,10 +29,11 @@ class TestMultiAgentBenchBenchmark:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """setup_user should return None (no user simulator for multi-agent)."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
-        user = benchmark_instance.setup_user({}, env, sample_research_task)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
+        user = benchmark_instance.setup_user({}, env, sample_research_task, seed_gen)
 
         assert user is None
 
@@ -39,11 +41,12 @@ class TestMultiAgentBenchBenchmark:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """setup_evaluators should return MultiAgentBenchEvaluator."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
-        agents, _ = benchmark_instance.setup_agents({}, env, sample_research_task, None)
-        evaluators = benchmark_instance.setup_evaluators(env, sample_research_task, agents, None)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
+        agents, _ = benchmark_instance.setup_agents({}, env, sample_research_task, None, seed_gen)
+        evaluators = benchmark_instance.setup_evaluators(env, sample_research_task, agents, None, seed_gen)
 
         assert len(evaluators) == 1
         assert isinstance(evaluators[0], MultiAgentBenchEvaluator)
@@ -57,14 +60,14 @@ class TestMultiAgentBenchBenchmark:
         from unittest.mock import patch
         from maseval.core.seeding import DefaultSeedGenerator
 
-        # Create a benchmark and mock get_model_adapter
-        benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
-        env = benchmark.setup_environment({}, sample_research_task)
-        agents, _ = benchmark.setup_agents({}, env, sample_research_task, None)
-
-        # Create a seed generator
+        # Create a seed generator first
         seed_gen = DefaultSeedGenerator(global_seed=42)
         task_seed_gen = seed_gen.for_task("test_task").for_repetition(0)
+
+        # Create a benchmark and mock get_model_adapter
+        benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
+        env = benchmark.setup_environment({}, sample_research_task, task_seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, sample_research_task, None, task_seed_gen)
 
         # Patch get_model_adapter to capture the seed argument
         with patch.object(benchmark, "get_model_adapter", wraps=benchmark.get_model_adapter) as mock_get_model:
@@ -77,20 +80,23 @@ class TestMultiAgentBenchBenchmark:
             assert call_kwargs["seed"] is not None
             assert isinstance(call_kwargs["seed"], int)
 
-    def test_setup_evaluators_no_seed_without_generator(
+    def test_setup_evaluators_no_seed_when_seeding_disabled(
         self,
         concrete_multiagentbench_benchmark,
         sample_research_task: Task,
     ):
-        """setup_evaluators should pass None seed when no seed_generator provided."""
+        """setup_evaluators should pass None seed when global_seed is None."""
         from unittest.mock import patch
+        from maseval.core.seeding import DefaultSeedGenerator
 
         benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
-        env = benchmark.setup_environment({}, sample_research_task)
-        agents, _ = benchmark.setup_agents({}, env, sample_research_task, None)
+        # Use a seed generator with global_seed=None to test disabled seeding
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
+        env = benchmark.setup_environment({}, sample_research_task, seed_generator=seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, sample_research_task, None, seed_generator=seed_gen)
 
         with patch.object(benchmark, "get_model_adapter", wraps=benchmark.get_model_adapter) as mock_get_model:
-            benchmark.setup_evaluators(env, sample_research_task, agents, None, seed_generator=None)
+            benchmark.setup_evaluators(env, sample_research_task, agents, None, seed_generator=seed_gen)
 
             mock_get_model.assert_called_once()
             call_kwargs = mock_get_model.call_args.kwargs
@@ -108,13 +114,13 @@ class TestMultiAgentBenchBenchmark:
         seeds_collected = []
 
         for _ in range(2):
-            benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
-            env = benchmark.setup_environment({}, sample_research_task)
-            agents, _ = benchmark.setup_agents({}, env, sample_research_task, None)
-
             # Same global seed each time
             seed_gen = DefaultSeedGenerator(global_seed=42)
             task_seed_gen = seed_gen.for_task("test_task").for_repetition(0)
+
+            benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
+            env = benchmark.setup_environment({}, sample_research_task, task_seed_gen)
+            agents, _ = benchmark.setup_agents({}, env, sample_research_task, None, task_seed_gen)
 
             with patch.object(benchmark, "get_model_adapter", wraps=benchmark.get_model_adapter) as mock_get_model:
                 benchmark.setup_evaluators(env, sample_research_task, agents, None, seed_generator=task_seed_gen)
@@ -136,14 +142,12 @@ class TestMultiAgentBenchBenchmark:
 
         for global_seed in [42, 123]:
             benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
-            env = benchmark.setup_environment({}, sample_research_task)
-            agents, _ = benchmark.setup_agents({}, env, sample_research_task, None)
-
-            seed_gen = DefaultSeedGenerator(global_seed=global_seed)
-            task_seed_gen = seed_gen.for_task("test_task").for_repetition(0)
+            seed_gen = DefaultSeedGenerator(global_seed=global_seed).for_task("test_task").for_repetition(0)
+            env = benchmark.setup_environment({}, sample_research_task, seed_gen)
+            agents, _ = benchmark.setup_agents({}, env, sample_research_task, None, seed_gen)
 
             with patch.object(benchmark, "get_model_adapter", wraps=benchmark.get_model_adapter) as mock_get_model:
-                benchmark.setup_evaluators(env, sample_research_task, agents, None, seed_generator=task_seed_gen)
+                benchmark.setup_evaluators(env, sample_research_task, agents, None, seed_generator=seed_gen)
                 seeds_collected.append(mock_get_model.call_args.kwargs["seed"])
 
         # Different seeds
@@ -199,10 +203,11 @@ class TestMultiAgentBenchBenchmark:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """setup_agents should create correct number of agents."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
-        agents_list, agents_dict = benchmark_instance.setup_agents({}, env, sample_research_task, None)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
+        agents_list, agents_dict = benchmark_instance.setup_agents({}, env, sample_research_task, None, seed_gen)
 
         # sample_research_task has 2 agents
         assert len(agents_list) == 2
@@ -214,10 +219,11 @@ class TestMultiAgentBenchBenchmark:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """run_agents should execute all agents and return results."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
-        agents_list, _ = benchmark_instance.setup_agents({}, env, sample_research_task, None)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
+        agents_list, _ = benchmark_instance.setup_agents({}, env, sample_research_task, None, seed_gen)
 
         results = benchmark_instance.run_agents(
             agents_list,
@@ -238,11 +244,12 @@ class TestMultiAgentBenchBenchmark:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """evaluate should call all evaluators."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
-        agents_list, agents_dict = benchmark_instance.setup_agents({}, env, sample_research_task, None)
-        evaluators = benchmark_instance.setup_evaluators(env, sample_research_task, agents_list, None)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
+        agents_list, agents_dict = benchmark_instance.setup_agents({}, env, sample_research_task, None, seed_gen)
+        evaluators = benchmark_instance.setup_evaluators(env, sample_research_task, agents_list, None, seed_gen)
 
         final_answer = [{"agent_id": "agent1", "result": "Done"}]
         traces = {
@@ -332,7 +339,7 @@ class TestBenchmarkIntegration:
         """Benchmark should handle setup errors gracefully."""
 
         class FailingBenchmark(concrete_multiagentbench_benchmark):
-            def setup_environment(self, agent_data, task, seed_generator=None):
+            def setup_environment(self, agent_data, task, seed_generator):
                 raise RuntimeError("Setup failed")
 
         benchmark = FailingBenchmark(progress_bar=False)
@@ -353,10 +360,11 @@ class TestAgentCreation:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """Created agents should have IDs from task config."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
-        _, agents_dict = benchmark_instance.setup_agents({}, env, sample_research_task, None)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
+        _, agents_dict = benchmark_instance.setup_agents({}, env, sample_research_task, None, seed_gen)
 
         assert "agent1" in agents_dict
         assert "agent2" in agents_dict
@@ -365,10 +373,11 @@ class TestAgentCreation:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """Created agents should have profiles from task config."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
-        _, agents_dict = benchmark_instance.setup_agents({}, env, sample_research_task, None)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
+        _, agents_dict = benchmark_instance.setup_agents({}, env, sample_research_task, None, seed_gen)
 
         agent1 = agents_dict["agent1"]
         assert hasattr(agent1, "profile")
@@ -382,11 +391,12 @@ class TestEvaluatorConfiguration:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """Evaluator should use model_id from task evaluation_data."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
-        agents, _ = benchmark_instance.setup_agents({}, env, sample_research_task, None)
-        evaluators = benchmark_instance.setup_evaluators(env, sample_research_task, agents, None)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
+        agents, _ = benchmark_instance.setup_agents({}, env, sample_research_task, None, seed_gen)
+        evaluators = benchmark_instance.setup_evaluators(env, sample_research_task, agents, None, seed_gen)
 
         evaluator = evaluators[0]
         assert evaluator.domain == "research"
@@ -395,11 +405,12 @@ class TestEvaluatorConfiguration:
         self,
         benchmark_instance,
         sample_bargaining_task: Task,
+        seed_gen,
     ):
         """Evaluator should get domain from task environment_data."""
-        env = benchmark_instance.setup_environment({}, sample_bargaining_task)
-        agents, _ = benchmark_instance.setup_agents({}, env, sample_bargaining_task, None)
-        evaluators = benchmark_instance.setup_evaluators(env, sample_bargaining_task, agents, None)
+        env = benchmark_instance.setup_environment({}, sample_bargaining_task, seed_gen)
+        agents, _ = benchmark_instance.setup_agents({}, env, sample_bargaining_task, None, seed_gen)
+        evaluators = benchmark_instance.setup_evaluators(env, sample_bargaining_task, agents, None, seed_gen)
 
         evaluator = evaluators[0]
         assert evaluator.domain == "bargaining"
@@ -433,13 +444,14 @@ class TestMarbleMultiAgentBenchBenchmark:
         self,
         marble_benchmark_class,
         sample_research_task: Task,
+        seed_gen,
     ):
         """setup_agents should raise ImportError when MARBLE not available."""
         benchmark = marble_benchmark_class(progress_bar=False)
-        env = benchmark.setup_environment({}, sample_research_task)
+        env = benchmark.setup_environment({}, sample_research_task, seed_gen)
 
         with pytest.raises(ImportError, match="MARBLE is not available"):
-            benchmark.setup_agents({}, env, sample_research_task, None)
+            benchmark.setup_agents({}, env, sample_research_task, None, seed_gen)
 
     def test_create_marble_env_raises_import_error(
         self,
@@ -467,11 +479,12 @@ class TestMarbleMultiAgentBenchBenchmark:
         self,
         marble_benchmark_class,
         sample_research_task: Task,
+        seed_gen,
     ):
         """run_agents should return structured output with agent_results."""
 
         benchmark = marble_benchmark_class(progress_bar=False)
-        env = benchmark.setup_environment({}, sample_research_task)
+        env = benchmark.setup_environment({}, sample_research_task, seed_gen)
 
         # Create mock agents
         mock_agent1 = MagicMock()
@@ -501,10 +514,11 @@ class TestMarbleMultiAgentBenchBenchmark:
         self,
         marble_benchmark_class,
         sample_research_task: Task,
+        seed_gen,
     ):
         """run_agents should collect communications from agents."""
         benchmark = marble_benchmark_class(progress_bar=False)
-        env = benchmark.setup_environment({}, sample_research_task)
+        env = benchmark.setup_environment({}, sample_research_task, seed_gen)
 
         # Create mock agent with get_serialized_messages
         mock_agent = MagicMock()
@@ -529,11 +543,12 @@ class TestBenchmarkWithDifferentCoordinationModes:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """run_agents should work with cooperative coordination."""
         # sample_research_task uses cooperative mode by default
-        env = benchmark_instance.setup_environment({}, sample_research_task)
-        agents_list, _ = benchmark_instance.setup_agents({}, env, sample_research_task, None)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
+        agents_list, _ = benchmark_instance.setup_agents({}, env, sample_research_task, None, seed_gen)
 
         results = benchmark_instance.run_agents(
             agents_list,
@@ -545,7 +560,7 @@ class TestBenchmarkWithDifferentCoordinationModes:
         assert len(results["agent_results"]) == 2
         assert results["coordination_mode"] == "cooperative"
 
-    def test_run_agents_with_star_mode(self, benchmark_instance):
+    def test_run_agents_with_star_mode(self, benchmark_instance, seed_gen):
         """run_agents should work with star coordination."""
         task_data = {
             "scenario": "research",
@@ -568,8 +583,8 @@ class TestBenchmarkWithDifferentCoordinationModes:
             metadata={"domain": "research"},
         )
 
-        env = benchmark_instance.setup_environment({}, task)
-        agents_list, _ = benchmark_instance.setup_agents({}, env, task, None)
+        env = benchmark_instance.setup_environment({}, task, seed_gen)
+        agents_list, _ = benchmark_instance.setup_agents({}, env, task, None, seed_gen)
 
         results = benchmark_instance.run_agents(agents_list, task, env, task.query)
 
@@ -584,9 +599,10 @@ class TestBenchmarkWithEmptyAgents:
         self,
         benchmark_instance,
         sample_research_task: Task,
+        seed_gen,
     ):
         """run_agents should handle empty agent list."""
-        env = benchmark_instance.setup_environment({}, sample_research_task)
+        env = benchmark_instance.setup_environment({}, sample_research_task, seed_gen)
 
         results = benchmark_instance.run_agents(
             [],
@@ -598,7 +614,7 @@ class TestBenchmarkWithEmptyAgents:
         assert results["agent_results"] == []
         assert results["communications"] == []
 
-    def test_setup_agents_with_no_agents_in_task(self, benchmark_instance):
+    def test_setup_agents_with_no_agents_in_task(self, benchmark_instance, seed_gen):
         """setup_agents should handle task with no agents."""
         task_data = {
             "scenario": "research",
@@ -618,8 +634,8 @@ class TestBenchmarkWithEmptyAgents:
             metadata={"domain": "research"},
         )
 
-        env = benchmark_instance.setup_environment({}, task)
-        agents_list, agents_dict = benchmark_instance.setup_agents({}, env, task, None)
+        env = benchmark_instance.setup_environment({}, task, seed_gen)
+        agents_list, agents_dict = benchmark_instance.setup_agents({}, env, task, None, seed_gen)
 
         assert len(agents_list) == 0
         assert len(agents_dict) == 0

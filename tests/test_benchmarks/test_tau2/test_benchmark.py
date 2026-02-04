@@ -9,7 +9,7 @@ from maseval.benchmark.tau2 import Tau2Benchmark, Tau2User
 class DummyTau2Benchmark(Tau2Benchmark):
     """Subclass for testing abstract base class."""
 
-    def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+    def setup_agents(self, agent_data, environment, task, user, seed_generator):
         return [], {}
 
     def get_model_adapter(self, model_id, **kwargs):
@@ -33,8 +33,11 @@ def task():
 @pytest.mark.benchmark
 def test_setup_environment(benchmark, task):
     """Test environment setup."""
+    from maseval.core.seeding import DefaultSeedGenerator
+
+    seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
     with patch("maseval.benchmark.tau2.tau2.Tau2Environment") as mock_env_cls:
-        benchmark.setup_environment({}, task)
+        benchmark.setup_environment({}, task, seed_gen)
 
         mock_env_cls.assert_called_once_with(task_data=task.environment_data)
 
@@ -42,10 +45,13 @@ def test_setup_environment(benchmark, task):
 @pytest.mark.benchmark
 def test_setup_user(benchmark, task):
     """Test user setup."""
+    from maseval.core.seeding import DefaultSeedGenerator
+
     mock_env = MagicMock()
     mock_env.create_user_tools.return_value = {}
+    seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-    user = benchmark.setup_user({}, mock_env, task)
+    user = benchmark.setup_user({}, mock_env, task, seed_gen)
 
     assert isinstance(user, Tau2User)
     assert user.scenario == "Call about order."
@@ -56,10 +62,13 @@ def test_setup_user(benchmark, task):
 @pytest.mark.benchmark
 def test_setup_user_missing_model_id(benchmark, task):
     """Test that missing model_id raises ValueError."""
+    from maseval.core.seeding import DefaultSeedGenerator
+
     task.user_data = {}  # Remove model_id
+    seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
     with pytest.raises(ValueError, match="not configured"):
-        benchmark.setup_user({}, MagicMock(), task)
+        benchmark.setup_user({}, MagicMock(), task, seed_gen)
 
 
 # =============================================================================
@@ -78,7 +87,7 @@ class TestTau2BenchmarkSeeding:
         captured_kwargs = []
 
         class CapturingBenchmark(Tau2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -98,12 +107,14 @@ class TestTau2BenchmarkSeeding:
         assert captured_kwargs[0]["seed"] is not None
         assert isinstance(captured_kwargs[0]["seed"], int)
 
-    def test_setup_user_passes_none_seed_when_no_generator(self, task):
-        """Test that setup_user passes None seed when seed_generator is None."""
+    def test_setup_user_passes_none_seed_when_seeding_disabled(self, task):
+        """Test that setup_user passes None seed when global_seed is None."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         captured_kwargs = []
 
         class CapturingBenchmark(Tau2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -114,7 +125,9 @@ class TestTau2BenchmarkSeeding:
         mock_env = MagicMock()
         mock_env.create_user_tools.return_value = {}
 
-        benchmark.setup_user({}, mock_env, task, seed_generator=None)
+        # Use a seed generator with global_seed=None to test disabled seeding
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
+        benchmark.setup_user({}, mock_env, task, seed_generator=seed_gen)
 
         assert len(captured_kwargs) == 1
         assert captured_kwargs[0].get("seed") is None
@@ -124,7 +137,7 @@ class TestTau2BenchmarkSeeding:
         from maseval.core.seeding import DefaultSeedGenerator
 
         class CapturingBenchmark(Tau2Benchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):

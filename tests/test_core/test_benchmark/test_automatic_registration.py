@@ -29,10 +29,13 @@ def test_automatic_agent_registration():
     assert len(benchmark._registry._trace_registry) == 0
 
     # Run one step to trigger setup
+    from maseval.core.seeding import DefaultSeedGenerator
+
+    seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
     for task, agent_data in zip(tasks, [agent_data]):
-        environment = benchmark.setup_environment(agent_data, task)
-        user = benchmark.setup_user(agent_data, environment, task)
-        agents_to_run, agents_dict = benchmark.setup_agents(agent_data, environment, task, user)
+        environment = benchmark.setup_environment(agent_data, task, seed_gen)
+        user = benchmark.setup_user(agent_data, environment, task, seed_gen)
+        agents_to_run, agents_dict = benchmark.setup_agents(agent_data, environment, task, user, seed_gen)
 
         # Manually trigger auto-registration (simulating what run() does)
         if environment is not None and isinstance(environment, TraceableMixin):

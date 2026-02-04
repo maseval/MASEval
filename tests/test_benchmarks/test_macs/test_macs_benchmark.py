@@ -44,41 +44,41 @@ class TestMACSBenchmarkSetup:
 
         assert benchmark.max_invocations == 5
 
-    def test_setup_environment_creates_macs_environment(self, macs_model, sample_agent_data, sample_task):
+    def test_setup_environment_creates_macs_environment(self, macs_model, sample_agent_data, sample_task, seed_gen):
         """setup_environment returns MACSEnvironment with tools."""
         benchmark = ConcreteMACSBenchmark(macs_model)
 
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
 
         assert isinstance(env, MACSEnvironment)
         assert "search_flights" in env.tools
 
-    def test_setup_user_creates_macs_user(self, macs_model, sample_agent_data, sample_task):
+    def test_setup_user_creates_macs_user(self, macs_model, sample_agent_data, sample_task, seed_gen):
         """setup_user returns MACSUser with scenario from task."""
         benchmark = ConcreteMACSBenchmark(macs_model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
 
-        user = benchmark.setup_user(sample_agent_data, env, sample_task)
+        user = benchmark.setup_user(sample_agent_data, env, sample_task, seed_gen)
 
         assert isinstance(user, MACSUser)
         assert user.scenario == "Business trip to NYC"
 
-    def test_setup_user_handles_no_scenario(self, macs_model, sample_agent_data, sample_task_no_scenario):
+    def test_setup_user_handles_no_scenario(self, macs_model, sample_agent_data, sample_task_no_scenario, seed_gen):
         """Handles missing scenario gracefully."""
         benchmark = ConcreteMACSBenchmark(macs_model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task_no_scenario)
+        env = benchmark.setup_environment(sample_agent_data, sample_task_no_scenario, seed_gen)
 
-        user = benchmark.setup_user(sample_agent_data, env, sample_task_no_scenario)
+        user = benchmark.setup_user(sample_agent_data, env, sample_task_no_scenario, seed_gen)
 
         assert user.scenario == ""
 
-    def test_setup_evaluators_creates_user_and_system(self, macs_model, sample_agent_data, sample_task):
+    def test_setup_evaluators_creates_user_and_system(self, macs_model, sample_agent_data, sample_task, seed_gen):
         """Creates both user and system evaluators."""
         benchmark = ConcreteMACSBenchmark(macs_model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
         agents = [MACSAgentAdapter()]
 
-        evaluators = benchmark.setup_evaluators(env, sample_task, agents, None)
+        evaluators = benchmark.setup_evaluators(env, sample_task, agents, None, seed_gen)
 
         assert len(evaluators) == 2
         assert isinstance(evaluators[0], MACSEvaluator)
@@ -111,12 +111,12 @@ class TestMACSBenchmarkSetup:
 class TestRunAgents:
     """Tests for run_agents method."""
 
-    def test_run_agents_executes_agents_with_query(self, macs_model, sample_agent_data, sample_task):
+    def test_run_agents_executes_agents_with_query(self, macs_model, sample_agent_data, sample_task, seed_gen):
         """Agents are executed with the query parameter."""
         benchmark = ConcreteMACSBenchmark(macs_model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
 
-        agents_list, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
+        agents_list, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
 
         # Pass explicit query parameter
         benchmark.run_agents(agents_list, sample_task, env, query=sample_task.query)
@@ -127,15 +127,15 @@ class TestRunAgents:
         assert len(mock_agent.run_calls) == 1
         assert mock_agent.run_calls[0] == sample_task.query
 
-    def test_run_agents_uses_query_parameter_not_task_query(self, macs_model, sample_agent_data, sample_task):
+    def test_run_agents_uses_query_parameter_not_task_query(self, macs_model, sample_agent_data, sample_task, seed_gen):
         """run_agents uses the query parameter, not task.query directly.
 
         This is critical for multi-turn interaction where the query changes
         between invocations (e.g., user's response becomes the next query).
         """
         benchmark = ConcreteMACSBenchmark(macs_model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        agents_list, _ = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        agents_list, _ = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
 
         # Pass a different query than task.query
         custom_query = "This is a user response, not the task query"
@@ -147,11 +147,11 @@ class TestRunAgents:
         assert mock_agent.run_calls[0] == custom_query
         assert mock_agent.run_calls[0] != sample_task.query
 
-    def test_run_agents_returns_answer(self, macs_model, sample_agent_data, sample_task):
+    def test_run_agents_returns_answer(self, macs_model, sample_agent_data, sample_task, seed_gen):
         """Returns final answer(s) as MessageHistory."""
         benchmark = ConcreteMACSBenchmark(macs_model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        agents_list, _ = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        agents_list, _ = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
 
         result = benchmark.run_agents(agents_list, sample_task, env, query=sample_task.query)
 
@@ -161,17 +161,17 @@ class TestRunAgents:
         # Check that response content contains expected text
         assert "Response to:" in result[-1]["content"]
 
-    def test_run_agents_single_agent(self, macs_model, sample_agent_data, sample_task):
+    def test_run_agents_single_agent(self, macs_model, sample_agent_data, sample_task, seed_gen):
         """Single agent returns MessageHistory."""
         benchmark = ConcreteMACSBenchmark(macs_model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        agents_list, _ = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        agents_list, _ = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
 
         result = benchmark.run_agents(agents_list, sample_task, env, query=sample_task.query)
 
         assert isinstance(result, MessageHistory)
 
-    def test_run_agents_multiple_agents(self, macs_model, sample_agent_data, sample_task):
+    def test_run_agents_multiple_agents(self, macs_model, sample_agent_data, sample_task, seed_gen):
         """Multiple agents return list of answers."""
 
         class MultiAgentBenchmark(MACSBenchmark):
@@ -188,15 +188,15 @@ class TestRunAgents:
                 environment: MACSEnvironment,
                 task: Task,
                 user: Optional[User],
-                seed_generator=None,
+                seed_generator,
             ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
                 agent1: AgentAdapter = MACSAgentAdapter("agent1")
                 agent2: AgentAdapter = MACSAgentAdapter("agent2")
                 return [agent1, agent2], {"agent1": agent1, "agent2": agent2}
 
         benchmark = MultiAgentBenchmark(macs_model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        agents_list, _ = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        agents_list, _ = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
 
         result = benchmark.run_agents(agents_list, sample_task, env, query=sample_task.query)
 
@@ -213,7 +213,7 @@ class TestRunAgents:
 class TestEvaluation:
     """Tests for evaluate method."""
 
-    def test_evaluate_calls_both_evaluators(self, sample_agent_data, sample_task):
+    def test_evaluate_calls_both_evaluators(self, sample_agent_data, sample_task, seed_gen):
         """Both user and system evaluators are called."""
         # Model returns valid JSON for evaluation
         responses = [
@@ -222,9 +222,9 @@ class TestEvaluation:
         ]
         model = DummyModelAdapter(responses=responses)
         benchmark = ConcreteMACSBenchmark(model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
-        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
+        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None, seed_gen)
 
         traces = {
             "agents": {
@@ -244,7 +244,7 @@ class TestEvaluation:
         assert "user_gsr" in results[0]
         assert "system_gsr" in results[0]
 
-    def test_evaluate_returns_aggregated_metrics(self, sample_agent_data, sample_task):
+    def test_evaluate_returns_aggregated_metrics(self, sample_agent_data, sample_task, seed_gen):
         """Returns combined GSR metrics."""
         responses = [
             '[{"assertion": "A", "answer": "TRUE", "evidence": "OK"}]',
@@ -252,9 +252,9 @@ class TestEvaluation:
         ]
         model = DummyModelAdapter(responses=responses)
         benchmark = ConcreteMACSBenchmark(model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
-        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
+        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None, seed_gen)
 
         traces = {
             "agents": {"test_agent": {"messages": [{"role": "user", "content": "Q"}]}},
@@ -273,7 +273,7 @@ class TestEvaluation:
         assert "supervisor_gsr" in result
         assert "report" in result
 
-    def test_evaluate_overall_gsr(self, sample_agent_data, sample_task):
+    def test_evaluate_overall_gsr(self, sample_agent_data, sample_task, seed_gen):
         """overall_gsr = 1.0 only if both user AND system pass."""
         # User passes, system fails
         responses = [
@@ -282,9 +282,9 @@ class TestEvaluation:
         ]
         model = DummyModelAdapter(responses=responses)
         benchmark = ConcreteMACSBenchmark(model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
-        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
+        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None, seed_gen)
 
         traces = {
             "agents": {"test_agent": {"messages": [{"role": "user", "content": "Q"}]}},
@@ -297,7 +297,7 @@ class TestEvaluation:
         assert results[0]["system_gsr"] == 0.0
         assert results[0]["overall_gsr"] == 0.0  # Not all passed
 
-    def test_evaluate_supervisor_gsr(self, sample_agent_data, sample_task):
+    def test_evaluate_supervisor_gsr(self, sample_agent_data, sample_task, seed_gen):
         """supervisor_gsr = 1.0 if overall OR user passes."""
         # User passes, system fails
         responses = [
@@ -306,9 +306,9 @@ class TestEvaluation:
         ]
         model = DummyModelAdapter(responses=responses)
         benchmark = ConcreteMACSBenchmark(model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
-        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
+        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None, seed_gen)
 
         traces = {
             "agents": {"test_agent": {"messages": [{"role": "user", "content": "Q"}]}},
@@ -320,7 +320,7 @@ class TestEvaluation:
         # User passed, so supervisor_gsr should be 1.0
         assert results[0]["supervisor_gsr"] == 1.0
 
-    def test_evaluate_combined_report(self, sample_agent_data, sample_task):
+    def test_evaluate_combined_report(self, sample_agent_data, sample_task, seed_gen):
         """Report combines both evaluator reports."""
         responses = [
             '[{"assertion": "User A", "answer": "TRUE", "evidence": "OK"}]',
@@ -328,9 +328,9 @@ class TestEvaluation:
         ]
         model = DummyModelAdapter(responses=responses)
         benchmark = ConcreteMACSBenchmark(model)
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None)
-        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        _, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, None, seed_gen)
+        evaluators = benchmark.setup_evaluators(env, sample_task, list(agents_dict.values()), None, seed_gen)
 
         traces = {
             "agents": {"test_agent": {"messages": [{"role": "user", "content": "Q"}]}},
@@ -598,7 +598,7 @@ class TestComputeBenchmarkMetrics:
 class TestMACSBenchmarkIntegration:
     """Integration tests for MACSBenchmark."""
 
-    def test_full_task_execution(self, sample_agent_data, sample_task):
+    def test_full_task_execution(self, sample_agent_data, sample_task, seed_gen):
         """Test complete task execution flow."""
         # Evaluator responses - user then system
         responses = [
@@ -609,10 +609,10 @@ class TestMACSBenchmarkIntegration:
         benchmark = ConcreteMACSBenchmark(model)
 
         # Setup phase
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
-        user = benchmark.setup_user(sample_agent_data, env, sample_task)
-        agents_list, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, user)
-        evaluators = benchmark.setup_evaluators(env, sample_task, agents_list, user)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
+        user = benchmark.setup_user(sample_agent_data, env, sample_task, seed_gen)
+        agents_list, agents_dict = benchmark.setup_agents(sample_agent_data, env, sample_task, user, seed_gen)
+        evaluators = benchmark.setup_evaluators(env, sample_task, agents_list, user, seed_gen)
 
         # Run phase
         final_answer = benchmark.run_agents(agents_list, sample_task, env, query=sample_task.query)
@@ -637,12 +637,12 @@ class TestMACSBenchmarkIntegration:
         assert results[0]["system_gsr"] == 1.0
         assert results[0]["overall_gsr"] == 1.0
 
-    def test_benchmark_with_real_environment(self, sample_agent_data, sample_task):
+    def test_benchmark_with_real_environment(self, sample_agent_data, sample_task, seed_gen):
         """Test with real MACSEnvironment tool creation."""
         model = DummyModelAdapter(responses=['{"text": "Default response", "details": {}}'])
         benchmark = ConcreteMACSBenchmark(model)
 
-        env = benchmark.setup_environment(sample_agent_data, sample_task)
+        env = benchmark.setup_environment(sample_agent_data, sample_task, seed_gen)
 
         # Environment should have tools
         assert "search_flights" in env.tools
@@ -665,7 +665,7 @@ class TestMACSBenchmarkSeeding:
         captured_kwargs = []
 
         class CapturingBenchmark(MACSBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -687,10 +687,12 @@ class TestMACSBenchmarkSeeding:
 
     def test_setup_environment_passes_none_seed_when_no_generator(self, sample_agent_data, sample_task):
         """Test that setup_environment passes None seed when seed_generator is None."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         captured_kwargs = []
 
         class CapturingBenchmark(MACSBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -699,7 +701,9 @@ class TestMACSBenchmarkSeeding:
 
         benchmark = CapturingBenchmark()
 
-        benchmark.setup_environment(sample_agent_data, sample_task, seed_generator=None)
+        # Use a seed generator with global_seed=None to test disabled seeding
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
+        benchmark.setup_environment(sample_agent_data, sample_task, seed_generator=seed_gen)
 
         # Should have captured at least one call
         assert len(captured_kwargs) >= 1
@@ -712,7 +716,7 @@ class TestMACSBenchmarkSeeding:
         from maseval.core.seeding import DefaultSeedGenerator
 
         class CapturingBenchmark(MACSBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -733,7 +737,7 @@ class TestMACSBenchmarkSeeding:
         captured_kwargs = []
 
         class CapturingBenchmark(MACSBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -751,12 +755,14 @@ class TestMACSBenchmarkSeeding:
         assert captured_kwargs[0]["seed"] is not None
         assert isinstance(captured_kwargs[0]["seed"], int)
 
-    def test_setup_user_passes_none_seed_when_no_generator(self, sample_agent_data, sample_task):
-        """Test that setup_user passes None seed when seed_generator is None."""
+    def test_setup_user_passes_none_seed_when_seeding_disabled(self, sample_agent_data, sample_task):
+        """Test that setup_user passes None seed when global_seed is None."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         captured_kwargs = []
 
         class CapturingBenchmark(MACSBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -766,7 +772,9 @@ class TestMACSBenchmarkSeeding:
         benchmark = CapturingBenchmark()
         mock_env = MagicMock()
 
-        benchmark.setup_user(sample_agent_data, mock_env, sample_task, seed_generator=None)
+        # Use a seed generator with global_seed=None to test disabled seeding
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
+        benchmark.setup_user(sample_agent_data, mock_env, sample_task, seed_generator=seed_gen)
 
         assert len(captured_kwargs) == 1
         assert captured_kwargs[0].get("seed") is None
@@ -776,7 +784,7 @@ class TestMACSBenchmarkSeeding:
         from maseval.core.seeding import DefaultSeedGenerator
 
         class CapturingBenchmark(MACSBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -797,7 +805,7 @@ class TestMACSBenchmarkSeeding:
         captured_kwargs = []
 
         class CapturingBenchmark(MACSBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -817,12 +825,14 @@ class TestMACSBenchmarkSeeding:
             assert kwargs["seed"] is not None
             assert isinstance(kwargs["seed"], int)
 
-    def test_setup_evaluators_passes_none_seeds_when_no_generator(self, sample_agent_data, sample_task):
-        """Test that setup_evaluators passes None seeds when seed_generator is None."""
+    def test_setup_evaluators_passes_none_seeds_when_seeding_disabled(self, sample_agent_data, sample_task):
+        """Test that setup_evaluators passes None seeds when global_seed is None."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         captured_kwargs = []
 
         class CapturingBenchmark(MACSBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
@@ -832,7 +842,9 @@ class TestMACSBenchmarkSeeding:
         benchmark = CapturingBenchmark()
         mock_env = MagicMock()
 
-        benchmark.setup_evaluators(mock_env, sample_task, [], None, seed_generator=None)
+        # Use a seed generator with global_seed=None to test disabled seeding
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
+        benchmark.setup_evaluators(mock_env, sample_task, [], None, seed_generator=seed_gen)
 
         assert len(captured_kwargs) == 2
         for kwargs in captured_kwargs:
@@ -843,7 +855,7 @@ class TestMACSBenchmarkSeeding:
         from maseval.core.seeding import DefaultSeedGenerator
 
         class CapturingBenchmark(MACSBenchmark):
-            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):

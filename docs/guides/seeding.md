@@ -40,11 +40,10 @@ This creates a `DefaultSeedGenerator` internally and passes it to all setup meth
 
 ### Using Seeds in Setup Methods
 
-All setup methods receive an optional `seed_generator` parameter. Use it to derive seeds for your components:
+All setup methods receive a `seed_generator` parameter. Use it to derive seeds for your components. When seeding is disabled (no `seed` passed to benchmark), `derive_seed()` returns `None`:
 
 ```python
 from maseval import Benchmark, SeedGenerator
-from typing import Optional
 
 class MyBenchmark(Benchmark):
     def setup_agents(
@@ -53,16 +52,15 @@ class MyBenchmark(Benchmark):
         environment,
         task,
         user,
-        seed_generator: Optional[SeedGenerator] = None,
+        seed_generator: SeedGenerator,
     ):
         # Derive a seed for your agent using hierarchical paths
-        agent_seed = None
-        if seed_generator is not None:
-            # Use child() to create logical namespaces - results in "agents/orchestrator"
-            agent_gen = seed_generator.child("agents")
-            agent_seed = agent_gen.derive_seed("orchestrator")
+        # Returns None if seeding is disabled (global_seed=None)
+        # Use child() to create logical namespaces - results in "agents/orchestrator"
+        agent_gen = seed_generator.child("agents")
+        agent_seed = agent_gen.derive_seed("orchestrator")
 
-        # Pass seed to model adapter
+        # Pass seed to model adapter (adapters accept Optional[int])
         model = self.get_model_adapter(model_id, seed=agent_seed)
         agent = MyAgent(model=model)
         # ... rest of setup
@@ -75,18 +73,17 @@ Seeds are derived from hierarchical paths, so `derive_seed("orchestrator")` with
 When running multiple repetitions of the same task, you may want some components to vary while others remain constant. The `per_repetition` flag controls this:
 
 ```python
-def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
-    if seed_generator is not None:
-        # Use child() to group agent seeds under "agents/" namespace
-        agent_gen = seed_generator.child("agents")
+def setup_agents(self, agent_data, environment, task, user, seed_generator):
+    # Use child() to group agent seeds under "agents/" namespace
+    agent_gen = seed_generator.child("agents")
 
-        # Varies per repetition - different seed for rep 0, 1, 2, ...
-        # Results in path: "agents/experimental"
-        experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
+    # Varies per repetition - different seed for rep 0, 1, 2, ...
+    # Results in path: "agents/experimental"
+    experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
 
-        # Constant across repetitions - same seed for rep 0, 1, 2, ...
-        # Results in path: "agents/baseline"
-        baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
+    # Constant across repetitions - same seed for rep 0, 1, 2, ...
+    # Results in path: "agents/baseline"
+    baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
 ```
 
 **Use cases:**
@@ -101,26 +98,24 @@ def setup_agents(self, agent_data, environment, task, user, seed_generator=None)
 For complex systems with many components, use `child()` to create hierarchical namespaces:
 
 ```python
-def setup_environment(self, agent_data, task, seed_generator=None):
-    if seed_generator is not None:
-        # Create a child generator for environment components
-        env_gen = seed_generator.child("environment")
+def setup_environment(self, agent_data, task, seed_generator):
+    # Create a child generator for environment components
+    env_gen = seed_generator.child("environment")
 
-        # Further nest tools under "environment/tools/"
-        tools_gen = env_gen.child("tools")
-        weather_seed = tools_gen.derive_seed("weather")  # "environment/tools/weather"
-        search_seed = tools_gen.derive_seed("search")    # "environment/tools/search"
+    # Further nest tools under "environment/tools/"
+    tools_gen = env_gen.child("tools")
+    weather_seed = tools_gen.derive_seed("weather")  # "environment/tools/weather"
+    search_seed = tools_gen.derive_seed("search")    # "environment/tools/search"
 
-def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
-    if seed_generator is not None:
-        # Create a child generator for agents
-        agent_gen = seed_generator.child("agents")
+def setup_agents(self, agent_data, environment, task, user, seed_generator):
+    # Create a child generator for agents
+    agent_gen = seed_generator.child("agents")
 
-        orchestrator_seed = agent_gen.derive_seed("orchestrator")  # "agents/orchestrator"
+    orchestrator_seed = agent_gen.derive_seed("orchestrator")  # "agents/orchestrator"
 
-        # Nest workers under "agents/workers/"
-        worker_gen = agent_gen.child("workers")
-        analyst_seed = worker_gen.derive_seed("analyst")           # "agents/workers/analyst"
+    # Nest workers under "agents/workers/"
+    worker_gen = agent_gen.child("workers")
+    analyst_seed = worker_gen.derive_seed("analyst")           # "agents/workers/analyst"
 ```
 
 Child generators share the same seed log, so all derived seeds are recorded together.

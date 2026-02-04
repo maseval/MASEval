@@ -32,22 +32,22 @@ class ExecutionLoopBenchmark(Benchmark):
 
         return DummyModelAdapter(model_id=model_id)
 
-    def setup_environment(self, agent_data, task, seed_generator=None):
+    def setup_environment(self, agent_data, task, seed_generator):
         from conftest import DummyEnvironment
 
         return DummyEnvironment(task.environment_data)
 
-    def setup_user(self, agent_data, environment, task, seed_generator=None):
+    def setup_user(self, agent_data, environment, task, seed_generator):
         return self._return_user
 
-    def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+    def setup_agents(self, agent_data, environment, task, user, seed_generator):
         from conftest import DummyAgent, DummyAgentAdapter
 
         agent = DummyAgent()
         adapter = DummyAgentAdapter(agent, "test_agent")
         return [adapter], {"test_agent": adapter}
 
-    def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
+    def setup_evaluators(self, environment, task, agents, user, seed_generator):
         from conftest import DummyEvaluator
 
         return [DummyEvaluator(task, environment, user)]
@@ -71,11 +71,14 @@ class TestExecutionLoopNoUser:
 
     def test_uses_task_query_without_user(self, dummy_model):
         """Uses task.query when no user present."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         task = Task(query="What is the weather?", environment_data={})
         benchmark = ExecutionLoopBenchmark(return_user=None)
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, None)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, None, seed_gen)
 
         benchmark.execution_loop(agents, task, env, user=None)
 
@@ -85,11 +88,14 @@ class TestExecutionLoopNoUser:
 
     def test_single_invocation_without_user(self, dummy_model):
         """Single agent run without user (default max_invocations=1)."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         task = Task(query="Query", environment_data={})
         benchmark = ExecutionLoopBenchmark(return_user=None)
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, None)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, None, seed_gen)
 
         benchmark.execution_loop(agents, task, env, user=None)
 
@@ -97,11 +103,14 @@ class TestExecutionLoopNoUser:
 
     def test_returns_final_answer(self, dummy_model):
         """Returns final answer from agent."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
         task = Task(query="Test query", environment_data={})
         benchmark = ExecutionLoopBenchmark(return_user=None)
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, None)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, None, seed_gen)
 
         result = benchmark.execution_loop(agents, task, env, user=None)
 
@@ -121,6 +130,7 @@ class TestExecutionLoopWithUser:
     def test_uses_user_initial_query(self, dummy_model):
         """Uses user's initial_query as first query."""
         from conftest import DummyUser
+        from maseval.core.seeding import DefaultSeedGenerator
 
         task = Task(query="Task query (should not be used)", environment_data={})
         user = DummyUser(
@@ -130,9 +140,10 @@ class TestExecutionLoopWithUser:
             max_turns=5,
         )
         benchmark = ExecutionLoopBenchmark(return_user=user)
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, user)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, user, seed_gen)
 
         benchmark.execution_loop(agents, task, env, user=user)
 
@@ -143,6 +154,7 @@ class TestExecutionLoopWithUser:
     def test_uses_get_initial_query_if_no_initial_query(self, dummy_model):
         """Calls get_initial_query() if no initial_query."""
         from conftest import DummyUser
+        from maseval.core.seeding import DefaultSeedGenerator
 
         task = Task(query="Task query", environment_data={})
         user = DummyUser(name="test", model=dummy_model, max_turns=5)
@@ -150,9 +162,10 @@ class TestExecutionLoopWithUser:
         user.simulator.return_value = "LLM generated initial query"  # type: ignore[union-attr]  # mock
 
         benchmark = ExecutionLoopBenchmark(return_user=user)
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, user)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, user, seed_gen)
 
         benchmark.execution_loop(agents, task, env, user=user)
 
@@ -163,6 +176,7 @@ class TestExecutionLoopWithUser:
     def test_multi_turn_interaction(self, dummy_model):
         """Multiple agent-user exchanges up to max_invocations."""
         from conftest import DummyUser
+        from maseval.core.seeding import DefaultSeedGenerator
 
         task = Task(query="Task query", environment_data={})
         user = DummyUser(
@@ -178,9 +192,10 @@ class TestExecutionLoopWithUser:
             return_user=user,
             max_invocations=3,
         )
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, user)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, user, seed_gen)
 
         benchmark.execution_loop(agents, task, env, user=user)
 
@@ -196,6 +211,7 @@ class TestExecutionLoopWithUser:
     def test_stops_when_user_done_via_max_turns(self, dummy_model):
         """Stops early when user.is_done() returns True (max_turns reached first)."""
         from conftest import DummyUser
+        from maseval.core.seeding import DefaultSeedGenerator
 
         task = Task(query="Task query", environment_data={})
         user = DummyUser(
@@ -210,9 +226,10 @@ class TestExecutionLoopWithUser:
             return_user=user,
             max_invocations=5,  # Would allow 5, but user stops at 3 turns
         )
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, user)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, user, seed_gen)
 
         benchmark.execution_loop(agents, task, env, user=user)
 
@@ -223,6 +240,7 @@ class TestExecutionLoopWithUser:
     def test_stops_when_user_done_via_stop_token(self, dummy_model):
         """Stops early when user.is_done() returns True (stop_tokens)."""
         from conftest import DummyUser
+        from maseval.core.seeding import DefaultSeedGenerator
 
         task = Task(query="Task query", environment_data={})
         user = DummyUser(
@@ -240,9 +258,10 @@ class TestExecutionLoopWithUser:
             return_user=user,
             max_invocations=5,
         )
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, user)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, user, seed_gen)
 
         benchmark.execution_loop(agents, task, env, user=user)
 
@@ -252,6 +271,7 @@ class TestExecutionLoopWithUser:
     def test_final_answer_in_user_messages(self, dummy_model):
         """Agent's final_answer is recorded in user messages."""
         from conftest import DummyUser
+        from maseval.core.seeding import DefaultSeedGenerator
 
         task = Task(query="Task query", environment_data={})
         user = DummyUser(
@@ -263,9 +283,10 @@ class TestExecutionLoopWithUser:
         user.simulator.return_value = "Thanks"  # type: ignore[union-attr]  # mock
 
         benchmark = ExecutionLoopBenchmark(return_user=user)
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, user)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, user, seed_gen)
 
         benchmark.execution_loop(agents, task, env, user=user)
 
@@ -279,6 +300,7 @@ class TestExecutionLoopWithUser:
     def test_user_response_becomes_next_query(self, dummy_model):
         """User's response is passed to next agent invocation."""
         from conftest import DummyUser
+        from maseval.core.seeding import DefaultSeedGenerator
 
         task = Task(query="Task query", environment_data={})
         user = DummyUser(
@@ -294,9 +316,10 @@ class TestExecutionLoopWithUser:
             return_user=user,
             max_invocations=3,  # Will stop after 3 due to max_invocations
         )
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task("test").for_repetition(0)
 
-        env = benchmark.setup_environment({}, task)
-        agents, _ = benchmark.setup_agents({}, env, task, user)
+        env = benchmark.setup_environment({}, task, seed_gen)
+        agents, _ = benchmark.setup_agents({}, env, task, user, seed_gen)
 
         benchmark.execution_loop(agents, task, env, user=user)
 

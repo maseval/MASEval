@@ -17,7 +17,7 @@ Usage:
 
     # Create your framework-specific benchmark subclass
     class MyGaia2Benchmark(Gaia2Benchmark):
-        def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+        def setup_agents(self, agent_data, environment, task, user, seed_generator):
             # Your framework-specific agent creation
             ...
 
