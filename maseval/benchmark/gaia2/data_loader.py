@@ -102,7 +102,7 @@ def load_tasks(
         raise ImportError("HuggingFace datasets library is required for loading Gaia2 tasks.\nInstall with: pip install datasets") from e
 
     try:
-        from are.simulation.data_handler.importer import JsonScenarioImporter
+        from are.simulation.data_handler.importer import JsonScenarioImporter  # type: ignore[import-not-found]
     except ImportError as e:
         raise ImportError(
             "ARE (Agent Research Environments) is required for Gaia2 benchmark.\n"
@@ -130,7 +130,7 @@ def load_tasks(
 
     for row in dataset:
         # Parse scenario from JSON
-        scenario, oracle_events, world_logs = importer.import_from_json_to_benchmark(json_str=row["data"])
+        scenario, oracle_events, _ = importer.import_from_json_to_benchmark(json_str=row["data"])
 
         task = _convert_gaia2_to_maseval(
             row=row,

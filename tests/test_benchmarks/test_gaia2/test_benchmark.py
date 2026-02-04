@@ -159,7 +159,7 @@ class TestGaia2BenchmarkSetupEvaluators:
 
     def test_passes_model_if_configured(self, sample_gaia2_task):
         """Test evaluator receives model if model_id configured."""
-        from maseval.benchmark.gaia2 import Gaia2Benchmark
+        from maseval.benchmark.gaia2 import Gaia2Benchmark, Gaia2Evaluator
 
         class TestBenchmark(Gaia2Benchmark):
             def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
@@ -182,8 +182,9 @@ class TestGaia2BenchmarkSetupEvaluators:
         )
 
         evaluators = benchmark.setup_evaluators(mock_env, task, [], None)
-
-        assert evaluators[0].model is not None
+        gaia2_evaluator = evaluators[0]
+        assert isinstance(gaia2_evaluator, Gaia2Evaluator)
+        assert gaia2_evaluator.model is not None
 
 
 @pytest.mark.benchmark
@@ -410,7 +411,7 @@ class TestDefaultAgentGaia2BenchmarkSetupAgents:
         agents, _ = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None)
 
         # The agent should have default max_iterations
-        assert agents[0]._agent.max_iterations == _DEFAULT_MAX_ITERATIONS
+        assert agents[0].agent.max_iterations == _DEFAULT_MAX_ITERATIONS
 
     def test_passes_custom_llm_args(self, sample_gaia2_task):
         """Test custom llm_args are passed to agent."""
@@ -429,7 +430,7 @@ class TestDefaultAgentGaia2BenchmarkSetupAgents:
         agents, _ = benchmark.setup_agents({}, mock_env, sample_gaia2_task, None)
 
         # Agent should have custom temperature (overrides default)
-        assert agents[0]._agent.llm_args["temperature"] == 0.9
+        assert agents[0].agent.llm_args["temperature"] == 0.9
 
 
 @pytest.mark.benchmark
@@ -441,6 +442,7 @@ class TestDefaultAgentGaia2BenchmarkDocstring:
         from maseval.benchmark.gaia2 import DefaultAgentGaia2Benchmark
 
         docstring = DefaultAgentGaia2Benchmark.__doc__
+        assert docstring is not None
 
         assert "max_iterations: 80" in docstring
         assert "temperature: 0.5" in docstring

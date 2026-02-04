@@ -206,8 +206,7 @@ class Gaia2Benchmark(Benchmark):
             # Derive seed for evaluator model if seeding is enabled
             evaluator_seed = None
             if seed_generator is not None:
-                eval_gen = seed_generator.child("evaluators")
-                evaluator_seed = eval_gen.derive_seed("judge")
+                evaluator_seed = seed_generator.derive_seed("evaluators/judge")
             model = self.get_model_adapter(evaluator_model_id, register_name="evaluator", seed=evaluator_seed)
 
         return [
@@ -377,6 +376,50 @@ def _build_system_prompt(tools: Dict[str, Callable]) -> str:
     )
 
 
+def _parse_json_blob(json_blob: str) -> Optional[Dict[str, Any]]:
+    """Parse JSON blob using the same approach as original ARE.
+
+    Finds the first '{' and last '}' to correctly handle nested JSON.
+
+    Args:
+        json_blob: String potentially containing JSON
+
+    Returns:
+        Parsed dict or None if parsing fails
+    """
+    try:
+        first_brace = json_blob.find("{")
+        if first_brace == -1:
+            return None
+
+        # Find all closing braces and use the last one (handles nested JSON)
+        brace_positions = [m.start() for m in re.finditer(r"}", json_blob)]
+        if not brace_positions:
+            return None
+
+        last_brace = brace_positions[-1]
+        json_str = json_blob[first_brace : last_brace + 1]
+
+        # Handle escaped quotes
+        json_str = json_str.replace('\\"', "'")
+
+        # Handle triple quotes
+        json_str = re.sub(r'"""(.*?)"""', r"'\1'", json_str, flags=re.DOTALL)
+
+        return json.loads(json_str, strict=False)
+    except json.JSONDecodeError:
+        # Try to fix common issues
+        try:
+            # Remove trailing commas
+            fixed = re.sub(r",\s*}", "}", json_str)
+            fixed = re.sub(r",\s*]", "]", fixed)
+            return json.loads(fixed, strict=False)
+        except (json.JSONDecodeError, UnboundLocalError):
+            return None
+    except Exception:
+        return None
+
+
 def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any]]]:
     """Parse Thought and Action from LLM text output.
 
@@ -402,35 +445,31 @@ def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any
         if thought_match:
             thought = thought_match.group(1).strip()
 
-    # Extract action JSON
-    action_match = re.search(r"Action:\s*(\{.*?\})(?:<end_action>|$)", text, re.DOTALL)
-    if not action_match:
+    # Find Action: and extract everything after it
+    action_start = text.find("Action:")
+    if action_start == -1:
         return None
 
-    json_str = action_match.group(1).strip()
+    action_text = text[action_start + len("Action:") :]
 
-    try:
-        # Parse JSON with lenient settings
-        action_data = json.loads(json_str)
-    except json.JSONDecodeError:
-        # Try to fix common issues
-        try:
-            # Remove trailing commas
-            fixed = re.sub(r",\s*}", "}", json_str)
-            fixed = re.sub(r",\s*]", "]", fixed)
-            action_data = json.loads(fixed)
-        except json.JSONDecodeError:
-            return None
+    # Remove <end_action> suffix if present
+    end_action_pos = action_text.find("<end_action>")
+    if end_action_pos != -1:
+        action_text = action_text[:end_action_pos]
+
+    # Parse JSON using the robust method (matching original ARE)
+    action_data = _parse_json_blob(action_text)
+    if action_data is None:
+        return None
 
     tool_name = action_data.get("action", "")
     tool_args = action_data.get("action_input", {})
 
-    # Handle string action_input (some models output as string)
+    # Handle string action_input - pass through as-is (matching original ARE behavior)
+    # Original ARE passes string args directly to tools, we convert to dict with single arg
     if isinstance(tool_args, str):
-        try:
-            tool_args = json.loads(tool_args)
-        except json.JSONDecodeError:
-            tool_args = {}
+        # Keep string as-is for tools that accept positional string args
+        pass
 
     return (thought, tool_name, tool_args)
 
@@ -527,7 +566,7 @@ class DefaultGaia2Agent:
             messages = [{"role": "system", "content": self.system_prompt}] + self._messages
 
             # Call LLM (text completion, no tools parameter)
-            response = self.model.chat(messages=messages, **self.llm_args)
+            response = self.model.chat(messages=messages, **self.llm_args)  # type: ignore[arg-type]
             content = response.content or ""
 
             if self.verbose >= 2:
@@ -590,12 +629,12 @@ class DefaultGaia2Agent:
 
         return self._final_message or "Agent terminated without final message."
 
-    def _execute_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
+    def _execute_tool(self, tool_name: str, tool_args: Dict[str, Any] | str) -> str:
         """Execute a tool call.
 
         Args:
             tool_name: Name of the tool to call
-            tool_args: Arguments for the tool
+            tool_args: Arguments for the tool (dict or string)
 
         Returns:
             Tool execution result as string
@@ -604,7 +643,11 @@ class DefaultGaia2Agent:
             return f"Error: Tool '{tool_name}' not found. Available tools: {list(self.tools.keys())}"
 
         try:
-            result = self.tools[tool_name](**tool_args)
+            # Match original ARE behavior: string args passed as positional argument
+            if isinstance(tool_args, str):
+                result = self.tools[tool_name](tool_args)
+            else:
+                result = self.tools[tool_name](**tool_args)
             return str(result)
         except Exception as e:
             return f"Error executing tool '{tool_name}': {e}"
@@ -622,6 +665,11 @@ class DefaultGaia2Agent:
         """Get current iteration count."""
         return self._iteration_count
 
+    @property
+    def terminated(self) -> bool:
+        """Get whether the agent has terminated."""
+        return self._terminated
+
 
 class DefaultGaia2AgentAdapter(AgentAdapter):
     """AgentAdapter wrapper for DefaultGaia2Agent."""
@@ -634,7 +682,6 @@ class DefaultGaia2AgentAdapter(AgentAdapter):
             name: Agent name for identification
         """
         super().__init__(agent, name)
-        self._agent = agent
 
     def _run_agent(self, query: str) -> str:
         """Run the agent and return answer.
@@ -645,7 +692,7 @@ class DefaultGaia2AgentAdapter(AgentAdapter):
         Returns:
             Agent's final answer
         """
-        return self._agent.run(query)
+        return self.agent.run(query)
 
     def get_messages(self) -> Any:
         """Get message history.
@@ -655,7 +702,7 @@ class DefaultGaia2AgentAdapter(AgentAdapter):
         """
         from maseval.core.history import MessageHistory
 
-        return MessageHistory(self._agent.get_messages())
+        return MessageHistory(self.agent.get_messages())
 
     def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces.
@@ -666,8 +713,8 @@ class DefaultGaia2AgentAdapter(AgentAdapter):
         return {
             **super().gather_traces(),
             "name": self.name,
-            "iteration_count": self._agent.iteration_count,
-            "terminated": self._agent._terminated,
+            "iteration_count": self.agent.iteration_count,
+            "terminated": self.agent.terminated,
         }
 
 
@@ -763,14 +810,13 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
         # Derive seed for agent model if seeding is enabled
         agent_seed = None
         if seed_generator is not None:
-            agent_gen = seed_generator.child("agents")
-            agent_seed = agent_gen.derive_seed("gaia2_agent")
+            agent_seed = seed_generator.derive_seed("agents/gaia2_agent")
 
         tools = environment.create_tools()
         model = self.get_model_adapter(model_id, register_name="agent_model", seed=agent_seed)
 
         agent = DefaultGaia2Agent(
-            tools=tools,
+            tools=tools,  # type: ignore[arg-type]  # AREToolWrapper is Callable
             model=model,
             llm_args=llm_args,
             max_iterations=max_iterations,

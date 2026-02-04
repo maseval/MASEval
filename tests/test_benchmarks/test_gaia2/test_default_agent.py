@@ -235,7 +235,9 @@ class TestDefaultGaia2AgentInit:
         assert agent.invalid_format_retries == 10
         assert agent.llm_args["temperature"] == 0.5
         assert agent.llm_args["max_tokens"] == 16384
-        assert "<end_action>" in agent.llm_args["stop"]
+        stop_sequences = agent.llm_args["stop"]
+        assert isinstance(stop_sequences, list)
+        assert "<end_action>" in stop_sequences
 
     def test_allows_custom_parameters(self, sample_tools_dict, gaia2_model_react):
         """Test agent accepts custom parameters."""

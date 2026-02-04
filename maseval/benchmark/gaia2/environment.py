@@ -50,11 +50,6 @@ class Gaia2Environment(Environment):
 
         super().__init__(task_data, callbacks)
 
-    @property
-    def scenario(self) -> Any:
-        """Get the ARE scenario object."""
-        return self._scenario
-
     def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize ARE scenario and start simulation.
 
@@ -66,8 +61,8 @@ class Gaia2Environment(Environment):
         """
         # Import ARE modules (optional dependency)
         try:
-            from are.simulation.environment import Environment as AREEnvironment
-            from are.simulation.environment import EnvironmentConfig
+            from are.simulation.environment import Environment as AREEnvironment  # type: ignore[import-not-found]
+            from are.simulation.environment import EnvironmentConfig  # type: ignore[import-not-found]
         except ImportError as e:
             raise ImportError(
                 "ARE (Agent Research Environments) is required for Gaia2 benchmark.\n"

@@ -115,7 +115,6 @@ class GoogleGenAIGaia2Benchmark(DefaultAgentGaia2Benchmark):
         agent_data = kwargs.pop("agent_data", {})
         agent_data["model_id"] = model_id
         super().__init__(agent_data=agent_data, **kwargs)
-        self._model_id = model_id
 
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> GoogleGenAIModelAdapter:
         """Create a Google GenAI model adapter."""
@@ -133,7 +132,6 @@ class OpenAIGaia2Benchmark(DefaultAgentGaia2Benchmark):
         agent_data = kwargs.pop("agent_data", {})
         agent_data["model_id"] = model_id
         super().__init__(agent_data=agent_data, **kwargs)
-        self._model_id = model_id
 
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> OpenAIModelAdapter:
         """Create an OpenAI model adapter."""
@@ -220,7 +218,6 @@ def run_benchmark(
         fail_on_task_error=True,
         fail_on_evaluation_error=True,
         agent_data={
-            "model_id": model_id,
             "verbose": 1,
             "llm_args": {"temperature": temperature},
         },

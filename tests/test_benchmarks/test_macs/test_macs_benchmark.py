@@ -802,9 +802,7 @@ class TestMACSBenchmarkSeeding:
 
             def get_model_adapter(self, model_id, **kwargs):
                 captured_kwargs.append(kwargs.copy())
-                return DummyModelAdapter(
-                    responses=['[{"assertion": "Test", "answer": "TRUE", "evidence": "OK"}]']
-                )
+                return DummyModelAdapter(responses=['[{"assertion": "Test", "answer": "TRUE", "evidence": "OK"}]'])
 
         benchmark = CapturingBenchmark()
         mock_env = MagicMock()
@@ -829,9 +827,7 @@ class TestMACSBenchmarkSeeding:
 
             def get_model_adapter(self, model_id, **kwargs):
                 captured_kwargs.append(kwargs.copy())
-                return DummyModelAdapter(
-                    responses=['[{"assertion": "Test", "answer": "TRUE", "evidence": "OK"}]']
-                )
+                return DummyModelAdapter(responses=['[{"assertion": "Test", "answer": "TRUE", "evidence": "OK"}]'])
 
         benchmark = CapturingBenchmark()
         mock_env = MagicMock()
@@ -851,9 +847,7 @@ class TestMACSBenchmarkSeeding:
                 return [], {}
 
             def get_model_adapter(self, model_id, **kwargs):
-                return DummyModelAdapter(
-                    responses=['[{"assertion": "Test", "answer": "TRUE", "evidence": "OK"}]']
-                )
+                return DummyModelAdapter(responses=['[{"assertion": "Test", "answer": "TRUE", "evidence": "OK"}]'])
 
         benchmark = CapturingBenchmark()
         mock_env = MagicMock()

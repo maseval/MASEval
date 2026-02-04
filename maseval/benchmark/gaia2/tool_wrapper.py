@@ -135,7 +135,7 @@ class AREToolWrapper(TraceableMixin, ConfigurableMixin):
             "name": self.name,
             "description": self.description,
             "invocations": self.history.to_list(),
-            "total_invocations": len(self.history.to_list()),
+            "total_invocations": len(self.history),
         }
 
     def gather_config(self) -> Dict[str, Any]:

@@ -63,10 +63,22 @@ class MockARETool:
         return self._calls
 
 
+class MockAREApp:
+    """Mock for ARE's App class that provides tools."""
+
+    def __init__(self, tools: List[MockARETool]):
+        self._tools = tools
+
+    def get_tools(self) -> List[MockARETool]:
+        """Get all tools from this app."""
+        return self._tools
+
+
 class MockAREEnvironment:
     """Mock for ARE's simulation Environment.
 
     Simulates ARE environment behavior for testing Gaia2Environment.
+    Matches the real ARE interface where tools are accessed via apps.values().
     """
 
     def __init__(
@@ -75,33 +87,38 @@ class MockAREEnvironment:
         completed_events: Optional[List[Any]] = None,
         current_time: float = 0.0,
     ):
-        self._tools = tools or [
+        default_tools = tools or [
             MockARETool("Calendar__get_events", "Get calendar events"),
             MockARETool("Email__send", "Send an email"),
             MockARETool("SystemApp__get_current_time", "Get current time", return_value="2024-01-15T10:00:00"),
             MockARETool("SystemApp__wait_for_notification", "Wait for notification", return_value="No notifications"),
             MockARETool("AgentUserInterface__send_message_to_user", "Send message to user"),
         ]
+        # Group tools by app name (part before __) to match real ARE structure
+        apps_dict: Dict[str, List[MockARETool]] = {}
+        for tool in default_tools:
+            app_name = tool.name.split("__")[0] if "__" in tool.name else "default"
+            if app_name not in apps_dict:
+                apps_dict[app_name] = []
+            apps_dict[app_name].append(tool)
+
+        self.apps = {name: MockAREApp(tool_list) for name, tool_list in apps_dict.items()}
         self._completed_events = completed_events or []
         self._current_time = current_time
         self._initialized = False
         self._stopped = False
 
+        # Also expose time_manager for compatibility
+        self.time_manager = MagicMock()
+        self.time_manager.current_time = current_time
+
     def initialize_scenario(self, scenario: Any) -> None:
         """Initialize scenario."""
         self._initialized = True
 
-    def get_tools(self) -> List[MockARETool]:
-        """Get all available tools."""
-        return self._tools
-
     def get_completed_events(self) -> List[Any]:
         """Get completed events for evaluation."""
         return self._completed_events
-
-    def get_current_time(self) -> float:
-        """Get current simulation time."""
-        return self._current_time
 
     def stop(self) -> None:
         """Stop the environment."""
@@ -218,7 +235,7 @@ class ConcreteGaia2Benchmark:
                         pass
                 return adapter
 
-            def setup_agents(
+            def setup_agents(  # type: ignore[override]
                 self,
                 agent_data: Dict[str, Any],
                 environment: Gaia2Environment,
@@ -438,6 +455,6 @@ def sample_execution_traces() -> Dict[str, Any]:
             }
         },
         "environment": {
-            "simulation_time": 120.5,
+            "final_simulation_time": 120.5,
         },
     }

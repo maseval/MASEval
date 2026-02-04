@@ -114,8 +114,8 @@ class Gaia2Evaluator(Evaluator):
                 - capability: Task capability type
         """
         # Import ARE judge (required dependency for Gaia2)
-        from are.simulation.validation import JudgeFactory
-        from are.simulation.validation.config import GraphPerEventJudgeConfig
+        from are.simulation.validation import JudgeFactory  # type: ignore[import-not-found]
+        from are.simulation.validation.config import GraphPerEventJudgeConfig  # type: ignore[import-not-found]
 
         # Create ARE judge
         judge_config = GraphPerEventJudgeConfig()
