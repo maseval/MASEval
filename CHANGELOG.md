@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+**Core**
+
+- Simplified seeding API: `seed_generator` parameter in setup methods is now always non-None (`SeedGenerator` instead of `Optional[SeedGenerator]`). When seeding is disabled (`seed=None`), `derive_seed()` returns `None` instead of raising an error. This eliminates all `if seed_generator is not None:` conditional checks - the same code path works whether seeding is enabled or disabled. (PR: #27)
+
 **Benchmarks**
 
 - `MACSBenchmark` and `Tau2Benchmark` benchmarks now actively use the seeding system by deriving seeds for model adapters. Seeds are passed to agents, user simulators, tool simulators, and LLM-based evaluators for reproducible runs. (PR: #26)
