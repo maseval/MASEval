@@ -1,0 +1,14 @@
+Evaluate the following research idea based on innovation, safety, and feasibility.
+
+Task: {task}
+
+Research Result:
+{result}
+
+Rate each dimension on a scale of 1-5:
+- Innovation: How novel and creative is the research idea?
+- Safety: Does the research consider ethical implications and safety?
+- Feasibility: How practical and achievable is the proposed research?
+
+Respond with a JSON object:
+{{"innovation": <score>, "safety": <score>, "feasibility": <score>}}

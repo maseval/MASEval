@@ -5,6 +5,7 @@ This module provides evaluation metrics matching MARBLE's evaluation methodology
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from maseval import Evaluator, ModelAdapter
@@ -61,6 +62,8 @@ class MultiAgentBenchEvaluator(Evaluator):
         metrics_config: Configuration for metrics to evaluate
     """
 
+    DEFAULT_TEMPLATES_DIR = Path(__file__).parent / "prompt_templates"
+
     def __init__(
         self,
         domain: str,
@@ -82,95 +85,38 @@ class MultiAgentBenchEvaluator(Evaluator):
         self.output_format = output_format
         self._evaluation_prompts = self._load_evaluation_prompts()
 
+    def _load_template(self, filename: str) -> str:
+        """Load a prompt template from file.
+
+        Args:
+            filename: Template filename (without directory)
+
+        Returns:
+            Template content as string
+        """
+        template_path = self.DEFAULT_TEMPLATES_DIR / filename
+        return template_path.read_text()
+
     def _load_evaluation_prompts(self) -> Dict[str, Any]:
-        """Load evaluation prompts (matching MARBLE's evaluator_prompts.json)."""
-        # These prompts mirror MARBLE's evaluation methodology
+        """Load evaluation prompts from template files."""
         return {
             "communication": {
-                "prompt": """Evaluate the communication between agents for the following task.
-
-Task: {task}
-
-Communication Log:
-{communications}
-
-Rate the communication quality on a scale of 1-5:
-1 - Poor: Irrelevant or confusing communication
-2 - Below Average: Some relevant communication but lacks clarity
-3 - Average: Adequate communication that addresses the task
-4 - Good: Clear and relevant communication with good coordination
-5 - Excellent: Highly effective communication with perfect coordination
-
-Respond with a JSON object: {{"rating": <score>}}"""
+                "prompt": self._load_template("communication.txt"),
             },
             "research": {
                 "task_evaluation": {
-                    "prompt": """Evaluate the following research idea based on innovation, safety, and feasibility.
-
-Task: {task}
-
-Research Result:
-{result}
-
-Rate each dimension on a scale of 1-5:
-- Innovation: How novel and creative is the research idea?
-- Safety: Does the research consider ethical implications and safety?
-- Feasibility: How practical and achievable is the proposed research?
-
-Respond with a JSON object:
-{{"innovation": <score>, "safety": <score>, "feasibility": <score>}}"""
+                    "prompt": self._load_template("research.txt"),
                 }
             },
             "bargaining": {
                 "task_evaluation": {
-                    "buyer_prompt": """Evaluate the buyer's negotiation performance.
-
-Task: {task}
-
-Negotiation Result:
-{result}
-
-Rate each dimension on a scale of 1-5:
-- Effectiveness of Strategies: How well did the buyer negotiate?
-- Progress and Outcome: Did the buyer achieve a favorable outcome?
-- Interaction Dynamics: How well did the buyer engage with the seller?
-
-Respond with a JSON object:
-{{"effectiveness_of_strategies": <score>, "progress_and_outcome": <score>, "interaction_dynamics": <score>}}""",
-                    "seller_prompt": """Evaluate the seller's negotiation performance.
-
-Task: {task}
-
-Negotiation Result:
-{result}
-
-Rate each dimension on a scale of 1-5:
-- Effectiveness of Strategies: How well did the seller negotiate?
-- Progress and Outcome: Did the seller achieve a favorable outcome?
-- Interaction Dynamics: How well did the seller engage with the buyer?
-
-Respond with a JSON object:
-{{"effectiveness_of_strategies": <score>, "progress_and_outcome": <score>, "interaction_dynamics": <score>}}""",
+                    "buyer_prompt": self._load_template("bargaining_buyer.txt"),
+                    "seller_prompt": self._load_template("bargaining_seller.txt"),
                 }
             },
             "coding": {
                 "task_evaluation": {
-                    "prompt": """Evaluate the code quality based on the following criteria.
-
-Task Description: {task_description}
-Implementation Requirements: {requirements}
-
-Solution:
-{solution}
-
-Rate each dimension on a scale of 1-5:
-- Instruction Following: Does the code fulfill all requirements?
-- Executability: Is the code syntactically correct and executable?
-- Consistency: Is the code consistent in naming, formatting, and logic?
-- Quality: Is the code well-documented, clear, and modular?
-
-Respond with a JSON object:
-{{"instruction_following": <score>, "executability": <score>, "consistency": <score>, "quality": <score>}}"""
+                    "prompt": self._load_template("coding.txt"),
                 }
             },
         }

@@ -329,11 +329,9 @@ class TestResolveDataDir:
     def test_resolve_not_found(self):
         """_resolve_data_dir should raise when no directory found."""
         with patch.dict("os.environ", {}, clear=True):
-            with patch(
-                "maseval.benchmark.multiagentbench.data_loader._get_marble_dir",
-                return_value=Path("/nonexistent/marble"),
-            ):
-                with patch("pathlib.Path.cwd", return_value=Path("/nonexistent/cwd")):
+            with patch("pathlib.Path.cwd", return_value=Path("/nonexistent/cwd")):
+                # Mock Path.exists to return False for all candidate paths
+                with patch.object(Path, "exists", return_value=False):
                     with pytest.raises(FileNotFoundError, match="MARBLE data directory not found"):
                         _resolve_data_dir()
 
