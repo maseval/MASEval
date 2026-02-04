@@ -29,8 +29,8 @@ Example:
         experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
         baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
 
-        # Seeds flow directly to model adapters (which accept Optional[int])
-        model = self.get_model_adapter(model_id, seed=orchestrator_seed)
+        # Pass seed directly to your agent
+        agent = MyAgent(seed=orchestrator_seed)
     ```
 """
 
@@ -190,8 +190,8 @@ class DefaultSeedGenerator(SeedGenerator):
         orchestrator_seed = agent_gen.derive_seed("orchestrator")  # Path: "agents/orchestrator"
         baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)  # Constant
 
-        # Seeds flow directly to model adapters
-        model = get_model_adapter(model_id, seed=orchestrator_seed)  # Works with None
+        # Pass seed directly to your agent
+        agent = MyAgent(seed=orchestrator_seed)  # Works with None
         ```
 
     Thread Safety:

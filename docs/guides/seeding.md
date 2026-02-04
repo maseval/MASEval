@@ -40,35 +40,24 @@ This creates a `DefaultSeedGenerator` internally and passes it to all setup meth
 
 ### Disabling Seeding
 
-When you don't pass a `seed` parameter (or pass `seed=None`), seeding is disabled:
+If you don't need seeding, you can simply ignore the seed generators. However, in workflows where you mix seeded and non-seeded runs, you can disable seeding without writing `if/else` statements to check whether a seed is provided.
 
-```python
-# No seed = seeding disabled
-benchmark = MyBenchmark()
-
-# Explicit None = also disabled
-benchmark = MyBenchmark(seed=None)
-```
-
-When seeding is disabled:
+To disable seeding, omit the `seed` parameter when creating your `Benchmark` or `DefaultSeedGenerator` (or pass `seed=None`):
 
 1. A `DefaultSeedGenerator(global_seed=None)` is still created internally
-2. Setup methods still receive a `seed_generator` parameter (it's never `None`)
+2. Setup methods still receive a `seed_generator` parameter
 3. `derive_seed()` returns `None` instead of an integer
-4. This `None` flows directly to model adapters (which accept `Optional[int]`)
-
-This design simplifies setup method implementations—you don't need `if seed_generator is not None:` checks:
 
 ```python
-def setup_agents(self, agent_data, environment, task, user, seed_generator):
-    # Always works - seed_generator is never None
-    agent_gen = seed_generator.child("agents")
+class MyBenchmark(Benchmark):
+    ...
+    def setup_agents(self, agent_data, environment, task, user, seed_generator):
+        # Always works - seed_generator is never None
+        agent = MyAgent(seed=seed_generator("agents/orchestrator"))
+        ...
 
-    # Returns None if seeding disabled, int if enabled
-    agent_seed = agent_gen.derive_seed("orchestrator")
-
-    # Model adapters accept Optional[int], so None works fine
-    model = self.get_model_adapter(model_id, seed=agent_seed)
+# No seed = seeding disabled
+benchmark = MyBenchmark(seed=None)
 ```
 
 ### Using Seeds in Setup Methods
@@ -93,9 +82,8 @@ class MyBenchmark(Benchmark):
         agent_gen = seed_generator.child("agents")
         agent_seed = agent_gen.derive_seed("orchestrator")
 
-        # Pass seed to model adapter (adapters accept Optional[int])
-        model = self.get_model_adapter(model_id, seed=agent_seed)
-        agent = MyAgent(model=model)
+        # Pass seed directly to your agent
+        agent = MyAgent(seed=agent_seed)
         # ... rest of setup
 ```
 
