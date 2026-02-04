@@ -619,13 +619,12 @@ This allows components to request either behavior within the same task repetitio
     - Updated `setup_agents()` to build seeds dict and pass to builders (clean separation from agent specs)
     - All builder functions accept `seeds: Optional[Dict[str, int]]` as separate parameter
     - Updated notebook to use new seeding system with same clean pattern
-13. Deferred: Add seeding section to documentation (docs/reference/seeding.md)
-14. Deferred: Add a guide about seeding to the docs
+13. ✅ Add seeding section to documentation (docs/reference/seeding.md)
+14. ✅ Add a guide about seeding to the docs (docs/guides/seeding.md)
 
 **Implementation Summary:**
-- All core phases (1-4) are complete
-- 1366 tests pass (17 skipped for expected missing dependencies)
-- Documentation tasks (13-14) deferred for separate PR
+- All phases (1-4) and documentation are complete
+- All tests pass
 
 ## Files to Create/Modify
 
@@ -1133,7 +1132,16 @@ class TestModelAdapterSeedPropagation:
   - [x] `test_google_adapter_passes_seed_to_config`
   - [x] `test_google_adapter_no_seed_when_not_set`
 
+#### Contract Tests ✅ COMPLETE
+- [x] Add `seed` assertion to `assert_base_config_fields` in contract tests
+- [x] Update adapter factory functions to support `seed` parameter
+- [x] Add `TestSeedingContract` class to `test_model_adapter_contract.py` (20 tests)
+  - [x] `test_adapter_config_includes_seed_when_set`
+  - [x] `test_adapter_config_includes_seed_none_when_not_set`
+  - [x] `test_adapter_seed_property_accessible`
+  - [x] `test_adapter_seed_none_by_default`
+
 #### Verification ✅ COMPLETE
-- [x] Run full test suite to verify all new tests pass (1459 passed, 2 skipped)
+- [x] Run full test suite to verify all new tests pass
 - [x] Run linter to confirm code quality (All checks passed!)
 - [x] Verify no regressions in existing tests
