@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Benchmarks**
 
-- All benchmarks now actively use the seeding system by deriving seeds for model adapters. Seeds are passed to agents, user simulators, tool simulators, and LLM-based evaluators for reproducible runs. (PR: #PR_NUMBER_PLACEHOLDER)
+- `MACSBenchmark` and `Tau2Benchmark` benchmarks now actively use the seeding system by deriving seeds for model adapters. Seeds are passed to agents, user simulators, tool simulators, and LLM-based evaluators for reproducible runs. (PR: #26)
   - `Gaia2Benchmark`: Seeds `agents/gaia2_agent`, `evaluators/judge`
   - `MACSBenchmark`: Seeds `environment/tools/tool_{name}`, `simulators/user`, `evaluators/user_gsr`, `evaluators/system_gsr`
   - `Tau2Benchmark`: Seeds `simulators/user`, `agents/default_agent`
