@@ -545,3 +545,95 @@ class TestModelAdapterMixinIntegration:
         # Fields from ConfigurableMixin
         assert "type" in config
         assert "gathered_at" in config
+
+
+@pytest.mark.core
+class TestModelAdapterSeeding:
+    """Test ModelAdapter seeding functionality."""
+
+    def test_model_adapter_accepts_seed(self):
+        """ModelAdapter accepts seed parameter."""
+        model = DummyModelAdapter(seed=42)
+        assert model.seed == 42
+
+    def test_model_adapter_seed_none_by_default(self):
+        """ModelAdapter seed is None by default."""
+        model = DummyModelAdapter()
+        assert model.seed is None
+
+    def test_model_adapter_seed_in_config(self):
+        """ModelAdapter seed appears in gather_config()."""
+        model = DummyModelAdapter(seed=12345)
+        config = model.gather_config()
+
+        assert "seed" in config
+        assert config["seed"] == 12345
+
+    def test_model_adapter_seed_none_in_config_when_not_set(self):
+        """ModelAdapter seed is None in config when not set."""
+        model = DummyModelAdapter()
+        config = model.gather_config()
+
+        assert "seed" in config
+        assert config["seed"] is None
+
+    def test_anthropic_adapter_rejects_seed(self):
+        """AnthropicModelAdapter raises SeedingError when seed is provided."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import AnthropicModelAdapter
+        from maseval.core.seeding import SeedingError
+
+        mock_client = MagicMock()
+
+        with pytest.raises(SeedingError, match="Anthropic models do not support seeding"):
+            AnthropicModelAdapter(client=mock_client, model_id="claude-3", seed=42)
+
+    def test_anthropic_adapter_works_without_seed(self):
+        """AnthropicModelAdapter works fine when no seed is provided."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import AnthropicModelAdapter
+
+        mock_client = MagicMock()
+
+        # Should not raise
+        adapter = AnthropicModelAdapter(client=mock_client, model_id="claude-3")
+        assert adapter.seed is None
+
+    def test_openai_adapter_accepts_seed(self):
+        """OpenAIModelAdapter accepts seed parameter."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import OpenAIModelAdapter
+
+        mock_client = MagicMock()
+        adapter = OpenAIModelAdapter(client=mock_client, model_id="gpt-4", seed=42)
+
+        assert adapter.seed == 42
+
+    def test_google_adapter_accepts_seed(self):
+        """GoogleGenAIModelAdapter accepts seed parameter."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import GoogleGenAIModelAdapter
+
+        mock_client = MagicMock()
+        adapter = GoogleGenAIModelAdapter(client=mock_client, model_id="gemini-pro", seed=42)
+
+        assert adapter.seed == 42
+
+    def test_litellm_adapter_accepts_seed(self):
+        """LiteLLMModelAdapter accepts seed parameter."""
+        from maseval.interface.inference import LiteLLMModelAdapter
+
+        adapter = LiteLLMModelAdapter(model_id="gpt-4", seed=42)
+
+        assert adapter.seed == 42
+
+    def test_huggingface_adapter_accepts_seed(self):
+        """HuggingFaceModelAdapter accepts seed parameter."""
+        from maseval.interface.inference import HuggingFaceModelAdapter
+
+        def mock_model(x):
+            return "response"
+
+        adapter = HuggingFaceModelAdapter(model=mock_model, model_id="llama", seed=42)
+
+        assert adapter.seed == 42

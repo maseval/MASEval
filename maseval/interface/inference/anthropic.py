@@ -52,6 +52,7 @@ import json
 from typing import Any, Optional, Dict, List, Union
 
 from maseval.core.model import ModelAdapter, ChatResponse
+from maseval.core.seeding import SeedingError
 
 
 class AnthropicModelAdapter(ModelAdapter):
@@ -74,6 +75,7 @@ class AnthropicModelAdapter(ModelAdapter):
         model_id: str,
         default_generation_params: Optional[Dict[str, Any]] = None,
         max_tokens: int = 4096,
+        seed: Optional[int] = None,
     ):
         """Initialize Anthropic model adapter.
 
@@ -84,8 +86,19 @@ class AnthropicModelAdapter(ModelAdapter):
                 Common parameters: temperature, top_p, top_k.
             max_tokens: Maximum tokens to generate. Anthropic requires this
                 parameter. Default is 4096.
+            seed: Seed for deterministic generation. Note: Anthropic does NOT
+                support seeding. Providing a seed will raise SeedingError.
+
+        Raises:
+            SeedingError: If seed is provided (Anthropic doesn't support seeding).
         """
-        super().__init__()
+        if seed is not None:
+            raise SeedingError(
+                f"Anthropic models do not support seeding. "
+                f"Model '{model_id}' cannot use seed={seed}. "
+                f"Remove the seed parameter or use a provider that supports seeding."
+            )
+        super().__init__(seed=seed)
         self._client = client
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}

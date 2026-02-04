@@ -113,6 +113,10 @@ def assert_base_config_fields(config: Dict[str, Any], model_id: Optional[str] = 
     assert "adapter_type" in config, "Missing 'adapter_type' field in config"
     assert isinstance(config["adapter_type"], str)
 
+    # Seed field (can be None or int)
+    assert "seed" in config, "Missing 'seed' field in config"
+    assert config["seed"] is None or isinstance(config["seed"], int), f"'seed' must be None or int, got {type(config['seed'])}"
+
     # JSON serializability
     assert_is_json_serializable(config)
 
@@ -124,6 +128,7 @@ def create_openai_adapter(
     model_id: str = "gpt-4",
     responses: Optional[List[Optional[str]]] = None,
     tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
+    seed: Optional[int] = None,
 ) -> Any:
     """Create OpenAIModelAdapter instance."""
     pytest.importorskip("openai")
@@ -157,13 +162,14 @@ def create_openai_adapter(
 
         chat = Chat()
 
-    return OpenAIModelAdapter(client=MockClient(), model_id=model_id)
+    return OpenAIModelAdapter(client=MockClient(), model_id=model_id, seed=seed)
 
 
 def create_google_genai_adapter(
     model_id: str = "gemini-pro",
     responses: Optional[List[Optional[str]]] = None,
     tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
+    seed: Optional[int] = None,
 ) -> Any:
     """Create GoogleGenAIModelAdapter instance."""
     pytest.importorskip("google.genai")
@@ -222,13 +228,14 @@ def create_google_genai_adapter(
         def __init__(self):
             self.models = self.Models()
 
-    return GoogleGenAIModelAdapter(client=MockClient(), model_id=model_id)
+    return GoogleGenAIModelAdapter(client=MockClient(), model_id=model_id, seed=seed)
 
 
 def create_huggingface_adapter(
     model_id: str = "gpt2",
     responses: Optional[List[Optional[str]]] = None,
     tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
+    seed: Optional[int] = None,
 ) -> Any:
     """Create HuggingFaceModelAdapter instance."""
     pytest.importorskip("transformers")
@@ -242,13 +249,14 @@ def create_huggingface_adapter(
         call_count[0] += 1
         return response
 
-    return HuggingFaceModelAdapter(model=mock_model, model_id=model_id)
+    return HuggingFaceModelAdapter(model=mock_model, model_id=model_id, seed=seed)
 
 
 def create_litellm_adapter(
     model_id: str = "gpt-3.5-turbo",
     responses: Optional[List[Optional[str]]] = None,
     tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
+    seed: Optional[int] = None,
 ) -> Any:
     """Create LiteLLMModelAdapter instance."""
     pytest.importorskip("litellm")
@@ -317,7 +325,7 @@ def create_litellm_adapter(
 
     litellm.completion = mock_completion
 
-    adapter = LiteLLMModelAdapter(model_id=model_id)
+    adapter = LiteLLMModelAdapter(model_id=model_id, seed=seed)
 
     # Store original for cleanup
     adapter._original_completion = original_completion  # type: ignore
@@ -330,17 +338,19 @@ def create_dummy_adapter(
     model_id: str = "test-model",
     responses: Optional[List[Optional[str]]] = None,
     tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
+    seed: Optional[int] = None,
 ) -> DummyModelAdapter:
     """Create DummyModelAdapter instance."""
     responses = responses or ["Test response"]
     usage = {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
-    return DummyModelAdapter(model_id=model_id, responses=responses, tool_calls=tool_calls, usage=usage, stop_reason="stop")
+    return DummyModelAdapter(model_id=model_id, responses=responses, tool_calls=tool_calls, usage=usage, stop_reason="stop", seed=seed)
 
 
 def create_anthropic_adapter(
     model_id: str = "claude-3",
     responses: Optional[List[Optional[str]]] = None,
     tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
+    seed: Optional[int] = None,  # Anthropic doesn't support seeding, parameter ignored
 ) -> Any:
     """Create AnthropicModelAdapter instance."""
     pytest.importorskip("anthropic")
@@ -401,6 +411,7 @@ def create_adapter_for_implementation(
     model_id: str,
     responses: Optional[List[Optional[str]]] = None,
     tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
+    seed: Optional[int] = None,
 ) -> Any:
     """Factory function to create adapter for specified implementation."""
     factories = {
@@ -415,7 +426,7 @@ def create_adapter_for_implementation(
     if implementation not in factories:
         raise ValueError(f"Unknown implementation: {implementation}")
 
-    return factories[implementation](model_id=model_id, responses=responses, tool_calls=tool_calls)
+    return factories[implementation](model_id=model_id, responses=responses, tool_calls=tool_calls, seed=seed)
 
 
 def cleanup_adapter(adapter: Any, implementation: str) -> None:
@@ -1145,5 +1156,64 @@ class TestUsageAndMetadataContract:
 
                 # Structure should be consistent
                 assert set(result1.usage.keys()) == set(result2.usage.keys())
+        finally:
+            cleanup_adapter(adapter, implementation)
+
+
+# ==================== Seeding Contract Tests ====================
+
+
+@pytest.mark.contract
+@pytest.mark.interface
+@pytest.mark.parametrize("implementation", ["dummy", "openai", "google_genai", "huggingface", "litellm"])
+class TestSeedingContract:
+    """Contract tests for seeding functionality across adapters.
+
+    These tests verify that seed parameters are consistently handled across
+    all model adapters that support seeding. This is important for reproducibility
+    in benchmark evaluations.
+
+    Note: Anthropic is excluded as it explicitly does not support seeding.
+    """
+
+    def test_adapter_config_includes_seed_when_set(self, implementation):
+        """All adapters include seed in config when provided."""
+        adapter = create_adapter_for_implementation(implementation, model_id="test-model", seed=42)
+
+        try:
+            config = adapter.gather_config()
+            assert "seed" in config, f"{implementation} config missing 'seed' field"
+            assert config["seed"] == 42, f"{implementation} seed not preserved in config"
+        finally:
+            cleanup_adapter(adapter, implementation)
+
+    def test_adapter_config_includes_seed_none_when_not_set(self, implementation):
+        """All adapters include seed=None in config when not provided."""
+        adapter = create_adapter_for_implementation(implementation, model_id="test-model")
+
+        try:
+            config = adapter.gather_config()
+            assert "seed" in config, f"{implementation} config missing 'seed' field"
+            assert config["seed"] is None, f"{implementation} seed should be None when not set"
+        finally:
+            cleanup_adapter(adapter, implementation)
+
+    def test_adapter_seed_property_accessible(self, implementation):
+        """All adapters expose seed property."""
+        adapter = create_adapter_for_implementation(implementation, model_id="test-model", seed=123)
+
+        try:
+            assert hasattr(adapter, "seed"), f"{implementation} missing 'seed' property"
+            assert adapter.seed == 123, f"{implementation} seed property value incorrect"
+        finally:
+            cleanup_adapter(adapter, implementation)
+
+    def test_adapter_seed_none_by_default(self, implementation):
+        """All adapters have seed=None by default."""
+        adapter = create_adapter_for_implementation(implementation, model_id="test-model")
+
+        try:
+            assert hasattr(adapter, "seed"), f"{implementation} missing 'seed' property"
+            assert adapter.seed is None, f"{implementation} seed should be None by default"
         finally:
             cleanup_adapter(adapter, implementation)

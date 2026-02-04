@@ -188,6 +188,7 @@ class TestRunAgents:
                 environment: MACSEnvironment,
                 task: Task,
                 user: Optional[User],
+                seed_generator=None,
             ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
                 agent1: AgentAdapter = MACSAgentAdapter("agent1")
                 agent2: AgentAdapter = MACSAgentAdapter("agent2")

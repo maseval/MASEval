@@ -15,10 +15,10 @@ pytestmark = [pytest.mark.interface, pytest.mark.langgraph]
 
 def test_langgraph_adapter_import():
     """Test that LangGraphAgentAdapter can be imported when langgraph is installed."""
-    from maseval.interface.agents.langgraph import LangGraphAgentAdapter, LangGraphUser
+    from maseval.interface.agents.langgraph import LangGraphAgentAdapter, LangGraphLLMUser
 
     assert LangGraphAgentAdapter is not None
-    assert LangGraphUser is not None
+    assert LangGraphLLMUser is not None
 
 
 def test_langgraph_in_agents_all():
@@ -26,7 +26,7 @@ def test_langgraph_in_agents_all():
     import maseval.interface.agents
 
     assert "LangGraphAgentAdapter" in maseval.interface.agents.__all__
-    assert "LangGraphUser" in maseval.interface.agents.__all__
+    assert "LangGraphLLMUser" in maseval.interface.agents.__all__
 
 
 def test_check_langgraph_installed_function():

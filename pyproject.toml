@@ -34,6 +34,7 @@ dependencies = [
 smolagents = ["smolagents>=1.21.3"]
 langgraph = ["langgraph>=0.6.0"]
 llamaindex = ["llama-index-core>=0.12.0"]
+camel = ["camel-ai>=0.2.0"]
 
 # Inference engines
 anthropic = ["anthropic>=0.40.0"]
@@ -47,14 +48,11 @@ wandb = ["wandb>=0.15.0"]
 langfuse = ["langfuse>=3.3.4"]
 
 # Benchmarks
-gaia2 = [
-    "are>=1.2.0",
-    "datasets>=3.0.0",
-]
+gaia2 = ["are>=1.2.0", "datasets>=3.0.0"]
 
 # Dependencies for running examples (only what's actually used)
 examples = [
-    "maseval[smolagents,langgraph,llamaindex,anthropic,openai,google-genai,litellm,langfuse,gaia2]",
+    "maseval[smolagents,langgraph,llamaindex,camel,anthropic,openai,google-genai,litellm,langfuse,gaia2]",
     # Additional integrations used in examples
     "langchain>=0.3.27",
     "langchain-google-genai>=2.1.12",
@@ -78,7 +76,13 @@ all = ["maseval[examples,transformers,wandb]"]
 
 [dependency-groups]
 # Development tools (linting, testing) - for contributors only
-dev = ["pytest>=9.0.0", "pytest-cov>=7.0.0", "ruff>=0.14.0", "ty>=0.0.5"]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.0",
+    "ty>=0.0.5",
+    "pre-commit>=4.0.0",
+]
 
 # Documentation building - for contributors only
 docs = [
@@ -98,9 +102,6 @@ line-length = 144
 exclude = []
 
 [tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra -q"
-testpaths = ["tests"]
 markers = [
     "core: Core tests that don't require optional dependencies",
     "interface: Tests that require optional dependencies (smolagents, langgraph, etc.)",
@@ -110,7 +111,11 @@ markers = [
     "langgraph: Tests that specifically require langgraph",
     "llamaindex: Tests that specifically require llama-index-core",
     "gaia2: Tests that specifically require ARE (Agent Research Environments)",
+    "camel: Tests that specifically require camel-ai",
 ]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
 
 [tool.coverage.run]
 relative_files = true

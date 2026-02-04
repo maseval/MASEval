@@ -64,6 +64,7 @@ class GoogleGenAIModelAdapter(ModelAdapter):
         client: Any,
         model_id: str,
         default_generation_params: Optional[Dict[str, Any]] = None,
+        seed: Optional[int] = None,
     ):
         """Initialize Google GenAI model adapter.
 
@@ -72,8 +73,9 @@ class GoogleGenAIModelAdapter(ModelAdapter):
             model_id: The model identifier (e.g., "gemini-2.0-flash").
             default_generation_params: Default parameters for all calls.
                 Common parameters: temperature, max_output_tokens, top_p.
+            seed: Seed for deterministic generation. Google GenAI supports this.
         """
-        super().__init__()
+        super().__init__(seed=seed)
         self._client = client
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}
@@ -109,6 +111,10 @@ class GoogleGenAIModelAdapter(ModelAdapter):
         if generation_params:
             params.update(generation_params)
         params.update(kwargs)
+
+        # Add seed if set and not already in params (user params take precedence)
+        if self._seed is not None and "seed" not in params:
+            params["seed"] = self._seed
 
         # Convert messages to Google format
         system_instruction, contents = self._convert_messages(messages)

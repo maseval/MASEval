@@ -69,6 +69,7 @@ class LiteLLMModelAdapter(ModelAdapter):
         default_generation_params: Optional[Dict[str, Any]] = None,
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
+        seed: Optional[int] = None,
     ):
         """Initialize LiteLLM model adapter.
 
@@ -84,8 +85,10 @@ class LiteLLMModelAdapter(ModelAdapter):
             api_key: API key for the provider. If not provided, LiteLLM
                 reads from environment variables.
             api_base: Custom API base URL for self-hosted or Azure endpoints.
+            seed: Seed for deterministic generation. LiteLLM passes this to
+                the underlying provider. Note: Not all providers support seeding.
         """
-        super().__init__()
+        super().__init__(seed=seed)
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}
         self._api_key = api_key
@@ -125,6 +128,10 @@ class LiteLLMModelAdapter(ModelAdapter):
         if generation_params:
             params.update(generation_params)
         params.update(kwargs)
+
+        # Add seed if set and not already in params (user params take precedence)
+        if self._seed is not None and "seed" not in params:
+            params["seed"] = self._seed
 
         # Add API credentials if provided
         if self._api_key:

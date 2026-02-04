@@ -84,12 +84,15 @@ class TraceableMixin:
         This method is called by the Benchmark before evaluation to collect
         all execution data. The returned dictionary must be JSON-serializable.
 
-        Returns:
-            Dictionary containing traces with standardized structure:
-            - type: Component class name
-            - gathered_at: ISO timestamp of when traces were collected
+        Output fields:
 
-            Subclasses typically add additional component-specific data.
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp of when traces were collected
+
+        Subclasses typically add additional component-specific data.
+
+        Returns:
+            Dictionary containing traces with standardized structure.
 
         How to use:
             Override this method and call `super().gather_traces()` to extend

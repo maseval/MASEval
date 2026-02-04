@@ -166,7 +166,41 @@ See the [Agent Adapters](../interface/agents/smolagents.md) documentation for th
 
 ### Existing Benchmarks
 
-Pre-built benchmarks for established evaluation suites are coming soon.
+MASEval includes pre-built benchmarks for established evaluation suites. See the [Benchmarks](../benchmark/index.md) section for the full list.
+
+**Using a default agent:** For quick evaluation or baseline comparisons, use the default benchmark class directly:
+
+```python
+from maseval.benchmark.tau2 import (
+    DefaultAgentTau2Benchmark, load_tasks, ensure_data_exists,
+)
+
+ensure_data_exists(domain="retail")
+tasks = load_tasks("retail", split="base", limit=5)
+
+benchmark = DefaultAgentTau2Benchmark(
+    agent_data={"model_id": "gpt-4o"},
+    n_task_repeats=4,
+)
+results = benchmark.run(tasks)
+```
+
+**Plugging in your own agent:** Subclass the base benchmark to use your own agent implementation:
+
+```python
+from maseval.benchmark.tau2 import Tau2Benchmark, load_tasks
+
+class MyTau2Benchmark(Tau2Benchmark):
+    def setup_agents(self, agent_data, environment, task, user):
+        tools = environment.tools
+        # Create your agent with these tools
+        ...
+
+benchmark = MyTau2Benchmark(agent_data={}, n_task_repeats=4)
+results = benchmark.run(tasks)
+```
+
+The base class handles environment setup, user simulation, and evaluation—you only implement `setup_agents()` and `run_agents()`.
 
 ---
 
@@ -187,6 +221,7 @@ Topic-based discussions covering specific features and best practices:
 
 - [Message Tracing](../guides/message-tracing.md) — Capture and analyze agent conversations
 - [Configuration Gathering](../guides/config-gathering.md) — Collect reproducible experiment configurations
+- [Seeding](../guides/seeding.md) — Enable reproducible benchmark runs
 
 ### Reference
 

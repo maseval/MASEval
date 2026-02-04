@@ -16,7 +16,7 @@ from .callback_handler import CallbackHandler
 from .callback import BenchmarkCallback
 from .user import User
 from .tracing import TraceableMixin
-from .registry import ComponentRegistry
+from .registry import ComponentRegistry, RegisterableComponent
 from .context import TaskContext
 from .utils.system_info import gather_benchmark_config
 from .callbacks.progress_bar import (
@@ -25,6 +25,7 @@ from .callbacks.progress_bar import (
     RichProgressBarCallback,
 )
 from .exceptions import AgentError, EnvironmentError, UserError, TaskTimeoutError
+from .seeding import SeedGenerator, DefaultSeedGenerator
 
 
 class TaskExecutionStatus(Enum):
@@ -141,6 +142,8 @@ class Benchmark(ABC):
         fail_on_task_error: bool = False,
         fail_on_evaluation_error: bool = False,
         progress_bar: bool | str = True,
+        seed: Optional[int] = None,
+        seed_generator: Optional[SeedGenerator] = None,
     ):
         """Initialize a benchmark with execution configuration.
 
@@ -173,9 +176,17 @@ class Benchmark(ABC):
                   ProgressBarCallback instances in the callbacks list will still work normally.
                 - "tqdm": Automatically adds a TqdmProgressBarCallback (same as True)
                 - "rich": Automatically adds a RichProgressBarCallback (uses the rich library)
+            seed: Global seed for reproducible benchmark runs. When provided, a `DefaultSeedGenerator`
+                is created and passed to setup methods, enabling deterministic seed derivation for
+                all components (agents, tools, user simulators, etc.). Seeds cascade: changing the
+                global seed changes all derived seeds.
+            seed_generator: Custom seed generator for advanced use cases. If provided, takes
+                precedence over the `seed` parameter. Use this to provide a custom `SeedGenerator`
+                implementation (e.g., database-backed seeds, different hash algorithms).
 
         Raises:
             ValueError: If n_task_repeats is less than 1.
+            ValueError: If both `seed` and `seed_generator` are provided.
 
         How to use:
             Configure execution settings at initialization:
@@ -237,6 +248,16 @@ class Benchmark(ABC):
         self.fail_on_evaluation_error = fail_on_evaluation_error
         self.fail_on_setup_error = fail_on_setup_error
 
+        # Seeding configuration
+        if seed is not None and seed_generator is not None:
+            raise ValueError("Cannot provide both `seed` and `seed_generator`. Use one or the other.")
+        if seed_generator is not None:
+            self._seed_generator: Optional[SeedGenerator] = seed_generator
+        elif seed is not None:
+            self._seed_generator = DefaultSeedGenerator(global_seed=seed)
+        else:
+            self._seed_generator = None
+
         # Gather benchmark-level configuration (system, git, packages, etc.)
         self.benchmark_level_config = gather_benchmark_config()
 
@@ -251,11 +272,24 @@ class Benchmark(ABC):
         # Each report contains both traces and configs for a single task repetition
         self.reports: List[Dict[str, Any]] = []
 
-    def register(self, category: str, name: str, component: TraceableMixin) -> TraceableMixin:
+    @property
+    def seed_generator(self) -> Optional[SeedGenerator]:
+        """Current seed generator, or None if seeding is disabled.
+
+        The seed generator is configured at benchmark initialization via the `seed`
+        or `seed_generator` parameters. During task execution, scoped generators
+        are passed to setup methods.
+
+        Returns:
+            The root `SeedGenerator` instance, or `None` if seeding is disabled.
+        """
+        return self._seed_generator
+
+    def register(self, category: str, name: str, component: RegisterableComponent) -> RegisterableComponent:
         """Register a component for comprehensive trace and configuration collection.
 
         All core MASEval components (AgentAdapter, ModelAdapter, Environment,
-        User, LLMSimulator, BenchmarkCallback) inherit from TraceableMixin and
+        User, LLMSimulator, BenchmarkCallback) inherit from TraceableMixin and/or
         ConfigurableMixin, and are automatically registered for both trace and
         configuration collection before evaluation.
 
@@ -266,10 +300,10 @@ class Benchmark(ABC):
 
         Args:
             category: Component category (e.g., "agents", "models", "tools", "simulators",
-                     "callbacks", "user", "environment"). Use plural form to match
+                     "callbacks", "user", "environment", "seeding"). Use plural form to match
                      the structure in collect_all_traces() and collect_all_configs().
             name: Unique identifier for this component within its category
-            component: Any object inheriting from TraceableMixin (and optionally ConfigurableMixin)
+            component: Any object inheriting from TraceableMixin and/or ConfigurableMixin
 
         Returns:
             The component (for chaining convenience)
@@ -321,17 +355,20 @@ class Benchmark(ABC):
         The collected traces are stored in `benchmark.reports` list along with configs
         for persistent access across all task repetitions.
 
+        Output fields:
+
+        - `metadata` - Collection timestamp and thread info
+        - `agents` - Dict mapping agent names to their traces (messages, execution data)
+        - `models` - Dict mapping model names to their traces (API calls, timing, errors)
+        - `tools` - Dict mapping tool names to their traces (invocations, parameters)
+        - `simulators` - Dict mapping simulator names to their traces (attempts, outcomes)
+        - `callbacks` - Dict mapping callback names to their traces (custom data)
+        - `environment` - Direct traces from the environment (not nested), or `None` if not present
+        - `user` - Direct traces from the user simulator (not nested), or `None` if not present
+        - `other` - Dict for any other registered components
+
         Returns:
-            Structured dictionary containing:
-            - metadata: Collection timestamp and thread info
-            - agents: Dict mapping agent names to their traces (messages, execution data)
-            - models: Dict mapping model names to their traces (API calls, timing, errors)
-            - tools: Dict mapping tool names to their traces (invocations, parameters)
-            - simulators: Dict mapping simulator names to their traces (attempts, outcomes)
-            - callbacks: Dict mapping callback names to their traces (custom data)
-            - environment: Direct traces from the environment (not nested), or None if not present
-            - user: Direct traces from the user simulator (not nested), or None if not present
-            - other: Dict for any other registered components
+            Structured dictionary containing execution traces from all registered components.
 
         How to use:
             This method is called automatically by `run()` after each task repetition:
@@ -366,18 +403,21 @@ class Benchmark(ABC):
         The collected configs are stored in `benchmark.reports` list along with traces
         for persistent access across all task repetitions.
 
+        Output fields:
+
+        - `metadata` - Collection timestamp and thread info
+        - `agents` - Dict mapping agent names to their config (settings, parameters)
+        - `models` - Dict mapping model names to their config (model IDs, parameters)
+        - `tools` - Dict mapping tool names to their config (specifications, settings)
+        - `simulators` - Dict mapping simulator names to their config (parameters, templates)
+        - `callbacks` - Dict mapping callback names to their config (settings)
+        - `environment` - Direct config from the environment (not nested), or `None` if not present
+        - `user` - Direct config from the user simulator (not nested), or `None` if not present
+        - `other` - Dict for any other registered components
+        - `benchmark` - Benchmark-level configuration (git, system, packages)
+
         Returns:
-            Structured dictionary containing:
-            - metadata: Collection timestamp and thread info
-            - agents: Dict mapping agent names to their config (settings, parameters)
-            - models: Dict mapping model names to their config (model IDs, parameters)
-            - tools: Dict mapping tool names to their config (specifications, settings)
-            - simulators: Dict mapping simulator names to their config (parameters, templates)
-            - callbacks: Dict mapping callback names to their config (settings)
-            - environment: Direct config from the environment (not nested), or None if not present
-            - user: Direct config from the user simulator (not nested), or None if not present
-            - other: Dict for any other registered components
-            - benchmark: Benchmark-level configuration (git, system, packages)
+            Structured dictionary containing configuration from all registered components.
 
         How to use:
             This method is called automatically by `run()` after each task repetition:
@@ -479,7 +519,12 @@ class Benchmark(ABC):
         self.callback_handler.register(callback.on_event)
 
     @abstractmethod
-    def setup_environment(self, agent_data: Dict[str, Any], task: Task) -> Environment:
+    def setup_environment(
+        self,
+        agent_data: Dict[str, Any],
+        task: Task,
+        seed_generator: Optional[SeedGenerator] = None,
+    ) -> Environment:
         """Create and initialize the environment for a task.
 
         This method is called once per task execution to create a fresh environment with the
@@ -493,6 +538,9 @@ class Benchmark(ABC):
                 and other settings that may influence environment setup (e.g., framework type).
             task: The Task object containing environment_data, query, and metadata needed to
                 construct the environment.
+            seed_generator: Optional seed generator for deriving deterministic seeds for
+                environment components (tools, simulators, etc.). Use `derive_seed()` to get
+                seeds for individual components. None if seeding is disabled.
 
         Returns:
             An Environment instance with initialized state and tools for this specific task.
@@ -506,24 +554,35 @@ class Benchmark(ABC):
             - Create and configure tools that agents can invoke
             - Set up domain-specific state (inventory, user profiles, etc.)
             - Optionally use agent_data for framework-specific tool initialization
+            - Use seed_generator to derive seeds for tool simulators
 
             ```python
-            def setup_environment(self, agent_data: Dict[str, Any], task: Task) -> Environment:
-                # Extract data and initialize
-                framework = agent_data.get("framework", "default")
-                return TravelEnvironment(
-                    hotels=task.environment_data["hotels"],
-                    flights=task.environment_data["flights"],
-                    user_preferences=task.environment_data.get("preferences", {}),
-                    framework=framework  # For framework-specific tool creation
-                )
+            def setup_environment(self, agent_data, task, seed_generator=None):
+                env = TravelEnvironment(task.environment_data)
+
+                if seed_generator is not None:
+                    # Use nested child() for logical paths like "environment/tools/weather"
+                    env_gen = seed_generator.child("environment")
+                    tools_gen = env_gen.child("tools")
+                    for tool in env.tools:
+                        tool_seed = tools_gen.derive_seed(tool.name)
+                        tool_model = self.get_model_adapter(model_id, seed=tool_seed)
+                        tool.set_simulator(tool_model)
+
+                return env
             ```
 
             The environment is automatically registered for tracing when returned.
         """
         pass
 
-    def setup_user(self, agent_data: Dict[str, Any], environment: Environment, task: Task) -> Optional[User]:
+    def setup_user(
+        self,
+        agent_data: Dict[str, Any],
+        environment: Environment,
+        task: Task,
+        seed_generator: Optional[SeedGenerator] = None,
+    ) -> Optional[User]:
         """Create an optional user simulator for interactive tasks.
 
         This method is optional. Return None if your benchmark does not require user simulation.
@@ -536,6 +595,8 @@ class Benchmark(ABC):
                 influence user simulator setup (e.g., framework type for creating compatible tools).
             environment: The environment instance created for this task.
             task: The Task object with user profile data or scenario information.
+            seed_generator: Optional seed generator for deriving deterministic seeds for
+                the user simulator. None if seeding is disabled.
 
         Returns:
             A User instance that can respond to agent queries, or None if not needed.
@@ -546,17 +607,18 @@ class Benchmark(ABC):
             systems requiring user input during execution.
 
             ```python
-            def setup_user(self, agent_data: Dict[str, Any], environment: Environment, task: Task) -> User:
-                framework = agent_data.get("framework", "default")
-                return UserSimulator(
-                    profile=task.environment_data.get("user_profile"),
-                    scenario=task.metadata["scenario"],
-                    model=self.user_model,
-                    framework=framework  # For framework-specific tool creation
-                )
+            def setup_user(self, agent_data, environment, task, seed_generator=None):
+                user_seed = None
+                if seed_generator is not None:
+                    # Use child() to create logical namespace - results in "simulators/user"
+                    sim_gen = seed_generator.child("simulators")
+                    user_seed = sim_gen.derive_seed("user")
+
+                user_model = self.get_model_adapter(model_id, seed=user_seed)
+                return LLMUser(model=user_model, ...)
 
             # Or skip user simulation entirely
-            def setup_user(self, agent_data: Dict[str, Any], environment: Environment, task: Task) -> None:
+            def setup_user(self, agent_data, environment, task, seed_generator=None):
                 return None
             ```
 
@@ -571,6 +633,7 @@ class Benchmark(ABC):
         environment: Environment,
         task: Task,
         user: Optional[User],
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Instantiate and configure the agent system for a task.
 
@@ -584,6 +647,10 @@ class Benchmark(ABC):
             environment: The initialized environment providing tools to the agents.
             task: The Task object with query and metadata.
             user: Optional user simulator for agent-user interactions.
+            seed_generator: Optional seed generator for deriving deterministic seeds for
+                agents and their models. Use `per_repetition=True` for agents that should
+                vary across repetitions, or `per_repetition=False` for baseline agents that
+                should remain constant. None if seeding is disabled.
 
         Returns:
             A tuple of (agents_to_run, agents_dict) where:
@@ -603,27 +670,26 @@ class Benchmark(ABC):
               called indirectly through the orchestrator
 
             ```python
-            def setup_agents(self, agent_data, environment, task, user):
-                # Manually register model (not auto-registered)
-                model = MyModelAdapter(...)
-                self.register("model", "main_model", model)
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                if seed_generator is not None:
+                    # Use child() for logical paths like "agents/experimental"
+                    agent_gen = seed_generator.child("agents")
+                    # Vary experimental agent per rep, keep baseline constant
+                    experimental_seed = agent_gen.derive_seed("experimental", per_repetition=True)
+                    baseline_seed = agent_gen.derive_seed("baseline", per_repetition=False)
 
-                # Create worker agents
-                workers = {}
-                for spec in agent_data["workers"]:
-                    agent = ToolAgent(model=model, tools=environment.get_tools(spec["tools"]))
-                    workers[spec["id"]] = AgentAdapter(agent, spec["id"])
+                    # For worker agents, nest further: "agents/workers/analyst"
+                    worker_gen = agent_gen.child("workers")
+                    analyst_seed = worker_gen.derive_seed("analyst")
+                else:
+                    experimental_seed = None
+                    baseline_seed = None
+                    analyst_seed = None
 
-                # Create orchestrator with access to workers
-                orchestrator = OrchestratorAgent(
-                    model=model,
-                    managed_agents=[w.agent for w in workers.values()]
-                )
-                orchestrator_adapter = AgentAdapter(orchestrator, "orchestrator")
+                # Create agents with seeds
+                model = self.get_model_adapter(model_id, seed=experimental_seed)
+                # ... create agents ...
 
-                # Return orchestrator to run, but all agents for monitoring
-                # All agents auto-registered for tracing
-                all_agents = {"orchestrator": orchestrator_adapter, **workers}
                 return [orchestrator_adapter], all_agents
             ```
         """
@@ -636,6 +702,7 @@ class Benchmark(ABC):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> Sequence[Evaluator]:
         """Create evaluators to assess agent performance on a task.
 
@@ -644,6 +711,8 @@ class Benchmark(ABC):
             task: The Task object with evaluation criteria in evaluation_data.
             agents: The agents that will execute the task (useful for context in evaluation).
             user: Optional user simulator, if evaluation needs user interaction data.
+            seed_generator: Optional seed generator for deriving deterministic seeds for
+                evaluators that use LLMs (e.g., LLM judges). None if seeding is disabled.
 
         Returns:
             A sequence of Evaluator instances that will be called with execution traces.
@@ -654,11 +723,16 @@ class Benchmark(ABC):
             efficiency, conversation quality, etc.).
 
             ```python
-            def setup_evaluators(self, environment, task, agents, user):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
+                judge_seed = None
+                if seed_generator is not None:
+                    # Use child() to create logical namespace - results in "evaluators/judge"
+                    eval_gen = seed_generator.child("evaluators")
+                    judge_seed = eval_gen.derive_seed("judge")
+
                 return [
                     SuccessEvaluator(task.evaluation_data["gold_answer"]),
-                    EfficiencyEvaluator(max_steps=task.metadata["max_steps"]),
-                    LLMJudgeEvaluator(model=self.judge_model, criteria=task.evaluation_data["rubric"])
+                    LLMJudgeEvaluator(model=self.get_model_adapter(model_id, seed=judge_seed))
                 ]
             ```
         """
@@ -842,7 +916,7 @@ class Benchmark(ABC):
         """Execute agents with optional user interaction loop.
 
         This method orchestrates the agent-user interaction pattern. When a user is
-        present, the user initiates the conversation using `User.get_intial_query`.
+        present, the user initiates the conversation using `user.get_initial_query()`.
         If no user is present, ``task.query`` is used as the initial query.
 
         Interaction Flow:
@@ -891,7 +965,7 @@ class Benchmark(ABC):
                 break
 
             # Simulate user response (handles message recording, stop token detection, turn counting)
-            user_response = user.simulate_response(str(final_answer) if final_answer else "")
+            user_response = user.respond(str(final_answer) if final_answer else "")
 
             # Check if user is done (cheap state check - no LLM call)
             if user.is_done():
@@ -936,18 +1010,23 @@ class Benchmark(ABC):
         timeout = task.protocol.timeout_seconds
         context = TaskContext(deadline=timeout)
 
+        # Create scoped seed generator for this task+repetition
+        task_seed_gen: Optional[SeedGenerator] = None
+        if self._seed_generator is not None:
+            task_seed_gen = self._seed_generator.for_task(str(task.id)).for_repetition(repeat_idx)
+
         try:
             # 1. Setup
-            environment = self.setup_environment(agent_data, task)
-            user = self.setup_user(agent_data, environment, task)
+            environment = self.setup_environment(agent_data, task, seed_generator=task_seed_gen)
+            user = self.setup_user(agent_data, environment, task, seed_generator=task_seed_gen)
             if user is None and self.max_invocations > 1:
                 # Warn if multi-turn is enabled but no user to drive interaction
                 warnings.warn(
                     f"max_invocations={self.max_invocations} > 1 but no user simulator provided. "
                     f"Falling back to single-turn execution for task {task.id}."
                 )
-            agents_to_run, agents_dict = self.setup_agents(agent_data, environment, task, user)
-            evaluators = self.setup_evaluators(environment, task, agents_to_run, user)
+            agents_to_run, agents_dict = self.setup_agents(agent_data, environment, task, user, seed_generator=task_seed_gen)
+            evaluators = self.setup_evaluators(environment, task, agents_to_run, user, seed_generator=task_seed_gen)
 
             # Auto-register components returned from setup methods
             # Environment
@@ -962,6 +1041,10 @@ class Benchmark(ABC):
             for agent_name, agent in agents_dict.items():
                 if isinstance(agent, TraceableMixin):
                     self.register("agents", agent_name, agent)
+
+            # Register seed generator for config collection
+            if task_seed_gen is not None:
+                self.register("seeding", "seed_generator", task_seed_gen)
 
             # Check timeout after setup
             context.check_timeout()

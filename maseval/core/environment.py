@@ -56,12 +56,15 @@ class Environment(ABC, TraceableMixin, ConfigurableMixin):
     def gather_traces(self) -> dict[str, Any]:
         """Gather execution traces from this environment and its tools.
 
+        Output fields:
+
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp
+        - `tool_count` - Number of tools in environment
+        - `tools` - Dictionary of tool traces keyed by tool name
+
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - tool_count: Number of tools in environment
-            - tools: Dictionary of tool traces keyed by tool name
+            Dictionary containing environment execution traces.
         """
         tool_traces = {}
 
@@ -98,12 +101,15 @@ class Environment(ABC, TraceableMixin, ConfigurableMixin):
     def gather_config(self) -> dict[str, Any]:
         """Gather configuration from this environment.
 
+        Output fields:
+
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp
+        - `tool_count` - Number of tools
+        - `tool_names` - List of tool names
+
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - tool_count: Number of tools
-            - tool_names: List of tool names
+            Dictionary containing environment configuration.
         """
         return {
             **super().gather_config(),

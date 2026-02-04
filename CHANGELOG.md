@@ -23,8 +23,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Examples**
 
 - Gaia2 benchmark example with Google GenAI and OpenAI model support (PR: #PR_NUMBER_PLACEHOLDER)
+  **Seeding System**
+
+- Added `SeedGenerator` abstract base class and `DefaultSeedGenerator` implementation for reproducible benchmark runs via SHA-256-based seed derivation (PR: #24)
+- Added `seed` and `seed_generator` parameters to `Benchmark.__init__` for enabling reproducibility (PR: #24)
+- Added `seed_generator` parameter to all benchmark setup methods (`setup_environment`, `setup_user`, `setup_agents`, `setup_evaluators`) (PR: #24)
+- Added `seed` parameter to `ModelAdapter.__init__` for deterministic model inference (PR: #24)
+- Added `SeedingError` exception for providers that don't support seeding (Anthropic models raise this if seed is provided) (PR: #24)
+- Added seed support to interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFaceModelAdapter` pass seeds to underlying APIs (PR: #24)
+
+**Interface**
+
+- CAMEL-AI integration: `CamelAgentAdapter` and `CamelLLMUser` for evaluating CAMEL-AI ChatAgent-based systems (PR: #22)
+- Added `CamelAgentUser` for using a CAMEL ChatAgent as the user in agent-to-agent evaluation (PR: #22)
+- Added `camel_role_playing_execution_loop()` for benchmarks using CAMEL's RolePlaying semantics (PR: #22)
+- Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
 
 ### Changed
+
+**User**
+
+- Refactored `User` class into abstract base class defining the interface (`get_initial_query()`, `respond()`, `is_done()`) with `LLMUser` as the concrete LLM-driven implementation. This enables non-LLM user implementations (scripted, human-in-the-loop, agent-based). (PR: #22)
+- Renamed `AgenticUser` → `AgenticLLMUser` for consistency with the new hierarchy (PR: #22)
+
+**Interface**
+
+- Renamed framework-specific user classes to reflect the new `LLMUser` base (PR: #22):
+  - `SmolAgentUser` → `SmolAgentLLMUser`
+  - `LangGraphUser` → `LangGraphLLMUser`
+  - `LlamaIndexUser` → `LlamaIndexLLMUser`
 
 ### Fixed
 
@@ -141,7 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Interface**
 
-- [LlamaIndex](https://github.com/run-llama/llama_index) integration: `LlamaIndexAgentAdapter` and `LlamaIndexUser` for evaluating LlamaIndex workflow-based agents (PR: #7)
+- [LlamaIndex](https://github.com/run-llama/llama_index) integration: `LlamaIndexAgentAdapter` and `LlamaIndexLLMUser` for evaluating LlamaIndex workflow-based agents (PR: #7)
 - The `logs` property inside `SmolAgentAdapter` and `LanggraphAgentAdapter` are now properly filled. (PR: #3)
 
 **Examples**

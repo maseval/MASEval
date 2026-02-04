@@ -24,9 +24,9 @@ import os
 from typing import Any, Dict, List, Optional, Sequence
 from pathlib import Path
 
-from utils import derive_seed, sanitize_name  # type: ignore[unresolved-import]
+from utils import sanitize_name  # type: ignore[unresolved-import]
 
-from maseval import Benchmark, Environment, Evaluator, Task, TaskQueue, AgentAdapter, ModelAdapter
+from maseval import Benchmark, Environment, Evaluator, Task, TaskQueue, AgentAdapter, ModelAdapter, SeedGenerator
 from maseval.core.callbacks.result_logger import FileResultLogger
 
 # Import tool implementations
@@ -236,6 +236,7 @@ def build_smolagents_single_agent(
     all_tool_adapters: Dict[str, Any],
     primary_spec: Dict[str, Any],
     specialist_specs: List[Dict[str, Any]],
+    seeds: Optional[Dict[str, int]] = None,
 ) -> tuple[Any, Dict[str, Any]]:
     """Build a single smolagents agent.
 
@@ -245,6 +246,7 @@ def build_smolagents_single_agent(
         all_tool_adapters: All available tool adapters (dict keyed by name)
         primary_spec: Primary agent specification
         specialist_specs: Empty list for single-agent (ignored)
+        seeds: Optional dict mapping agent_id to seed
 
     Returns:
         Tuple of (primary_adapter, all_adapters_dict) for consistent interface
@@ -252,7 +254,7 @@ def build_smolagents_single_agent(
     from smolagents import ToolCallingAgent
     from maseval.interface.agents.smolagents import SmolAgentAdapter
 
-    seed = primary_spec.get("seed")
+    seed = seeds.get(primary_spec["agent_id"]) if seeds else None
     model = get_model(model_id, "smolagents", temperature, seed)
     tool_adapters = filter_tool_adapters_by_prefix(all_tool_adapters, primary_spec["tools"])
     tools = [adapter.tool for adapter in tool_adapters.values()]
@@ -276,6 +278,7 @@ def build_langgraph_single_agent(
     all_tool_adapters: Dict[str, Any],
     primary_spec: Dict[str, Any],
     specialist_specs: List[Dict[str, Any]],
+    seeds: Optional[Dict[str, int]] = None,
 ) -> tuple[Any, Dict[str, Any]]:
     """Build a single langgraph agent.
 
@@ -285,6 +288,7 @@ def build_langgraph_single_agent(
         all_tool_adapters: All available tool adapters (dict keyed by name)
         primary_spec: Primary agent specification
         specialist_specs: Empty list for single-agent (ignored)
+        seeds: Optional dict mapping agent_id to seed
 
     Returns:
         Tuple of (primary_adapter, all_adapters_dict) for consistent interface
@@ -296,7 +300,7 @@ def build_langgraph_single_agent(
     from typing_extensions import TypedDict, Annotated
     from maseval.interface.agents.langgraph import LangGraphAgentAdapter
 
-    seed = primary_spec.get("seed")
+    seed = seeds.get(primary_spec["agent_id"]) if seeds else None
     model = get_model(model_id, "langgraph", temperature, seed)
     tool_adapters = filter_tool_adapters_by_prefix(all_tool_adapters, primary_spec["tools"])
     tools = [adapter.tool for adapter in tool_adapters.values()]
@@ -334,6 +338,7 @@ def build_llamaindex_single_agent(
     all_tool_adapters: Dict[str, Any],
     primary_spec: Dict[str, Any],
     specialist_specs: List[Dict[str, Any]],
+    seeds: Optional[Dict[str, int]] = None,
 ) -> tuple[Any, Dict[str, Any]]:
     """Build a single llamaindex agent.
 
@@ -343,6 +348,7 @@ def build_llamaindex_single_agent(
         all_tool_adapters: All available tool adapters (dict keyed by name)
         primary_spec: Primary agent specification
         specialist_specs: Empty list for single-agent (ignored)
+        seeds: Optional dict mapping agent_id to seed
 
     Returns:
         Tuple of (primary_adapter, all_adapters_dict) for consistent interface
@@ -350,7 +356,7 @@ def build_llamaindex_single_agent(
     from llama_index.core.agent.workflow.react_agent import ReActAgent
     from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
 
-    seed = primary_spec.get("seed")
+    seed = seeds.get(primary_spec["agent_id"]) if seeds else None
     model = get_model(model_id, "llamaindex", temperature, seed)
     tool_adapters = filter_tool_adapters_by_prefix(all_tool_adapters, primary_spec["tools"])
     tools = [adapter.tool for adapter in tool_adapters.values()]
@@ -373,6 +379,7 @@ def build_smolagents_multi_agent(
     all_tool_adapters: Dict[str, Any],
     primary_spec: Dict[str, Any],
     specialist_specs: List[Dict[str, Any]],
+    seeds: Optional[Dict[str, int]] = None,
 ) -> tuple[Any, Dict[str, Any]]:
     """Build smolagents multi-agent setup with orchestrator and specialists.
 
@@ -382,6 +389,7 @@ def build_smolagents_multi_agent(
         all_tool_adapters: All available tool adapters (dict keyed by name)
         primary_spec: Primary agent specification
         specialist_specs: List of specialist agent specifications
+        seeds: Optional dict mapping agent_id to seed
 
     Returns:
         Tuple of (primary_adapter, all_adapters_dict) where all_adapters_dict
@@ -394,7 +402,7 @@ def build_smolagents_multi_agent(
     specialist_adapters_dict: Dict[str, Any] = {}
 
     for agent_spec in specialist_specs:
-        specialist_seed = agent_spec.get("seed")
+        specialist_seed = seeds.get(agent_spec["agent_id"]) if seeds else None
         specialist_model = get_model(model_id, "smolagents", temperature, specialist_seed)
         specialist_adapters = filter_tool_adapters_by_prefix(all_tool_adapters, agent_spec["tools"])
         specialist_tools = [adapter.tool for adapter in specialist_adapters.values()]
@@ -417,7 +425,7 @@ def build_smolagents_multi_agent(
     primary_tools = [adapter.tool for adapter in primary_adapters.values()]
     primary_tools.append(FinalAnswerTool())
     sanitized_primary_name = sanitize_name(primary_spec["agent_name"])
-    primary_seed = primary_spec.get("seed")
+    primary_seed = seeds.get(primary_spec["agent_id"]) if seeds else None
     primary_model = get_model(model_id, "smolagents", temperature, primary_seed)
 
     agent = ToolCallingAgent(
@@ -442,6 +450,7 @@ def build_langgraph_multi_agent(
     all_tool_adapters: Dict[str, Any],
     primary_spec: Dict[str, Any],
     specialist_specs: List[Dict[str, Any]],
+    seeds: Optional[Dict[str, int]] = None,
 ) -> tuple[Any, Dict[str, Any]]:
     """Build langgraph multi-agent setup with orchestrator and specialists.
 
@@ -451,6 +460,7 @@ def build_langgraph_multi_agent(
         all_tool_adapters: All available tool adapters (dict keyed by name)
         primary_spec: Primary agent specification
         specialist_specs: List of specialist agent specifications
+        seeds: Optional dict mapping agent_id to seed values
 
     Returns:
         Tuple of (primary_adapter, all_adapters_dict). Note: LangGraph multi-agent
@@ -472,7 +482,7 @@ def build_langgraph_multi_agent(
     for agent_spec in specialist_specs:
         agent_id = agent_spec["agent_id"]
         agent_instruction = agent_spec["agent_instruction"]
-        specialist_seed = agent_spec.get("seed")
+        specialist_seed = seeds.get(agent_id) if seeds else None
         specialist_model = get_model(model_id, "langgraph", temperature, specialist_seed)
         specialist_adapters = filter_tool_adapters_by_prefix(all_tool_adapters, agent_spec["tools"])
         specialist_tools = [adapter.tool for adapter in specialist_adapters.values()]
@@ -550,7 +560,7 @@ def build_langgraph_multi_agent(
 
     # Create orchestrator
     primary_instruction = primary_spec["agent_instruction"]
-    primary_seed = primary_spec.get("seed")
+    primary_seed = seeds.get(primary_spec["agent_id"]) if seeds else None
     primary_model = get_model(model_id, "langgraph", temperature, primary_seed)
     orchestrator_model = primary_model.bind_tools(handoff_tools)
 
@@ -601,6 +611,7 @@ def build_llamaindex_multi_agent(
     all_tool_adapters: Dict[str, Any],
     primary_spec: Dict[str, Any],
     specialist_specs: List[Dict[str, Any]],
+    seeds: Optional[Dict[str, int]] = None,
 ) -> tuple[Any, Dict[str, Any]]:
     """Build llamaindex multi-agent setup with orchestrator and specialists.
 
@@ -610,6 +621,7 @@ def build_llamaindex_multi_agent(
         all_tool_adapters: All available tool adapters (dict keyed by name)
         primary_spec: Primary agent specification
         specialist_specs: List of specialist agent specifications
+        seeds: Optional dict mapping agent_id to seed values
 
     Returns:
         Tuple of (primary_adapter, all_adapters_dict). Note: LlamaIndex multi-agent
@@ -625,7 +637,7 @@ def build_llamaindex_multi_agent(
         agent_id = agent_spec["agent_id"]
         agent_name = sanitize_name(agent_spec["agent_name"])
         agent_instruction = agent_spec["agent_instruction"]
-        specialist_seed = agent_spec.get("seed")
+        specialist_seed = seeds.get(agent_id) if seeds else None
         specialist_model = get_model(model_id, "llamaindex", temperature, specialist_seed)
         specialist_adapters = filter_tool_adapters_by_prefix(all_tool_adapters, agent_spec["tools"])
         specialist_tools = [adapter.tool for adapter in specialist_adapters.values()]
@@ -670,7 +682,7 @@ def build_llamaindex_multi_agent(
     primary_tools = [adapter.tool for adapter in primary_adapters.values()]
     orchestrator_tools.extend(primary_tools)
 
-    primary_seed = primary_spec.get("seed")
+    primary_seed = seeds.get(primary_spec["agent_id"]) if seeds else None
     primary_model = get_model(model_id, "llamaindex", temperature, primary_seed)
 
     orchestrator = ReActAgent(
@@ -717,7 +729,7 @@ class FiveADayBenchmark(Benchmark):
     Supports single-agent and multi-agent (orchestrator+specialist) configurations.
     """
 
-    def setup_environment(self, agent_data: Dict[str, Any], task: Task) -> Environment:
+    def setup_environment(self, agent_data: Dict[str, Any], task: Task, seed_generator: Optional[SeedGenerator] = None) -> Environment:
         """Create environment from task data."""
         # Pass full task data to environment
         task_data = {
@@ -737,7 +749,12 @@ class FiveADayBenchmark(Benchmark):
         return environment
 
     def setup_agents(
-        self, agent_data: Dict[str, Any], environment: Environment, task: Task, user=None
+        self,
+        agent_data: Dict[str, Any],
+        environment: Environment,
+        task: Task,
+        user=None,
+        seed_generator: Optional[SeedGenerator] = None,
     ) -> tuple[List[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create framework-specific agent with tools from environment.
 
@@ -758,14 +775,23 @@ class FiveADayBenchmark(Benchmark):
         primary_spec = next(a for a in agents_specs if a["agent_id"] == primary_agent_id)
         specialist_specs = [a for a in agents_specs if a["agent_id"] != primary_agent_id]
 
+        # Derive seeds for agents using seed_generator if available
+        # Use child("agents") to create logical paths like "agents/primary_agent"
+        seeds = None
+        if seed_generator is not None:
+            agent_gen = seed_generator.child("agents")
+            seeds = {primary_spec["agent_id"]: agent_gen.derive_seed(primary_spec["agent_id"])}
+            for spec in specialist_specs:
+                seeds[spec["agent_id"]] = agent_gen.derive_seed(spec["agent_id"])
+
         # Build agent using unified interface - now returns (primary_adapter, all_adapters_dict)
         builder = get_agent_builder(framework, agent_type)
-        primary_adapter, all_adapters_dict = builder(model_id, temperature, all_tool_adapters, primary_spec, specialist_specs)
+        primary_adapter, all_adapters_dict = builder(model_id, temperature, all_tool_adapters, primary_spec, specialist_specs, seeds)
 
         # Return primary adapter to run, and all adapters for trace registration
         return [primary_adapter], all_adapters_dict
 
-    def setup_evaluators(self, environment, task, agents, user) -> Sequence[Evaluator]:
+    def setup_evaluators(self, environment, task, agents, user, seed_generator: Optional[SeedGenerator] = None) -> Sequence[Evaluator]:
         """Create evaluators based on task's evaluation_data.evaluators list."""
         if not task.evaluation_data["evaluators"]:
             return []
@@ -824,7 +850,6 @@ def load_benchmark_data(
     temperature: float,
     limit: Optional[int] = None,
     specific_task: Optional[int] = None,
-    seed: Optional[int] = None,
 ) -> tuple[TaskQueue, List[Dict[str, Any]]]:
     """Load tasks and agent configurations with validation.
 
@@ -835,7 +860,6 @@ def load_benchmark_data(
         specific_task: Optional index to load only a specific task
         model_id: Model identifier
         temperature: Model temperature
-        seed: Base random seed for reproducibility (None for non-deterministic)
 
     Returns:
         Tuple of (TaskQueue, agent_configs_list)
@@ -888,11 +912,6 @@ def load_benchmark_data(
         config["framework"] = framework
         config["model_config"] = {"model_id": model_id, "temperature": temperature}
 
-        # Derive seeds for all agents in this config
-        if seed is not None:
-            for agent_spec in config["agents"]:
-                agent_spec["seed"] = derive_seed(seed, task_id, agent_spec["agent_id"])
-
         configs_data.append(config)
 
     print(f"Loaded {len(tasks_data)} tasks and {len(configs_data)} agent configs\n")
@@ -925,7 +944,6 @@ if __name__ == "__main__":
         temperature=args.temperature,
         limit=args.limit,
         specific_task=args.task,
-        seed=args.seed,
     )
 
     logger = FileResultLogger(
@@ -936,6 +954,7 @@ if __name__ == "__main__":
 
     benchmark = FiveADayBenchmark(
         callbacks=[logger],
+        seed=args.seed,  # Use benchmark's seeding system
         fail_on_setup_error=True,
         fail_on_task_error=True,
         fail_on_evaluation_error=True,

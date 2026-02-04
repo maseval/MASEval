@@ -36,7 +36,7 @@ class TestExceptionClassification:
                 return self.agent.run(query)
 
         class AgentErrorBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 agent = AgentErrorRaisingAgent()
                 adapter = AgentErrorAdapter(agent, "agent")
                 return [adapter], {"agent": adapter}
@@ -63,7 +63,7 @@ class TestExceptionClassification:
                 return self.agent.run(query)
 
         class EnvironmentErrorBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 agent = EnvironmentErrorRaisingAgent()
                 adapter = EnvironmentErrorAdapter(agent, "agent")
                 return [adapter], {"agent": adapter}
@@ -90,7 +90,7 @@ class TestExceptionClassification:
                 return self.agent.run(query)
 
         class UserErrorBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 agent = UserErrorRaisingAgent()
                 adapter = UserErrorAdapter(agent, "agent")
                 return [adapter], {"agent": adapter}
@@ -117,7 +117,7 @@ class TestExceptionClassification:
                 return self.agent.run(query)
 
         class GenericErrorBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 agent = GenericErrorRaisingAgent()
                 adapter = GenericErrorAdapter(agent, "agent")
                 return [adapter], {"agent": adapter}
@@ -147,7 +147,7 @@ class TestExceptionClassification:
                 return self.agent.run(query)
 
         class DetailedAgentErrorBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 agent = DetailedAgentErrorRaisingAgent()
                 adapter = DetailedAgentErrorAdapter(agent, "agent")
                 return [adapter], {"agent": adapter}
@@ -377,7 +377,7 @@ class TestFilteringByErrorType:
         class MixedErrorBenchmark(DummyBenchmark):
             task_counter = 0
 
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
                 self.task_counter += 1
 
                 class DynamicAgent:
