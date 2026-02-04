@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MultiAgentBenchBenchmark` abstract base class for framework-agnostic multi-agent evaluation with seeding support for evaluators and agents (PR: #25)
 - `MarbleMultiAgentBenchBenchmark` for exact MARBLE reproduction mode using native MARBLE agents (note: MARBLE's internal LLM calls bypass MASEval seeding) (PR: #25)
 - `MultiAgentBenchEnvironment` and `MultiAgentBenchEvaluator` components (PR: #25)
-- Data loading utilities: `load_tasks()`, `configure_model_ids()`, `list_scenarios()` (PR: #25)
+- Data loading utilities: `load_tasks()`, `configure_model_ids()`, `get_domain_info()`, `ensure_marble_exists()` (PR: #25)
 - MARBLE adapter: `MarbleAgentAdapter` for wrapping MARBLE agents with MASEval tracing (PR: #25)
 
 **Interface**
