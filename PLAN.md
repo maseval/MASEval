@@ -668,3 +668,373 @@ This allows components to request either behavior within the same task repetitio
    - Benchmark with `seed=None` works (seeding disabled)
    - Benchmark with custom `seed_generator` works
    - Seeds appear in result configs
+
+## Test Analysis & Recommendations
+
+### Current Test Coverage Status
+
+| Component | Coverage | Status |
+|-----------|----------|--------|
+| `maseval/core/seeding.py` | 100% | ✅ Excellent unit tests |
+| Model adapter seeding | ~85% | ⚠️ Basic acceptance tests only |
+| Benchmark seeding integration | Not tested | ❌ Missing |
+
+### Tests Currently Passing
+
+The seeding unit tests in `tests/test_core/test_seeding.py` are well-structured:
+- `TestDefaultSeedGenerator` - deterministic derivation, different seeds for different inputs
+- `TestDefaultSeedGeneratorChild` - hierarchical namespacing with `child()`
+- `TestDefaultSeedGeneratorSeedLog` - logging behavior
+- `TestDefaultSeedGeneratorErrors` - error handling for missing context
+- `TestSeedGeneratorABC` - abstract base class behavior
+- `TestCustomHashAlgorithm` - extension via `_compute_seed()` override
+- `TestSeedGeneratorGatherConfig` - config integration
+
+### Missing Tests (Prioritized)
+
+#### HIGH PRIORITY: Benchmark Seeding Integration
+
+Create new test file: `tests/test_core/test_benchmark/test_seeding_integration.py`
+
+```python
+"""Tests for benchmark seeding integration.
+
+These tests verify that the seeding system integrates correctly with
+the benchmark execution lifecycle, including seed_generator propagation
+to setup methods and seeding config in reports.
+"""
+
+import pytest
+from maseval import TaskQueue
+from maseval.core.seeding import DefaultSeedGenerator, SeedGenerator
+
+pytestmark = pytest.mark.core
+
+
+class TestBenchmarkSeedingInitialization:
+    """Tests for Benchmark seed/seed_generator initialization."""
+
+    def test_benchmark_seed_parameter_creates_generator(self):
+        """seed parameter creates a DefaultSeedGenerator."""
+        from conftest import DummyBenchmark
+
+        benchmark = DummyBenchmark(seed=42)
+
+        assert benchmark.seed_generator is not None
+        assert isinstance(benchmark.seed_generator, DefaultSeedGenerator)
+        assert benchmark.seed_generator.global_seed == 42
+
+    def test_benchmark_seed_generator_parameter(self):
+        """seed_generator parameter is stored directly."""
+        from conftest import DummyBenchmark
+
+        custom_gen = DefaultSeedGenerator(global_seed=123)
+        benchmark = DummyBenchmark(seed_generator=custom_gen)
+
+        assert benchmark.seed_generator is custom_gen
+        assert benchmark.seed_generator.global_seed == 123
+
+    def test_benchmark_no_seed_no_generator(self):
+        """No seed or seed_generator results in None."""
+        from conftest import DummyBenchmark
+
+        benchmark = DummyBenchmark()
+
+        assert benchmark.seed_generator is None
+
+    def test_benchmark_seed_and_generator_raises_value_error(self):
+        """Providing both seed and seed_generator raises ValueError."""
+        from conftest import DummyBenchmark
+
+        with pytest.raises(ValueError, match="Cannot provide both"):
+            DummyBenchmark(seed=42, seed_generator=DefaultSeedGenerator(42))
+
+
+class TestSeedGeneratorPropagation:
+    """Tests verifying seed_generator is passed to all setup methods."""
+
+    def test_seed_generator_passed_to_setup_environment(self):
+        """setup_environment receives seed_generator."""
+        from conftest import DummyBenchmark, DummyEnvironment
+
+        captured = {}
+
+        class CapturingBenchmark(DummyBenchmark):
+            def setup_environment(self, agent_data, task, seed_generator=None):
+                captured['seed_generator'] = seed_generator
+                return DummyEnvironment(task.environment_data)
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = CapturingBenchmark(seed=42)
+        benchmark.run(tasks, agent_data={})
+
+        assert captured['seed_generator'] is not None
+        assert isinstance(captured['seed_generator'], SeedGenerator)
+
+    def test_seed_generator_passed_to_setup_user(self):
+        """setup_user receives seed_generator."""
+        from conftest import DummyBenchmark
+
+        captured = {}
+
+        class CapturingBenchmark(DummyBenchmark):
+            def setup_user(self, agent_data, environment, task, seed_generator=None):
+                captured['seed_generator'] = seed_generator
+                return None
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = CapturingBenchmark(seed=42)
+        benchmark.run(tasks, agent_data={})
+
+        assert captured['seed_generator'] is not None
+
+    def test_seed_generator_passed_to_setup_agents(self):
+        """setup_agents receives seed_generator."""
+        from conftest import DummyBenchmark, DummyAgent, DummyAgentAdapter
+
+        captured = {}
+
+        class CapturingBenchmark(DummyBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                captured['seed_generator'] = seed_generator
+                agent = DummyAgent()
+                adapter = DummyAgentAdapter(agent, "test_agent")
+                return [adapter], {"test_agent": adapter}
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = CapturingBenchmark(seed=42)
+        benchmark.run(tasks, agent_data={})
+
+        assert captured['seed_generator'] is not None
+
+    def test_seed_generator_passed_to_setup_evaluators(self):
+        """setup_evaluators receives seed_generator."""
+        from conftest import DummyBenchmark, DummyEvaluator
+
+        captured = {}
+
+        class CapturingBenchmark(DummyBenchmark):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator=None):
+                captured['seed_generator'] = seed_generator
+                return [DummyEvaluator(task, environment, user)]
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = CapturingBenchmark(seed=42)
+        benchmark.run(tasks, agent_data={})
+
+        assert captured['seed_generator'] is not None
+
+    def test_seed_generator_none_when_no_seed(self):
+        """seed_generator is None in setup methods when seeding disabled."""
+        from conftest import DummyBenchmark
+
+        captured = {}
+
+        class CapturingBenchmark(DummyBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                captured['seed_generator'] = seed_generator
+                return super().setup_agents(agent_data, environment, task, user, seed_generator)
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = CapturingBenchmark()  # No seed
+        benchmark.run(tasks, agent_data={})
+
+        assert captured['seed_generator'] is None
+
+
+class TestSeedingConfigInReports:
+    """Tests verifying seeding config appears in benchmark reports."""
+
+    def test_seeding_config_appears_in_report(self):
+        """Seeding configuration appears in report config."""
+        from conftest import DummyBenchmark
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = DummyBenchmark(seed=42)
+
+        reports = benchmark.run(tasks, agent_data={})
+
+        assert len(reports) == 1
+        config = reports[0]["config"]
+        assert "seeding" in config
+        assert "seed_generator" in config["seeding"]
+        assert config["seeding"]["seed_generator"]["global_seed"] == 42
+
+    def test_seeding_config_includes_seed_log(self):
+        """Seeding config includes all derived seeds."""
+        from conftest import DummyBenchmark, DummyAgent, DummyAgentAdapter
+
+        class SeedUsingBenchmark(DummyBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                if seed_generator is not None:
+                    agent_gen = seed_generator.child("agents")
+                    agent_gen.derive_seed("test_agent")
+                agent = DummyAgent()
+                adapter = DummyAgentAdapter(agent, "test_agent")
+                return [adapter], {"test_agent": adapter}
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = SeedUsingBenchmark(seed=42)
+
+        reports = benchmark.run(tasks, agent_data={})
+
+        config = reports[0]["config"]
+        seeds = config["seeding"]["seed_generator"]["seeds"]
+        assert "agents/test_agent" in seeds
+
+    def test_no_seeding_config_when_disabled(self):
+        """No seeding config when seeding is disabled."""
+        from conftest import DummyBenchmark
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = DummyBenchmark()  # No seed
+
+        reports = benchmark.run(tasks, agent_data={})
+
+        config = reports[0]["config"]
+        # seeding key may exist but be empty, or not exist at all
+        if "seeding" in config:
+            assert config["seeding"] == {} or config["seeding"].get("seed_generator") is None
+
+
+class TestSeedingAcrossRepetitions:
+    """Tests verifying seeding behavior across task repetitions."""
+
+    def test_different_seeds_per_repetition(self):
+        """Different repetitions get different seeds (per_repetition=True)."""
+        from conftest import DummyBenchmark
+
+        captured_seeds = []
+
+        class CapturingBenchmark(DummyBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                if seed_generator is not None:
+                    seed = seed_generator.derive_seed("agent", per_repetition=True)
+                    captured_seeds.append(seed)
+                return super().setup_agents(agent_data, environment, task, user, seed_generator)
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = CapturingBenchmark(seed=42, n_task_repeats=3)
+        benchmark.run(tasks, agent_data={})
+
+        assert len(captured_seeds) == 3
+        assert len(set(captured_seeds)) == 3  # All different
+
+    def test_same_seed_across_repetitions_when_per_rep_false(self):
+        """Same seed across repetitions when per_repetition=False."""
+        from conftest import DummyBenchmark
+
+        captured_seeds = []
+
+        class CapturingBenchmark(DummyBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                if seed_generator is not None:
+                    seed = seed_generator.derive_seed("baseline", per_repetition=False)
+                    captured_seeds.append(seed)
+                return super().setup_agents(agent_data, environment, task, user, seed_generator)
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = CapturingBenchmark(seed=42, n_task_repeats=3)
+        benchmark.run(tasks, agent_data={})
+
+        assert len(captured_seeds) == 3
+        assert len(set(captured_seeds)) == 1  # All same
+
+
+class TestReproducibility:
+    """Tests verifying reproducible benchmark runs with seeding."""
+
+    def test_same_seed_produces_same_derived_seeds(self):
+        """Same global seed produces identical derived seeds across runs."""
+        from conftest import DummyBenchmark
+
+        seeds_run1 = []
+        seeds_run2 = []
+
+        class CapturingBenchmark(DummyBenchmark):
+            def __init__(self, capture_list, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._capture_list = capture_list
+
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                if seed_generator is not None:
+                    seed = seed_generator.derive_seed("agent")
+                    self._capture_list.append(seed)
+                return super().setup_agents(agent_data, environment, task, user, seed_generator)
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+
+        # Run 1
+        benchmark1 = CapturingBenchmark(seeds_run1, seed=42)
+        benchmark1.run(tasks, agent_data={})
+
+        # Run 2
+        benchmark2 = CapturingBenchmark(seeds_run2, seed=42)
+        benchmark2.run(tasks, agent_data={})
+
+        assert seeds_run1 == seeds_run2
+```
+
+#### MEDIUM PRIORITY: Model Adapter Seed Propagation
+
+Add to `tests/test_core/test_model_adapter.py`:
+
+```python
+class TestModelAdapterSeedPropagation:
+    """Tests verifying seeds are passed to underlying APIs."""
+
+    def test_openai_adapter_passes_seed_to_api(self):
+        """OpenAI adapter includes seed in API call."""
+        from unittest.mock import MagicMock, patch
+        from maseval.interface.inference import OpenAIModelAdapter
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="test", tool_calls=None))]
+        mock_response.usage = None
+        mock_response.model = "gpt-4"
+        mock_client.chat.completions.create.return_value = mock_response
+
+        adapter = OpenAIModelAdapter(client=mock_client, model_id="gpt-4", seed=42)
+        adapter.chat([{"role": "user", "content": "test"}])
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs.get("seed") == 42
+
+    def test_google_adapter_passes_seed_to_config(self):
+        """Google GenAI adapter includes seed in generation config."""
+        # Similar pattern for Google adapter
+
+    def test_litellm_adapter_passes_seed_to_api(self):
+        """LiteLLM adapter includes seed in API call."""
+        # Similar pattern for LiteLLM adapter
+
+    def test_user_generation_params_seed_overrides_adapter_seed(self):
+        """User-provided seed in generation_params takes precedence."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import OpenAIModelAdapter
+
+        mock_client = MagicMock()
+        # ... setup mock response ...
+
+        adapter = OpenAIModelAdapter(client=mock_client, model_id="gpt-4", seed=42)
+        adapter.chat(
+            [{"role": "user", "content": "test"}],
+            generation_params={"seed": 999}  # Should override adapter seed
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs.get("seed") == 999  # User's seed, not adapter's
+```
+
+### Implementation Checklist
+
+- [ ] Create `tests/test_core/test_benchmark/test_seeding_integration.py` with high-priority tests
+- [ ] Add `TestBenchmarkSeedingInitialization` class (4 tests)
+- [ ] Add `TestSeedGeneratorPropagation` class (5 tests)
+- [ ] Add `TestSeedingConfigInReports` class (3 tests)
+- [ ] Add `TestSeedingAcrossRepetitions` class (2 tests)
+- [ ] Add `TestReproducibility` class (1 test)
+- [ ] Add `TestModelAdapterSeedPropagation` to `test_model_adapter.py` (4 tests)
+- [ ] Verify all new tests pass
+- [ ] Update coverage to ensure benchmark seeding integration is covered
