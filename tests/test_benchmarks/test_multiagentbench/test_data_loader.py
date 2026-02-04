@@ -411,9 +411,7 @@ class TestDownloadMarble:
             marble_dir = Path(tmpdir) / "marble"
 
             with patch("subprocess.run") as mock_run:
-                mock_run.side_effect = subprocess.CalledProcessError(
-                    1, "git clone", stderr="Clone failed"
-                )
+                mock_run.side_effect = subprocess.CalledProcessError(1, "git clone", stderr="Clone failed")
 
                 with pytest.raises(RuntimeError, match="Failed to clone MARBLE"):
                     download_marble(target_dir=marble_dir)

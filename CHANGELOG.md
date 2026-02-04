@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `SeedingError` exception for providers that don't support seeding (Anthropic models raise this if seed is provided) (PR: #24)
 - Added seed support to interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFaceModelAdapter` pass seeds to underlying APIs (PR: #24)
 
+**Benchmarks**
+
+- MultiAgentBench Benchmark: Integration with MARBLE MultiAgentBench for evaluating multi-agent collaboration across research, bargaining, coding, and database domains (PR: #25)
+- `MultiAgentBenchBenchmark` abstract base class for framework-agnostic multi-agent evaluation with seeding support for evaluators and agents (PR: #25)
+- `MarbleMultiAgentBenchBenchmark` for exact MARBLE reproduction mode using native MARBLE agents (note: MARBLE's internal LLM calls bypass MASEval seeding) (PR: #25)
+- `MultiAgentBenchEnvironment` and `MultiAgentBenchEvaluator` components (PR: #25)
+- Data loading utilities: `load_tasks()`, `configure_model_ids()`, `list_scenarios()` (PR: #25)
+- MARBLE adapter: `MarbleAgentAdapter` for wrapping MARBLE agents with MASEval tracing (PR: #25)
+
 **Interface**
 
 - CAMEL-AI integration: `CamelAgentAdapter` and `CamelLLMUser` for evaluating CAMEL-AI ChatAgent-based systems (PR: #22)

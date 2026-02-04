@@ -1,12 +1,10 @@
 """Tests for MultiAgentBench benchmark classes."""
 
 import pytest
-from typing import Any, Dict
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from maseval import Task
 from maseval.benchmark.multiagentbench import (
-    MultiAgentBenchBenchmark,
     MarbleMultiAgentBenchBenchmark,
     MultiAgentBenchEnvironment,
     MultiAgentBenchEvaluator,
@@ -49,6 +47,153 @@ class TestMultiAgentBenchBenchmark:
 
         assert len(evaluators) == 1
         assert isinstance(evaluators[0], MultiAgentBenchEvaluator)
+
+    def test_setup_evaluators_uses_seed_generator(
+        self,
+        concrete_multiagentbench_benchmark,
+        sample_research_task: Task,
+    ):
+        """setup_evaluators should pass seed to model adapter when seed_generator provided."""
+        from unittest.mock import patch
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        # Create a benchmark and mock get_model_adapter
+        benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
+        env = benchmark.setup_environment({}, sample_research_task)
+        agents, _ = benchmark.setup_agents({}, env, sample_research_task, None)
+
+        # Create a seed generator
+        seed_gen = DefaultSeedGenerator(global_seed=42)
+        task_seed_gen = seed_gen.for_task("test_task").for_repetition(0)
+
+        # Patch get_model_adapter to capture the seed argument
+        with patch.object(benchmark, "get_model_adapter", wraps=benchmark.get_model_adapter) as mock_get_model:
+            benchmark.setup_evaluators(env, sample_research_task, agents, None, seed_generator=task_seed_gen)
+
+            # Verify get_model_adapter was called with a seed
+            mock_get_model.assert_called_once()
+            call_kwargs = mock_get_model.call_args.kwargs
+            assert "seed" in call_kwargs
+            assert call_kwargs["seed"] is not None
+            assert isinstance(call_kwargs["seed"], int)
+
+    def test_setup_evaluators_no_seed_without_generator(
+        self,
+        concrete_multiagentbench_benchmark,
+        sample_research_task: Task,
+    ):
+        """setup_evaluators should pass None seed when no seed_generator provided."""
+        from unittest.mock import patch
+
+        benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
+        env = benchmark.setup_environment({}, sample_research_task)
+        agents, _ = benchmark.setup_agents({}, env, sample_research_task, None)
+
+        with patch.object(benchmark, "get_model_adapter", wraps=benchmark.get_model_adapter) as mock_get_model:
+            benchmark.setup_evaluators(env, sample_research_task, agents, None, seed_generator=None)
+
+            mock_get_model.assert_called_once()
+            call_kwargs = mock_get_model.call_args.kwargs
+            assert call_kwargs.get("seed") is None
+
+    def test_setup_evaluators_seed_is_deterministic(
+        self,
+        concrete_multiagentbench_benchmark,
+        sample_research_task: Task,
+    ):
+        """Same global seed should produce same derived seed."""
+        from unittest.mock import patch
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        seeds_collected = []
+
+        for _ in range(2):
+            benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
+            env = benchmark.setup_environment({}, sample_research_task)
+            agents, _ = benchmark.setup_agents({}, env, sample_research_task, None)
+
+            # Same global seed each time
+            seed_gen = DefaultSeedGenerator(global_seed=42)
+            task_seed_gen = seed_gen.for_task("test_task").for_repetition(0)
+
+            with patch.object(benchmark, "get_model_adapter", wraps=benchmark.get_model_adapter) as mock_get_model:
+                benchmark.setup_evaluators(env, sample_research_task, agents, None, seed_generator=task_seed_gen)
+                seeds_collected.append(mock_get_model.call_args.kwargs["seed"])
+
+        # Same seed both times
+        assert seeds_collected[0] == seeds_collected[1]
+
+    def test_setup_evaluators_different_global_seeds_produce_different_seeds(
+        self,
+        concrete_multiagentbench_benchmark,
+        sample_research_task: Task,
+    ):
+        """Different global seeds should produce different derived seeds."""
+        from unittest.mock import patch
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        seeds_collected = []
+
+        for global_seed in [42, 123]:
+            benchmark = concrete_multiagentbench_benchmark(progress_bar=False)
+            env = benchmark.setup_environment({}, sample_research_task)
+            agents, _ = benchmark.setup_agents({}, env, sample_research_task, None)
+
+            seed_gen = DefaultSeedGenerator(global_seed=global_seed)
+            task_seed_gen = seed_gen.for_task("test_task").for_repetition(0)
+
+            with patch.object(benchmark, "get_model_adapter", wraps=benchmark.get_model_adapter) as mock_get_model:
+                benchmark.setup_evaluators(env, sample_research_task, agents, None, seed_generator=task_seed_gen)
+                seeds_collected.append(mock_get_model.call_args.kwargs["seed"])
+
+        # Different seeds
+        assert seeds_collected[0] != seeds_collected[1]
+
+    def test_benchmark_run_with_seed_passes_seed_to_evaluators(
+        self,
+        concrete_multiagentbench_benchmark,
+        sample_research_task: Task,
+    ):
+        """Full benchmark.run() with seed should pass seed through to evaluators."""
+        from unittest.mock import patch
+
+        benchmark = concrete_multiagentbench_benchmark(progress_bar=False, seed=42)
+
+        seeds_passed = []
+        original_get_model_adapter = benchmark.get_model_adapter
+
+        def capturing_get_model_adapter(model_id, **kwargs):
+            seeds_passed.append(kwargs.get("seed"))
+            return original_get_model_adapter(model_id, **kwargs)
+
+        with patch.object(benchmark, "get_model_adapter", side_effect=capturing_get_model_adapter):
+            benchmark.run(tasks=[sample_research_task], agent_data={})
+
+        # At least one call should have a seed (the evaluator)
+        assert any(s is not None for s in seeds_passed), "Expected at least one seeded model adapter call"
+
+    def test_benchmark_run_without_seed_passes_none(
+        self,
+        concrete_multiagentbench_benchmark,
+        sample_research_task: Task,
+    ):
+        """Full benchmark.run() without seed should pass None to evaluators."""
+        from unittest.mock import patch
+
+        benchmark = concrete_multiagentbench_benchmark(progress_bar=False)  # No seed
+
+        seeds_passed = []
+        original_get_model_adapter = benchmark.get_model_adapter
+
+        def capturing_get_model_adapter(model_id, **kwargs):
+            seeds_passed.append(kwargs.get("seed"))
+            return original_get_model_adapter(model_id, **kwargs)
+
+        with patch.object(benchmark, "get_model_adapter", side_effect=capturing_get_model_adapter):
+            benchmark.run(tasks=[sample_research_task], agent_data={})
+
+        # All calls should have None seed
+        assert all(s is None for s in seeds_passed), "Expected all model adapter calls to have None seed"
 
     def test_setup_agents_creates_correct_count(
         self,
@@ -184,7 +329,7 @@ class TestBenchmarkIntegration:
         """Benchmark should handle setup errors gracefully."""
 
         class FailingBenchmark(concrete_multiagentbench_benchmark):
-            def setup_environment(self, agent_data, task):
+            def setup_environment(self, agent_data, task, seed_generator=None):
                 raise RuntimeError("Setup failed")
 
         benchmark = FailingBenchmark(progress_bar=False)
@@ -321,7 +466,6 @@ class TestMarbleMultiAgentBenchBenchmark:
         sample_research_task: Task,
     ):
         """run_agents should return structured output with agent_results."""
-        from conftest import DummyAgentAdapter
 
         benchmark = marble_benchmark_class(progress_bar=False)
         env = benchmark.setup_environment({}, sample_research_task)

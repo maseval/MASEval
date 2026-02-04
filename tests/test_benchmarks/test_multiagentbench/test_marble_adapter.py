@@ -1,8 +1,7 @@
 """Tests for MarbleAgentAdapter."""
 
 import pytest
-from typing import Any, Dict
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock
 
 from maseval.benchmark.multiagentbench.adapters.marble_adapter import (
     MarbleAgentAdapter,

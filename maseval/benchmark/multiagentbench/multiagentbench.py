@@ -41,18 +41,38 @@ class MultiAgentBenchBenchmark(Benchmark):
     Example:
         ```python
         class MyMultiAgentBenchmark(MultiAgentBenchBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
-                # Create agents using your framework
-                ...
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                # Derive seeds for agents if seeding is enabled
+                agent_seeds = {}
+                if seed_generator is not None:
+                    agents_gen = seed_generator.child("agents")
+                    for config in task.environment_data.get("agents", []):
+                        agent_id = config.get("agent_id")
+                        agent_seeds[agent_id] = agents_gen.derive_seed(agent_id)
+
+                # Create agents using your framework with seeds
+                agents_list = []
+                agents_dict = {}
+                for config in task.environment_data.get("agents", []):
+                    agent_id = config.get("agent_id")
+                    model = self.get_model_adapter(
+                        agent_data.get("model_id", "gpt-4o"),
+                        register_name=f"agent_{agent_id}",
+                        seed=agent_seeds.get(agent_id),
+                    )
+                    # Create your agent with the seeded model...
+                    ...
+                return agents_list, agents_dict
 
             def get_model_adapter(self, model_id, **kwargs):
-                adapter = MyModelAdapter(model_id)
+                seed = kwargs.pop("seed", None)
+                adapter = MyModelAdapter(model_id, seed=seed)
                 if "register_name" in kwargs:
                     self.register("models", kwargs["register_name"], adapter)
                 return adapter
 
-        benchmark = MyMultiAgentBenchmark()
-        results = benchmark.run(tasks, agent_data={})
+        benchmark = MyMultiAgentBenchmark(seed=42)  # Enable seeding
+        results = benchmark.run(tasks, agent_data={"model_id": "gpt-4o"})
         ```
     """
 
@@ -66,6 +86,8 @@ class MultiAgentBenchBenchmark(Benchmark):
         fail_on_task_error: bool = False,
         fail_on_evaluation_error: bool = False,
         progress_bar: bool | str = True,
+        seed: Optional[int] = None,
+        seed_generator=None,
     ):
         """Initialize the benchmark.
 
@@ -78,6 +100,8 @@ class MultiAgentBenchBenchmark(Benchmark):
             fail_on_task_error: Raise on task errors
             fail_on_evaluation_error: Raise on evaluation errors
             progress_bar: Progress bar configuration
+            seed: Global seed for reproducible benchmark runs
+            seed_generator: Custom seed generator (takes precedence over seed)
         """
         super().__init__(
             callbacks=callbacks,
@@ -88,14 +112,22 @@ class MultiAgentBenchBenchmark(Benchmark):
             fail_on_task_error=fail_on_task_error,
             fail_on_evaluation_error=fail_on_evaluation_error,
             progress_bar=progress_bar,
+            seed=seed,
+            seed_generator=seed_generator,
         )
 
-    def setup_environment(self, agent_data: Dict[str, Any], task: Task) -> Environment:
+    def setup_environment(
+        self,
+        agent_data: Dict[str, Any],
+        task: Task,
+        seed_generator=None,
+    ) -> Environment:
         """Create the MultiAgentBench environment.
 
         Args:
             agent_data: Agent configuration
             task: The task to set up
+            seed_generator: Optional seed generator for reproducibility
 
         Returns:
             MultiAgentBenchEnvironment instance
@@ -110,10 +142,17 @@ class MultiAgentBenchBenchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: Environment,
         task: Task,
+        seed_generator=None,
     ) -> Optional[User]:
         """MultiAgentBench tasks don't use user simulators.
 
         The multi-agent coordination replaces user interaction.
+
+        Args:
+            agent_data: Agent configuration
+            environment: The environment instance
+            task: The task
+            seed_generator: Optional seed generator (unused)
 
         Returns:
             None
@@ -127,23 +166,40 @@ class MultiAgentBenchBenchmark(Benchmark):
         environment: Environment,
         task: Task,
         user: Optional[User],
+        seed_generator=None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create agents for the task (implement in subclass).
 
         Subclasses should:
         1. Read agent specifications from task.environment_data["agents"]
-        2. Create agents using their framework
-        3. Wrap them in AgentAdapter
-        4. Set up relationships from task.environment_data["relationships"]
+        2. Derive seeds from seed_generator for each agent's model
+        3. Create agents using their framework with seeded models
+        4. Wrap them in AgentAdapter
+        5. Set up relationships from task.environment_data["relationships"]
 
         Args:
             agent_data: Agent configuration (model IDs, etc.)
             environment: The environment instance
             task: The task containing agent specs
             user: User simulator (None for MultiAgentBench)
+            seed_generator: Optional seed generator for deriving deterministic seeds.
+                Use `seed_generator.child("agents")` to create a namespace, then
+                `derive_seed(agent_id)` for each agent's model.
 
         Returns:
             Tuple of (agents_to_run, agents_dict)
+
+        Example:
+            ```python
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                agents_gen = seed_generator.child("agents") if seed_generator else None
+
+                for config in task.environment_data.get("agents", []):
+                    agent_id = config.get("agent_id")
+                    seed = agents_gen.derive_seed(agent_id) if agents_gen else None
+                    model = self.get_model_adapter(model_id, seed=seed)
+                    # Create agent with seeded model...
+            ```
         """
         pass
 
@@ -153,6 +209,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         task: Task,
         agents: Sequence[AgentAdapter],
         user: Optional[User],
+        seed_generator=None,
     ) -> Sequence[Evaluator]:
         """Create evaluators for the task.
 
@@ -161,6 +218,7 @@ class MultiAgentBenchBenchmark(Benchmark):
             task: The task with evaluation data
             agents: The agents
             user: User simulator (None for MultiAgentBench)
+            seed_generator: Optional seed generator for reproducibility
 
         Returns:
             List of evaluators
@@ -168,10 +226,17 @@ class MultiAgentBenchBenchmark(Benchmark):
         # Get evaluation model ID from task or default
         eval_model_id = task.evaluation_data.get("model_id", "gpt-4o-mini")
 
+        # Derive seed for evaluator model if seeding is enabled
+        evaluator_seed = None
+        if seed_generator is not None:
+            eval_gen = seed_generator.child("evaluators")
+            evaluator_seed = eval_gen.derive_seed("multiagentbench_evaluator")
+
         # Create model adapter for evaluation
         model_adapter = self.get_model_adapter(
             eval_model_id,
             register_name="evaluator_model",
+            seed=evaluator_seed,
         )
 
         # Get domain-specific evaluation configuration
@@ -300,14 +365,24 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         environment: Environment,
         task: Task,
         user: Optional[User],
+        seed_generator=None,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create MARBLE agents wrapped in MASEval adapters.
+
+        Note:
+            MARBLE agents use their own internal LLM handling with a model ID string,
+            not MASEval's ModelAdapter. This means seed_generator cannot be applied
+            to agent LLM calls in this implementation. For reproducible agent behavior,
+            use `MultiAgentBenchBenchmark` with a custom `setup_agents` that creates
+            agents using seeded MASEval ModelAdapters.
 
         Args:
             agent_data: Agent configuration
             environment: The environment
             task: The task with agent specifications
             user: User simulator (None)
+            seed_generator: Optional seed generator (not used for MARBLE agents,
+                but seeding is applied to evaluators)
 
         Returns:
             Tuple of (agents_to_run, agents_dict)

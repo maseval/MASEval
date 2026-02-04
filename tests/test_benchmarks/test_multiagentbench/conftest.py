@@ -251,6 +251,7 @@ def concrete_multiagentbench_benchmark():
             environment: Any,
             task: Task,
             user: Optional[Any],
+            seed_generator=None,
         ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
             agent_configs = task.environment_data.get("agents", [])
             agents_list: List[AgentAdapter] = []

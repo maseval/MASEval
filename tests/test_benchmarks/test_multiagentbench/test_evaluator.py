@@ -365,16 +365,12 @@ class TestDatabaseEvaluation:
 
     def test_determine_completion_database_with_prediction(self, database_evaluator):
         """_determine_completion should return True for database with prediction."""
-        metrics = MultiAgentBenchMetrics(
-            task_evaluation={"predicted": "SELECT * FROM users", "root_cause": []}
-        )
+        metrics = MultiAgentBenchMetrics(task_evaluation={"predicted": "SELECT * FROM users", "root_cause": []})
         assert database_evaluator._determine_completion(metrics) is True
 
     def test_determine_completion_database_empty_prediction(self, database_evaluator):
         """_determine_completion should return False for empty prediction."""
-        metrics = MultiAgentBenchMetrics(
-            task_evaluation={"predicted": "", "root_cause": []}
-        )
+        metrics = MultiAgentBenchMetrics(task_evaluation={"predicted": "", "root_cause": []})
         assert database_evaluator._determine_completion(metrics) is False
 
     def test_call_database_domain(self, database_evaluator):
@@ -494,9 +490,7 @@ class TestCommunicationEvaluation:
 
     def test_evaluate_communication_returns_score(self, evaluator_with_comm_response):
         """_evaluate_communication should return score from LLM."""
-        score = evaluator_with_comm_response._evaluate_communication(
-            "Research task", "[agent1]: Hello\n[agent2]: Hi"
-        )
+        score = evaluator_with_comm_response._evaluate_communication("Research task", "[agent1]: Hello\n[agent2]: Hi")
         assert score == 4.0
 
     def test_evaluate_communication_on_error(self):
@@ -711,11 +705,7 @@ class TestGetTaskDescription:
 
     def test_get_task_description_from_traces(self, evaluator):
         """_get_task_description should extract from traces."""
-        traces = {
-            "environment": {
-                "marble_state": {"task_description": "Research AI safety"}
-            }
-        }
+        traces = {"environment": {"marble_state": {"task_description": "Research AI safety"}}}
         desc = evaluator._get_task_description(traces)
         assert desc == "Research AI safety"
 
