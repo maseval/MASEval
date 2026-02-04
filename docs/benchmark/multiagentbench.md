@@ -36,7 +36,7 @@ configure_model_ids(tasks, agent_model_id="gpt-4o")
 
 # Create your framework-specific benchmark subclass
 class MyMultiAgentBenchmark(MultiAgentBenchBenchmark):
-    def setup_agents(self, agent_data, environment, task, user):
+    def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
         # Your framework-specific agent creation
         agent_configs = task.environment_data.get("agents", [])
         # Create agents based on configs...
