@@ -30,7 +30,8 @@ Usage:
 
         def get_model_adapter(self, model_id, **kwargs):
             # Create and optionally register model adapters
-            adapter = MyModelAdapter(model_id)
+            seed = kwargs.get("seed")  # Extract seed for reproducibility
+            adapter = MyModelAdapter(model_id, seed=seed)
             if "register_name" in kwargs:
                 self.register("models", kwargs["register_name"], adapter)
             return adapter
@@ -803,12 +804,22 @@ class MACSBenchmark(Benchmark):
         """
         tool_model_id = self._get_tool_model_id(task)
 
-        # Create a factory that captures the model_id from task data
+        # Create seed generator for tools if seeding is enabled
+        tools_gen = None
+        if seed_generator is not None:
+            env_gen = seed_generator.child("environment")
+            tools_gen = env_gen.child("tools")
+
+        # Create a factory that captures the model_id and seed_generator from task data
         # tool_name is passed by create_tools() with "tool_" prefix
         def tool_model_factory(tool_name: str) -> ModelAdapter:
+            tool_seed = None
+            if tools_gen is not None:
+                tool_seed = tools_gen.derive_seed(tool_name)
             return self.get_model_adapter(
                 tool_model_id,
                 register_name=tool_name,
+                seed=tool_seed,
             )
 
         return MACSEnvironment(
@@ -843,10 +854,18 @@ class MACSBenchmark(Benchmark):
         """
         scenario = task.metadata.get("scenario", "")
         user_model_id = self._get_user_model_id(task)
+
+        # Derive seed for user simulator if seeding is enabled
+        user_seed = None
+        if seed_generator is not None:
+            sim_gen = seed_generator.child("simulators")
+            user_seed = sim_gen.derive_seed("user")
+
         return MACSUser(
             model=self.get_model_adapter(
                 user_model_id,
                 register_name="user_simulator",
+                seed=user_seed,
             ),
             scenario=scenario,
             initial_query=task.query,
@@ -889,11 +908,21 @@ class MACSBenchmark(Benchmark):
         Model ID is read from task.evaluation_data["model_id"].
         """
         evaluator_model_id = self._get_evaluator_model_id(task)
+
+        # Derive seeds for evaluators if seeding is enabled
+        user_gsr_seed = None
+        system_gsr_seed = None
+        if seed_generator is not None:
+            eval_gen = seed_generator.child("evaluators")
+            user_gsr_seed = eval_gen.derive_seed("user_gsr")
+            system_gsr_seed = eval_gen.derive_seed("system_gsr")
+
         return [
             MACSEvaluator(
                 self.get_model_adapter(
                     evaluator_model_id,
                     register_name="evaluator_user_gsr",
+                    seed=user_gsr_seed,
                 ),
                 task,
                 gsr_type="user",
@@ -902,6 +931,7 @@ class MACSBenchmark(Benchmark):
                 self.get_model_adapter(
                     evaluator_model_id,
                     register_name="evaluator_system_gsr",
+                    seed=system_gsr_seed,
                 ),
                 task,
                 gsr_type="system",

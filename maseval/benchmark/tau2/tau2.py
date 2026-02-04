@@ -32,7 +32,8 @@ Usage:
 
         def get_model_adapter(self, model_id, **kwargs):
             # Create and optionally register model adapters
-            adapter = MyModelAdapter(model_id)
+            seed = kwargs.get("seed")  # Extract seed for reproducibility
+            adapter = MyModelAdapter(model_id, seed=seed)
             if "register_name" in kwargs:
                 self.register("models", kwargs["register_name"], adapter)
             return adapter
@@ -223,7 +224,8 @@ class Tau2Benchmark(Benchmark):
                 ...
 
             def get_model_adapter(self, model_id, **kwargs):
-                return MyModelAdapter(model_id)
+                seed = kwargs.get("seed")  # Extract seed for reproducibility
+                return MyModelAdapter(model_id, seed=seed)
 
         tasks = load_tasks("retail")
         configure_model_ids(tasks, user_model_id="gpt-4o")
@@ -362,6 +364,12 @@ class Tau2Benchmark(Benchmark):
 
         user_model_id = self._get_user_model_id(task)
 
+        # Derive seed for user simulator if seeding is enabled
+        user_seed = None
+        if seed_generator is not None:
+            sim_gen = seed_generator.child("simulators")
+            user_seed = sim_gen.derive_seed("user")
+
         # Get user tools from environment
         user_tools = environment.create_user_tools()
 
@@ -369,6 +377,7 @@ class Tau2Benchmark(Benchmark):
             model=self.get_model_adapter(
                 user_model_id,
                 register_name="user_simulator",
+                seed=user_seed,
             ),
             scenario=scenario,
             initial_query=task.query,
@@ -936,8 +945,14 @@ class DefaultAgentTau2Benchmark(Tau2Benchmark):
         tools = environment.create_tools()
         policy = environment.policy
 
+        # Derive seed for agent model if seeding is enabled
+        agent_seed = None
+        if seed_generator is not None:
+            agent_gen = seed_generator.child("agents")
+            agent_seed = agent_gen.derive_seed("default_agent")
+
         # Create model adapter
-        model = self.get_model_adapter(model_id, register_name="agent_model")
+        model = self.get_model_adapter(model_id, register_name="agent_model", seed=agent_seed)
 
         # Create agent
         agent = DefaultTau2Agent(

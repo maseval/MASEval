@@ -131,3 +131,4 @@ nav:
           - MACS: benchmark/macs.md
           - MultiAgentBench: benchmark/multiagentbench.md
           - Tau2: benchmark/tau2.md
+          - Gaia2: benchmark/gaia2.md

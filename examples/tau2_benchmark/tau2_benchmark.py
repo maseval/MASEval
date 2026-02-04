@@ -114,9 +114,9 @@ def get_openai_client() -> OpenAIClient:
     return _openai_client
 
 
-def create_model_adapter(model_id: str = "gemini-2.5-flash") -> GoogleGenAIModelAdapter:
+def create_model_adapter(model_id: str = "gemini-2.5-flash", seed: Optional[int] = None) -> GoogleGenAIModelAdapter:
     """Create a Google GenAI model adapter."""
-    return GoogleGenAIModelAdapter(get_google_client(), model_id=model_id)
+    return GoogleGenAIModelAdapter(get_google_client(), model_id=model_id, seed=seed)
 
 
 def get_provider_from_model(model_id: str) -> Literal["openai", "google", "anthropic"]:
@@ -162,7 +162,8 @@ class GoogleGenAITau2Benchmark(DefaultAgentTau2Benchmark):
 
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> GoogleGenAIModelAdapter:
         """Create a Google GenAI model adapter with tool calling support."""
-        adapter = GoogleGenAIModelAdapter(get_google_client(), model_id=model_id)
+        seed = kwargs.get("seed")
+        adapter = GoogleGenAIModelAdapter(get_google_client(), model_id=model_id, seed=seed)
         if "register_name" in kwargs:
             self.register("models", kwargs["register_name"], adapter)
         return adapter
@@ -236,7 +237,8 @@ class OpenAITau2Benchmark(DefaultAgentTau2Benchmark):
 
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> OpenAIModelAdapter:
         """Create an OpenAI model adapter with tool calling support."""
-        adapter = OpenAIModelAdapter(get_openai_client(), model_id=model_id)
+        seed = kwargs.get("seed")
+        adapter = OpenAIModelAdapter(get_openai_client(), model_id=model_id, seed=seed)
         if "register_name" in kwargs:
             self.register("models", kwargs["register_name"], adapter)
         return adapter
@@ -359,7 +361,8 @@ class SmolagentsTau2Benchmark(Tau2Benchmark):
 
     def get_model_adapter(self, model_id: str, **kwargs):
         """Create a model adapter for the given model ID."""
-        adapter = create_model_adapter(model_id=model_id)
+        seed = kwargs.get("seed")
+        adapter = create_model_adapter(model_id=model_id, seed=seed)
         if "register_name" in kwargs:
             self.register("models", kwargs["register_name"], adapter)
         return adapter
@@ -532,7 +535,8 @@ class LangGraphTau2Benchmark(Tau2Benchmark):
 
     def get_model_adapter(self, model_id: str, **kwargs):
         """Create a model adapter for the given model ID."""
-        adapter = create_model_adapter(model_id=model_id)
+        seed = kwargs.get("seed")
+        adapter = create_model_adapter(model_id=model_id, seed=seed)
         if "register_name" in kwargs:
             self.register("models", kwargs["register_name"], adapter)
         return adapter

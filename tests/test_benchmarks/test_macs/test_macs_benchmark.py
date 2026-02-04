@@ -647,3 +647,213 @@ class TestMACSBenchmarkIntegration:
         # Environment should have tools
         assert "search_flights" in env.tools
         assert env.tools["search_flights"].name == "search_flights"
+
+
+# =============================================================================
+# Seeding Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestMACSBenchmarkSeeding:
+    """Tests for MACSBenchmark seeding behavior."""
+
+    def test_setup_environment_passes_seeds_to_get_model_adapter(self, sample_agent_data, sample_task):
+        """Test that setup_environment derives and passes seeds to get_model_adapter for tools."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        captured_kwargs = []
+
+        class CapturingBenchmark(MACSBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                return [], {}
+
+            def get_model_adapter(self, model_id, **kwargs):
+                captured_kwargs.append(kwargs.copy())
+                return DummyModelAdapter(responses=['{"text": "Default", "details": {}}'])
+
+        benchmark = CapturingBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=42, task_id="test", rep_index=0)
+
+        benchmark.setup_environment(sample_agent_data, sample_task, seed_generator=seed_gen)
+
+        # Should have captured at least one call (for search_flights tool)
+        assert len(captured_kwargs) >= 1
+        # All calls should have seed
+        for kwargs in captured_kwargs:
+            assert "seed" in kwargs
+            assert kwargs["seed"] is not None
+            assert isinstance(kwargs["seed"], int)
+
+    def test_setup_environment_passes_none_seed_when_no_generator(self, sample_agent_data, sample_task):
+        """Test that setup_environment passes None seed when seed_generator is None."""
+        captured_kwargs = []
+
+        class CapturingBenchmark(MACSBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                return [], {}
+
+            def get_model_adapter(self, model_id, **kwargs):
+                captured_kwargs.append(kwargs.copy())
+                return DummyModelAdapter(responses=['{"text": "Default", "details": {}}'])
+
+        benchmark = CapturingBenchmark()
+
+        benchmark.setup_environment(sample_agent_data, sample_task, seed_generator=None)
+
+        # Should have captured at least one call
+        assert len(captured_kwargs) >= 1
+        # All calls should have None seed
+        for kwargs in captured_kwargs:
+            assert kwargs.get("seed") is None
+
+    def test_setup_environment_uses_correct_seed_path(self, sample_agent_data, sample_task):
+        """Test that setup_environment uses the documented seed path for tools."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        class CapturingBenchmark(MACSBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                return [], {}
+
+            def get_model_adapter(self, model_id, **kwargs):
+                return DummyModelAdapter(responses=['{"text": "Default", "details": {}}'])
+
+        benchmark = CapturingBenchmark()
+        seed_gen = DefaultSeedGenerator(global_seed=42, task_id="test", rep_index=0)
+
+        benchmark.setup_environment(sample_agent_data, sample_task, seed_generator=seed_gen)
+
+        # Check that environment/tools path was used
+        assert "environment/tools/tool_search_flights" in seed_gen.seed_log
+
+    def test_setup_user_passes_seed_to_get_model_adapter(self, sample_agent_data, sample_task):
+        """Test that setup_user derives and passes seed to get_model_adapter."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        captured_kwargs = []
+
+        class CapturingBenchmark(MACSBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                return [], {}
+
+            def get_model_adapter(self, model_id, **kwargs):
+                captured_kwargs.append(kwargs.copy())
+                return DummyModelAdapter(responses=['{"text": "Default", "details": {}}'])
+
+        benchmark = CapturingBenchmark()
+        mock_env = MagicMock()
+        seed_gen = DefaultSeedGenerator(global_seed=42, task_id="test", rep_index=0)
+
+        benchmark.setup_user(sample_agent_data, mock_env, sample_task, seed_generator=seed_gen)
+
+        assert len(captured_kwargs) == 1
+        assert "seed" in captured_kwargs[0]
+        assert captured_kwargs[0]["seed"] is not None
+        assert isinstance(captured_kwargs[0]["seed"], int)
+
+    def test_setup_user_passes_none_seed_when_no_generator(self, sample_agent_data, sample_task):
+        """Test that setup_user passes None seed when seed_generator is None."""
+        captured_kwargs = []
+
+        class CapturingBenchmark(MACSBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                return [], {}
+
+            def get_model_adapter(self, model_id, **kwargs):
+                captured_kwargs.append(kwargs.copy())
+                return DummyModelAdapter(responses=['{"text": "Default", "details": {}}'])
+
+        benchmark = CapturingBenchmark()
+        mock_env = MagicMock()
+
+        benchmark.setup_user(sample_agent_data, mock_env, sample_task, seed_generator=None)
+
+        assert len(captured_kwargs) == 1
+        assert captured_kwargs[0].get("seed") is None
+
+    def test_setup_user_uses_correct_seed_path(self, sample_agent_data, sample_task):
+        """Test that setup_user uses the documented seed path."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        class CapturingBenchmark(MACSBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                return [], {}
+
+            def get_model_adapter(self, model_id, **kwargs):
+                return DummyModelAdapter(responses=['{"text": "Default", "details": {}}'])
+
+        benchmark = CapturingBenchmark()
+        mock_env = MagicMock()
+        seed_gen = DefaultSeedGenerator(global_seed=42, task_id="test", rep_index=0)
+
+        benchmark.setup_user(sample_agent_data, mock_env, sample_task, seed_generator=seed_gen)
+
+        assert "simulators/user" in seed_gen.seed_log
+
+    def test_setup_evaluators_passes_seeds_to_get_model_adapter(self, sample_agent_data, sample_task):
+        """Test that setup_evaluators derives and passes seeds to get_model_adapter."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        captured_kwargs = []
+
+        class CapturingBenchmark(MACSBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                return [], {}
+
+            def get_model_adapter(self, model_id, **kwargs):
+                captured_kwargs.append(kwargs.copy())
+                return DummyModelAdapter(responses=['[{"assertion": "Test", "answer": "TRUE", "evidence": "OK"}]'])
+
+        benchmark = CapturingBenchmark()
+        mock_env = MagicMock()
+        seed_gen = DefaultSeedGenerator(global_seed=42, task_id="test", rep_index=0)
+
+        benchmark.setup_evaluators(mock_env, sample_task, [], None, seed_generator=seed_gen)
+
+        # Should have captured two calls (user_gsr and system_gsr evaluators)
+        assert len(captured_kwargs) == 2
+        for kwargs in captured_kwargs:
+            assert "seed" in kwargs
+            assert kwargs["seed"] is not None
+            assert isinstance(kwargs["seed"], int)
+
+    def test_setup_evaluators_passes_none_seeds_when_no_generator(self, sample_agent_data, sample_task):
+        """Test that setup_evaluators passes None seeds when seed_generator is None."""
+        captured_kwargs = []
+
+        class CapturingBenchmark(MACSBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                return [], {}
+
+            def get_model_adapter(self, model_id, **kwargs):
+                captured_kwargs.append(kwargs.copy())
+                return DummyModelAdapter(responses=['[{"assertion": "Test", "answer": "TRUE", "evidence": "OK"}]'])
+
+        benchmark = CapturingBenchmark()
+        mock_env = MagicMock()
+
+        benchmark.setup_evaluators(mock_env, sample_task, [], None, seed_generator=None)
+
+        assert len(captured_kwargs) == 2
+        for kwargs in captured_kwargs:
+            assert kwargs.get("seed") is None
+
+    def test_setup_evaluators_uses_correct_seed_paths(self, sample_agent_data, sample_task):
+        """Test that setup_evaluators uses the documented seed paths."""
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        class CapturingBenchmark(MACSBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator=None):
+                return [], {}
+
+            def get_model_adapter(self, model_id, **kwargs):
+                return DummyModelAdapter(responses=['[{"assertion": "Test", "answer": "TRUE", "evidence": "OK"}]'])
+
+        benchmark = CapturingBenchmark()
+        mock_env = MagicMock()
+        seed_gen = DefaultSeedGenerator(global_seed=42, task_id="test", rep_index=0)
+
+        benchmark.setup_evaluators(mock_env, sample_task, [], None, seed_generator=seed_gen)
+
+        assert "evaluators/user_gsr" in seed_gen.seed_log
+        assert "evaluators/system_gsr" in seed_gen.seed_log

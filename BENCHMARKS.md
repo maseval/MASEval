@@ -40,6 +40,19 @@ MultiAgentBench is a comprehensive benchmark suite for evaluating multi-agent co
 
 ---
 
+## 3. GAIA2
+
+Gaia2 is a benchmark for evaluating LLM-based agents on dynamic, multi-step scenarios using Meta's ARE (Agent Research Environments) platform. It tests agents across 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, and noise.
+
+### Source and License
+
+- **Original Repository:** [https://github.com/facebookresearch/meta-agents-research-environments](https://github.com/facebookresearch/meta-agents-research-environments)
+- **Dataset:** [https://huggingface.co/datasets/meta-agents-research-environments/gaia2](https://huggingface.co/datasets/meta-agents-research-environments/gaia2)
+- **Code License:** MIT
+- **Data License:** Subject to Meta's data usage terms (see HuggingFace dataset page)
+
+---
+
 ## 4. [Name of Next Benchmark]
 
 (Description for the next benchmark...)
