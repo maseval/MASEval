@@ -18,8 +18,7 @@ class TestMultiAgentBenchMetrics:
 
         assert metrics.task_completion is False
         assert metrics.token_consumption == 0
-        assert metrics.planning_score == -1.0
-        assert metrics.communication_score == -1.0
+        assert metrics.communication_score is None
         assert metrics.task_evaluation == {}
         assert metrics.agent_kpis == {}
         assert metrics.total_milestones == 0
@@ -29,14 +28,12 @@ class TestMultiAgentBenchMetrics:
         metrics = MultiAgentBenchMetrics(
             task_completion=True,
             token_consumption=1000,
-            planning_score=4.0,
             communication_score=5.0,
         )
         d = metrics.to_dict()
 
         assert d["task_completion"] is True
         assert d["token_consumption"] == 1000
-        assert d["planning_score"] == 4.0
         assert d["communication_score"] == 5.0
 
 
@@ -139,19 +136,20 @@ class TestMultiAgentBenchEvaluator:
 
         assert score == 5.0
 
-    def test_parse_score_fallback(self, research_evaluator):
-        """_parse_score should fallback to finding digit."""
+    def test_parse_score_no_json_returns_none(self, research_evaluator):
+        """_parse_score should return None when no valid JSON found."""
         response = "The rating is 4 out of 5"
         score = research_evaluator._parse_score(response)
 
-        assert score == 4.0
+        # No regex fallback - returns None for non-JSON responses
+        assert score is None
 
     def test_parse_score_default(self, research_evaluator):
-        """_parse_score should return 3 as default."""
+        """_parse_score should return None when parsing fails."""
         response = "No score here"
         score = research_evaluator._parse_score(response)
 
-        assert score == 3.0
+        assert score is None
 
     def test_parse_research_ratings_valid(self, research_evaluator):
         """_parse_research_ratings should parse valid ratings."""
@@ -163,13 +161,13 @@ class TestMultiAgentBenchEvaluator:
         assert ratings["feasibility"] == 5
 
     def test_parse_research_ratings_invalid(self, research_evaluator):
-        """_parse_research_ratings should return -1 for invalid."""
+        """_parse_research_ratings should return None for invalid."""
         response = "Invalid response"
         ratings = research_evaluator._parse_research_ratings(response)
 
-        assert ratings["innovation"] == -1
-        assert ratings["safety"] == -1
-        assert ratings["feasibility"] == -1
+        assert ratings["innovation"] is None
+        assert ratings["safety"] is None
+        assert ratings["feasibility"] is None
 
     def test_determine_completion_research_positive(self, research_evaluator):
         """_determine_completion should return True for positive research scores."""
@@ -177,8 +175,8 @@ class TestMultiAgentBenchEvaluator:
         assert research_evaluator._determine_completion(metrics) is True
 
     def test_determine_completion_research_negative(self, research_evaluator):
-        """_determine_completion should return False for negative scores."""
-        metrics = MultiAgentBenchMetrics(task_evaluation={"innovation": -1, "safety": 3, "feasibility": 5})
+        """_determine_completion should return False for None scores."""
+        metrics = MultiAgentBenchMetrics(task_evaluation={"innovation": None, "safety": 3, "feasibility": 5})
         assert research_evaluator._determine_completion(metrics) is False
 
     def test_call_returns_expected_structure(self, research_evaluator):
@@ -319,11 +317,11 @@ class TestCodingEvaluation:
         assert coding_evaluator._determine_completion(metrics) is True
 
     def test_determine_completion_coding_negative(self, coding_evaluator):
-        """_determine_completion should return False for negative coding scores."""
+        """_determine_completion should return False for None coding scores."""
         metrics = MultiAgentBenchMetrics(
             task_evaluation={
                 "instruction_following": 5,
-                "executability": -1,
+                "executability": None,
                 "consistency": 4,
                 "quality": 3,
             }
@@ -331,12 +329,12 @@ class TestCodingEvaluation:
         assert coding_evaluator._determine_completion(metrics) is False
 
     def test_parse_coding_ratings_invalid(self, coding_evaluator):
-        """_parse_coding_ratings should return -1 for invalid response."""
+        """_parse_coding_ratings should return None for invalid response."""
         ratings = coding_evaluator._parse_coding_ratings("Invalid JSON")
-        assert ratings["instruction_following"] == -1
-        assert ratings["executability"] == -1
-        assert ratings["consistency"] == -1
-        assert ratings["quality"] == -1
+        assert ratings["instruction_following"] is None
+        assert ratings["executability"] is None
+        assert ratings["consistency"] is None
+        assert ratings["quality"] is None
 
 
 class TestDatabaseEvaluation:
@@ -494,7 +492,7 @@ class TestCommunicationEvaluation:
         assert score == 4.0
 
     def test_evaluate_communication_on_error(self):
-        """_evaluate_communication should return -1 on error."""
+        """_evaluate_communication should return None on error."""
         from unittest.mock import MagicMock
 
         # Create mock that raises exception on generate
@@ -507,7 +505,7 @@ class TestCommunicationEvaluation:
         )
 
         score = evaluator._evaluate_communication("Task", "Comms")
-        assert score == -1.0
+        assert score is None
 
     def test_call_with_communications(self, evaluator_with_comm_response):
         """__call__ should evaluate communications when present."""
@@ -548,23 +546,23 @@ class TestExceptionHandling:
     def test_evaluate_research_on_error(self, failing_evaluator):
         """_evaluate_research should return default values on error."""
         result = failing_evaluator._evaluate_research("Task", "Result")
-        assert result["innovation"] == -1
-        assert result["safety"] == -1
-        assert result["feasibility"] == -1
+        assert result["innovation"] is None
+        assert result["safety"] is None
+        assert result["feasibility"] is None
 
     def test_evaluate_bargaining_on_error(self, failing_evaluator):
         """_evaluate_bargaining should return default values on error."""
         failing_evaluator.domain = "bargaining"
         result = failing_evaluator._evaluate_bargaining("Task", "Result")
-        assert result["buyer"]["effectiveness_of_strategies"] == -1
-        assert result["seller"]["effectiveness_of_strategies"] == -1
+        assert result["buyer"]["effectiveness_of_strategies"] is None
+        assert result["seller"]["effectiveness_of_strategies"] is None
 
     def test_evaluate_coding_on_error(self, failing_evaluator):
         """_evaluate_coding should return default values on error."""
         failing_evaluator.domain = "coding"
         result = failing_evaluator._evaluate_coding("Task", "Result")
-        assert result["instruction_following"] == -1
-        assert result["executability"] == -1
+        assert result["instruction_following"] is None
+        assert result["executability"] is None
 
 
 class TestParsingEdgeCases:
@@ -583,14 +581,14 @@ class TestParsingEdgeCases:
         """_parse_score should reject scores outside 1-5 range."""
         response = '{"rating": 10}'
         score = evaluator._parse_score(response)
-        # Should fall back to finding digit or default
-        assert score == 3.0  # Default
+        # Should return None since score is out of range
+        assert score is None
 
     def test_parse_score_with_just_code_block(self, evaluator):
         """_parse_score should handle code block without json marker."""
         response = '```\n{"rating": 3}\n```'
         score = evaluator._parse_score(response)
-        assert score == 3.0
+        assert score == 3.0  # Valid score parsed from JSON
 
     def test_parse_score_with_text_before_json(self, evaluator):
         """_parse_score should find JSON in text."""
@@ -603,12 +601,12 @@ class TestParsingEdgeCases:
         response = '{"effectiveness_of_strategies": 4}'  # Missing other fields
         ratings = evaluator._parse_bargaining_ratings(response)
         assert ratings["effectiveness_of_strategies"] == 4
-        assert ratings["progress_and_outcome"] == -1
+        assert ratings["progress_and_outcome"] is None
 
     def test_parse_bargaining_ratings_invalid(self, evaluator):
-        """_parse_bargaining_ratings should return -1 for invalid."""
+        """_parse_bargaining_ratings should return None for invalid."""
         ratings = evaluator._parse_bargaining_ratings("Invalid")
-        assert ratings["effectiveness_of_strategies"] == -1
+        assert ratings["effectiveness_of_strategies"] is None
 
 
 class TestFormatFinalAnswerEdgeCases:
@@ -779,7 +777,6 @@ class TestFilterTracesEdgeCases:
         assert filtered["agents"] == {}
         assert filtered["environment"] == {}
         assert "communications" in filtered
-        assert "results" in filtered
 
     def test_filter_traces_extracts_all(self, evaluator):
         """filter_traces should extract all relevant data."""
@@ -794,7 +791,8 @@ class TestFilterTracesEdgeCases:
         }
         filtered = evaluator.filter_traces(traces)
         assert "[agent1]: Hello" in filtered["communications"]
-        assert "[agent1]: Done" in filtered["results"]
+        assert filtered["agents"] == traces["agents"]
+        assert filtered["environment"] == traces["environment"]
 
 
 class TestDetermineCompletionEdgeCases:
@@ -811,7 +809,7 @@ class TestDetermineCompletionEdgeCases:
         assert evaluator._determine_completion(metrics) is False
 
     def test_completion_bargaining_partial_buyer(self):
-        """_determine_completion should return False if buyer has negative scores."""
+        """_determine_completion should return False if buyer has None scores."""
         adapter = DummyModelAdapter(model_id="test", responses=[])
         evaluator = MultiAgentBenchEvaluator(
             domain="bargaining",
@@ -820,7 +818,7 @@ class TestDetermineCompletionEdgeCases:
         metrics = MultiAgentBenchMetrics(
             task_evaluation={
                 "buyer": {
-                    "effectiveness_of_strategies": -1,
+                    "effectiveness_of_strategies": None,
                     "progress_and_outcome": 4,
                     "interaction_dynamics": 4,
                 },
@@ -834,7 +832,7 @@ class TestDetermineCompletionEdgeCases:
         assert evaluator._determine_completion(metrics) is False
 
     def test_completion_bargaining_partial_seller(self):
-        """_determine_completion should return False if seller has negative scores."""
+        """_determine_completion should return False if seller has None scores."""
         adapter = DummyModelAdapter(model_id="test", responses=[])
         evaluator = MultiAgentBenchEvaluator(
             domain="bargaining",
@@ -848,7 +846,7 @@ class TestDetermineCompletionEdgeCases:
                     "interaction_dynamics": 4,
                 },
                 "seller": {
-                    "effectiveness_of_strategies": -1,
+                    "effectiveness_of_strategies": None,
                     "progress_and_outcome": 4,
                     "interaction_dynamics": 4,
                 },

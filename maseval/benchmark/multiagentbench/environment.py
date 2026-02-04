@@ -4,12 +4,10 @@ This module provides the MASEval Environment wrapper for MARBLE environments.
 """
 
 import shutil
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 from maseval import Environment, EnvironmentError, ToolInvocationHistory
-
-if TYPE_CHECKING:
-    from maseval.core.callback import BenchmarkCallback
+from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR
 
 
 # Domains requiring external infrastructure
@@ -31,13 +29,11 @@ class MultiAgentBenchEnvironment(Environment):
     def __init__(
         self,
         task_data: Dict[str, Any],
-        callbacks: Optional[List["BenchmarkCallback"]] = None,
     ):
         """Initialize the environment.
 
         Args:
             task_data: Task data containing environment configuration
-            callbacks: Optional list of callbacks
 
         Raises:
             EnvironmentError: If required infrastructure is unavailable
@@ -45,7 +41,7 @@ class MultiAgentBenchEnvironment(Environment):
         self.domain = task_data.get("scenario", "")
         self._marble_env: Optional[Any] = None
         self._tool_histories: Dict[str, ToolInvocationHistory] = {}
-        super().__init__(task_data, callbacks)
+        super().__init__(task_data)
 
     def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize state and optionally create MARBLE environment.
@@ -137,9 +133,9 @@ class MultiAgentBenchEnvironment(Environment):
 
         # Import MARBLE environments
         try:
-            from .marble.environments.base_env import BaseEnvironment
+            from .marble.environments.base_env import BaseEnvironment  # type: ignore[unresolved-import]
         except ImportError as e:
-            raise ImportError(f"MARBLE is not available. Clone MARBLE to maseval/benchmark/multiagentbench/marble/\nOriginal error: {e}") from e
+            raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 
         # Map domains to environment classes
         env_mapping: Dict[str, str] = {
@@ -338,9 +334,10 @@ class MultiAgentBenchEnvironment(Environment):
         # Collect tool invocation histories
         tool_traces = {}
         for name, history in self._tool_histories.items():
+            invocations = history.to_list()
             tool_traces[name] = {
-                "invocations": history.to_list(),
-                "invocation_count": len(history),
+                "invocations": invocations,
+                "invocation_count": len(invocations),
             }
         traces["tool_invocations"] = tool_traces
 

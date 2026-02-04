@@ -4,12 +4,10 @@ This module provides an adapter that wraps MARBLE's BaseAgent for use with
 MASEval's tracing and evaluation infrastructure.
 """
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
-from maseval import AgentAdapter, AgentError
-
-if TYPE_CHECKING:
-    from maseval.core.callback import BenchmarkCallback
+from maseval import AgentAdapter, AgentError, MessageHistory
+from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR
 
 
 class MarbleAgentAdapter(AgentAdapter):
@@ -28,26 +26,21 @@ class MarbleAgentAdapter(AgentAdapter):
         self,
         marble_agent: Any,
         agent_id: str,
-        *,
-        callbacks: Optional[List["BenchmarkCallback"]] = None,
     ):
         """Initialize the adapter.
 
         Args:
             marble_agent: MARBLE BaseAgent instance
             agent_id: Unique identifier for this agent
-            callbacks: Optional list of callbacks
         """
         self._marble_agent = marble_agent
         self._agent_id = agent_id
         self._profile = getattr(marble_agent, "profile", "")
         self._communication_log: List[Dict[str, Any]] = []
         self._action_log: List[Dict[str, Any]] = []
-        super().__init__(agent_instance=marble_agent, name=agent_id, callbacks=callbacks)
+        super().__init__(agent_instance=marble_agent, name=agent_id)
         # Initialize message history
-        from maseval import MessageHistory
-
-        self.messages = MessageHistory()
+        self.messages: MessageHistory = MessageHistory()
 
     @property
     def agent_id(self) -> str:
@@ -140,6 +133,7 @@ class MarbleAgentAdapter(AgentAdapter):
         Returns:
             Serialized message string
         """
+        # Note: "seralize_message" is misspelled in MARBLE's API (should be "serialize")
         if hasattr(self._marble_agent, "seralize_message"):
             return self._marble_agent.seralize_message(session_id)
         return ""
@@ -186,7 +180,6 @@ def create_marble_agents(
     agent_configs: Sequence[Dict[str, Any]],
     marble_env: Any,
     model: str,
-    callbacks: Optional[List["BenchmarkCallback"]] = None,
 ) -> Tuple[List[MarbleAgentAdapter], Dict[str, MarbleAgentAdapter]]:
     """Create MarbleAgentAdapters from agent configurations.
 
@@ -197,7 +190,6 @@ def create_marble_agents(
         agent_configs: List of agent configuration dicts from task data
         marble_env: MARBLE environment instance
         model: Model ID to use for agents
-        callbacks: Optional callbacks to attach
 
     Returns:
         Tuple of (agents_list, agents_dict)
@@ -206,9 +198,9 @@ def create_marble_agents(
         ImportError: If MARBLE is not available
     """
     try:
-        from ..marble.agent.base_agent import BaseAgent
+        from ..marble.agent.base_agent import BaseAgent  # type: ignore[unresolved-import]
     except ImportError as e:
-        raise ImportError(f"MARBLE is not available. Clone MARBLE to maseval/benchmark/multiagentbench/marble/\nOriginal error: {e}") from e
+        raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 
     agents_list: List[MarbleAgentAdapter] = []
     agents_dict: Dict[str, MarbleAgentAdapter] = {}
@@ -220,7 +212,7 @@ def create_marble_agents(
         marble_agent = BaseAgent(config=config, env=marble_env, model=model)
 
         # Wrap in adapter
-        adapter = MarbleAgentAdapter(marble_agent=marble_agent, agent_id=agent_id, callbacks=callbacks)
+        adapter = MarbleAgentAdapter(marble_agent=marble_agent, agent_id=agent_id)
 
         agents_list.append(adapter)
         agents_dict[agent_id] = adapter

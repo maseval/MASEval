@@ -226,10 +226,13 @@ class TestMultiAgentBenchBenchmark:
             sample_research_task.query,
         )
 
-        assert isinstance(results, list)
-        assert len(results) == 2
-        assert all("agent_id" in r for r in results)
-        assert all("result" in r for r in results)
+        assert isinstance(results, dict)
+        assert "agent_results" in results
+        assert "communications" in results
+        assert "coordination_mode" in results
+        assert len(results["agent_results"]) == 2
+        assert all("agent_id" in r for r in results["agent_results"])
+        assert all("result" in r for r in results["agent_results"])
 
     def test_evaluate_calls_evaluators(
         self,
@@ -539,7 +542,8 @@ class TestBenchmarkWithDifferentCoordinationModes:
             sample_research_task.query,
         )
 
-        assert len(results) == 2
+        assert len(results["agent_results"]) == 2
+        assert results["coordination_mode"] == "cooperative"
 
     def test_run_agents_with_star_mode(self, benchmark_instance):
         """run_agents should work with star coordination."""
@@ -569,7 +573,8 @@ class TestBenchmarkWithDifferentCoordinationModes:
 
         results = benchmark_instance.run_agents(agents_list, task, env, task.query)
 
-        assert len(results) == 2
+        assert len(results["agent_results"]) == 2
+        assert results["coordination_mode"] == "star"
 
 
 class TestBenchmarkWithEmptyAgents:
@@ -590,7 +595,8 @@ class TestBenchmarkWithEmptyAgents:
             sample_research_task.query,
         )
 
-        assert results == []
+        assert results["agent_results"] == []
+        assert results["communications"] == []
 
     def test_setup_agents_with_no_agents_in_task(self, benchmark_instance):
         """setup_agents should handle task with no agents."""

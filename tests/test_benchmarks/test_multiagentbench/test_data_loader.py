@@ -1,11 +1,13 @@
 """Tests for MultiAgentBench data loading functionality."""
 
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+import json
 import subprocess
 import tempfile
-import json
+from pathlib import Path
+from typing import Any, Dict
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from maseval import Task
 from maseval.benchmark.multiagentbench.data_loader import (
@@ -501,7 +503,7 @@ class TestLoadTasksEdgeCases:
 
             # Write tasks with empty lines
             with jsonl_path.open("w") as f:
-                task_data = {
+                task_data: Dict[str, Any] = {
                     "scenario": "research",
                     "task_id": 1,
                     "task": {"content": "Task 1"},
@@ -512,7 +514,7 @@ class TestLoadTasksEdgeCases:
                 f.write("\n")  # Empty line
                 f.write("   \n")  # Whitespace-only line
                 task_data["task_id"] = 2
-                task_data["task"]["content"] = "Task 2"
+                task_data["task"]["content"] = "Task 2"  # type: ignore[index]
                 f.write(json.dumps(task_data) + "\n")
 
             tasks = load_tasks("research", data_dir=Path(tmpdir))

@@ -4,11 +4,14 @@ This module provides evaluation metrics matching MARBLE's evaluation methodology
 """
 
 import json
-import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from maseval import Evaluator, ModelAdapter
+
+# Sentinel value for "evaluation not performed" or "evaluation failed"
+# Using None instead of -1 to avoid confusion with valid scores
+SCORE_NOT_EVALUATED: None = None
 
 
 @dataclass
@@ -18,8 +21,7 @@ class MultiAgentBenchMetrics:
     Attributes:
         task_completion: Whether the task was completed
         token_consumption: Total tokens used
-        planning_score: Score for planning/coordination (1-5)
-        communication_score: Score for inter-agent communication (1-5)
+        communication_score: Score for inter-agent communication (1-5), None if not evaluated
         task_evaluation: Domain-specific evaluation results
         agent_kpis: Per-agent key performance indicators
         total_milestones: Number of milestones achieved
@@ -27,8 +29,7 @@ class MultiAgentBenchMetrics:
 
     task_completion: bool = False
     token_consumption: int = 0
-    planning_score: float = -1.0
-    communication_score: float = -1.0
+    communication_score: Optional[float] = None
     task_evaluation: Dict[str, Any] = field(default_factory=dict)
     agent_kpis: Dict[str, int] = field(default_factory=dict)
     total_milestones: int = 0
@@ -38,7 +39,6 @@ class MultiAgentBenchMetrics:
         return {
             "task_completion": self.task_completion,
             "token_consumption": self.token_consumption,
-            "planning_score": self.planning_score,
             "communication_score": self.communication_score,
             "task_evaluation": self.task_evaluation,
             "agent_kpis": self.agent_kpis,
@@ -100,23 +100,6 @@ Rate the communication quality on a scale of 1-5:
 3 - Average: Adequate communication that addresses the task
 4 - Good: Clear and relevant communication with good coordination
 5 - Excellent: Highly effective communication with perfect coordination
-
-Respond with a JSON object: {{"rating": <score>}}"""
-            },
-            "planning": {
-                "prompt": """Evaluate the planning and coordination quality for the following task.
-
-Task Summary: {summary}
-Agent Profiles: {agent_profiles}
-Task Assignments: {agent_tasks}
-Results: {results}
-
-Rate the planning quality on a scale of 1-5:
-1 - Poor: No clear plan or coordination
-2 - Below Average: Some planning but poorly coordinated
-3 - Average: Adequate planning with basic coordination
-4 - Good: Well-planned with effective coordination
-5 - Excellent: Optimal planning and seamless coordination
 
 Respond with a JSON object: {{"rating": <score>}}"""
             },
@@ -205,7 +188,6 @@ Respond with a JSON object:
             "agents": traces.get("agents", {}),
             "environment": traces.get("environment", {}),
             "communications": self._extract_communications(traces),
-            "results": self._extract_results(traces),
         }
 
     def _extract_communications(self, traces: Dict[str, Any]) -> str:
@@ -251,12 +233,14 @@ Respond with a JSON object:
 
         return "\n".join(results) if results else "No results recorded."
 
-    def __call__(self, traces: Dict[str, Any], final_answer: Any) -> Dict[str, Any]:
+    def __call__(  # type: ignore[override]
+        self, traces: Dict[str, Any], final_answer: Any
+    ) -> Dict[str, Any]:
         """Evaluate the task execution.
 
         Args:
             traces: Filtered execution traces
-            final_answer: Final output from agents
+            final_answer: Final output from agents (dict, list, str, or None)
 
         Returns:
             Evaluation results dictionary
@@ -266,8 +250,6 @@ Respond with a JSON object:
         # Extract filtered data
         filtered = self.filter_traces(traces)
         communications = filtered["communications"]
-        # Note: results are available in filtered["results"] but not used directly
-        # since we get task_desc and final_result separately
 
         # Calculate token consumption
         metrics.token_consumption = self._calculate_token_consumption(traces)
@@ -282,7 +264,7 @@ Respond with a JSON object:
 
         if self.domain == "research":
             metrics.task_evaluation = self._evaluate_research(task_desc, final_result)
-        elif self.domain == "bargaining" or self.domain == "worldsimulation":
+        elif self.domain in ("bargaining", "worldsimulation"):
             metrics.task_evaluation = self._evaluate_bargaining(task_desc, final_result)
         elif self.domain == "coding":
             metrics.task_evaluation = self._evaluate_coding(task_desc, final_result)
@@ -331,7 +313,7 @@ Respond with a JSON object:
 
         return total
 
-    def _evaluate_communication(self, task: str, communications: str) -> float:
+    def _evaluate_communication(self, task: str, communications: str) -> Optional[float]:
         """Evaluate communication quality using LLM."""
         prompt_template = self._evaluation_prompts["communication"]["prompt"]
         prompt = prompt_template.format(task=task, communications=communications)
@@ -340,7 +322,7 @@ Respond with a JSON object:
             response = self.model_adapter.generate(prompt)
             return self._parse_score(response)
         except Exception:
-            return -1.0
+            return None
 
     def _evaluate_research(self, task: str, result: str) -> Dict[str, Any]:
         """Evaluate research task output."""
@@ -351,7 +333,7 @@ Respond with a JSON object:
             response = self.model_adapter.generate(prompt)
             return self._parse_research_ratings(response)
         except Exception:
-            return {"innovation": -1, "safety": -1, "feasibility": -1}
+            return {"innovation": None, "safety": None, "feasibility": None}
 
     def _evaluate_bargaining(self, task: str, result: str) -> Dict[str, Any]:
         """Evaluate bargaining/world simulation task output."""
@@ -366,9 +348,9 @@ Respond with a JSON object:
             ratings["buyer"] = self._parse_bargaining_ratings(buyer_response)
         except Exception:
             ratings["buyer"] = {
-                "effectiveness_of_strategies": -1,
-                "progress_and_outcome": -1,
-                "interaction_dynamics": -1,
+                "effectiveness_of_strategies": None,
+                "progress_and_outcome": None,
+                "interaction_dynamics": None,
             }
 
         try:
@@ -376,9 +358,9 @@ Respond with a JSON object:
             ratings["seller"] = self._parse_bargaining_ratings(seller_response)
         except Exception:
             ratings["seller"] = {
-                "effectiveness_of_strategies": -1,
-                "progress_and_outcome": -1,
-                "interaction_dynamics": -1,
+                "effectiveness_of_strategies": None,
+                "progress_and_outcome": None,
+                "interaction_dynamics": None,
             }
 
         return ratings
@@ -400,10 +382,10 @@ Respond with a JSON object:
             return self._parse_coding_ratings(response)
         except Exception:
             return {
-                "instruction_following": -1,
-                "executability": -1,
-                "consistency": -1,
-                "quality": -1,
+                "instruction_following": None,
+                "executability": None,
+                "consistency": None,
+                "quality": None,
             }
 
     def _evaluate_database(self, task: str, result: str) -> Dict[str, Any]:
@@ -417,8 +399,12 @@ Respond with a JSON object:
             "root_cause": [],  # Would be filled from task data
         }
 
-    def _parse_score(self, response: str) -> float:
-        """Parse a single score from LLM response."""
+    def _parse_score(self, response: str) -> Optional[float]:
+        """Parse a single score from LLM response.
+
+        Returns:
+            Score as float (1-5), or None if parsing fails
+        """
         try:
             content = response.strip()
 
@@ -443,17 +429,12 @@ Respond with a JSON object:
                     if 1 <= score <= 5:
                         return float(score)
 
-            # Fallback: find a single digit 1-5
-            numbers = re.findall(r"\b[1-5]\b", content)
-            if numbers:
-                return float(int(numbers[0]))
-
-            return 3.0  # Default middle score
+            return None
 
         except Exception:
-            return 3.0
+            return None
 
-    def _parse_research_ratings(self, response: str) -> Dict[str, int]:
+    def _parse_research_ratings(self, response: str) -> Dict[str, Optional[int]]:
         """Parse research evaluation ratings."""
         try:
             content = response.strip()
@@ -467,9 +448,9 @@ Respond with a JSON object:
         except Exception:
             pass
 
-        return {"innovation": -1, "safety": -1, "feasibility": -1}
+        return {"innovation": None, "safety": None, "feasibility": None}
 
-    def _parse_bargaining_ratings(self, response: str) -> Dict[str, int]:
+    def _parse_bargaining_ratings(self, response: str) -> Dict[str, Optional[int]]:
         """Parse bargaining evaluation ratings."""
         try:
             content = response.strip()
@@ -480,20 +461,22 @@ Respond with a JSON object:
                 json_str = content[json_start:json_end]
                 ratings = json.loads(json_str)
                 return {
-                    "effectiveness_of_strategies": int(ratings.get("effectiveness_of_strategies", -1)),
-                    "progress_and_outcome": int(ratings.get("progress_and_outcome", -1)),
-                    "interaction_dynamics": int(ratings.get("interaction_dynamics", -1)),
+                    "effectiveness_of_strategies": int(ratings["effectiveness_of_strategies"])
+                    if "effectiveness_of_strategies" in ratings
+                    else None,
+                    "progress_and_outcome": int(ratings["progress_and_outcome"]) if "progress_and_outcome" in ratings else None,
+                    "interaction_dynamics": int(ratings["interaction_dynamics"]) if "interaction_dynamics" in ratings else None,
                 }
         except Exception:
             pass
 
         return {
-            "effectiveness_of_strategies": -1,
-            "progress_and_outcome": -1,
-            "interaction_dynamics": -1,
+            "effectiveness_of_strategies": None,
+            "progress_and_outcome": None,
+            "interaction_dynamics": None,
         }
 
-    def _parse_coding_ratings(self, response: str) -> Dict[str, int]:
+    def _parse_coding_ratings(self, response: str) -> Dict[str, Optional[int]]:
         """Parse coding evaluation ratings."""
         try:
             content = response.strip()
@@ -504,49 +487,53 @@ Respond with a JSON object:
                 json_str = content[json_start:json_end]
                 ratings = json.loads(json_str)
                 return {
-                    "instruction_following": int(ratings.get("instruction_following", -1)),
-                    "executability": int(ratings.get("executability", -1)),
-                    "consistency": int(ratings.get("consistency", -1)),
-                    "quality": int(ratings.get("quality", -1)),
+                    "instruction_following": int(ratings["instruction_following"]) if "instruction_following" in ratings else None,
+                    "executability": int(ratings["executability"]) if "executability" in ratings else None,
+                    "consistency": int(ratings["consistency"]) if "consistency" in ratings else None,
+                    "quality": int(ratings["quality"]) if "quality" in ratings else None,
                 }
         except Exception:
             pass
 
         return {
-            "instruction_following": -1,
-            "executability": -1,
-            "consistency": -1,
-            "quality": -1,
+            "instruction_following": None,
+            "executability": None,
+            "consistency": None,
+            "quality": None,
         }
 
     def _determine_completion(self, metrics: MultiAgentBenchMetrics) -> bool:
-        """Determine if task was completed based on metrics."""
+        """Determine if task was completed based on metrics.
+
+        A task is considered completed if all required scores are present (not None)
+        and positive (> 0).
+        """
         eval_data = metrics.task_evaluation
 
         if not eval_data:
             return False
 
+        def _all_scores_valid(scores: List[Any]) -> bool:
+            """Check all scores are present and positive."""
+            return all(s is not None and s > 0 for s in scores)
+
         if self.domain == "research":
-            # Consider completed if all scores are positive
-            scores = [eval_data.get(k, -1) for k in ["innovation", "safety", "feasibility"]]
-            return all(s > 0 for s in scores)
+            scores = [eval_data.get(k) for k in ["innovation", "safety", "feasibility"]]
+            return _all_scores_valid(scores)
 
         elif self.domain in ("bargaining", "worldsimulation"):
-            # Check both buyer and seller have positive scores
             buyer = eval_data.get("buyer", {})
             seller = eval_data.get("seller", {})
-            buyer_scores = [buyer.get(k, -1) for k in ["effectiveness_of_strategies", "progress_and_outcome", "interaction_dynamics"]]
-            seller_scores = [seller.get(k, -1) for k in ["effectiveness_of_strategies", "progress_and_outcome", "interaction_dynamics"]]
-            return all(s > 0 for s in buyer_scores) and all(s > 0 for s in seller_scores)
+            buyer_scores = [buyer.get(k) for k in ["effectiveness_of_strategies", "progress_and_outcome", "interaction_dynamics"]]
+            seller_scores = [seller.get(k) for k in ["effectiveness_of_strategies", "progress_and_outcome", "interaction_dynamics"]]
+            return _all_scores_valid(buyer_scores) and _all_scores_valid(seller_scores)
 
         elif self.domain == "coding":
-            # All coding metrics should be positive
-            scores = [eval_data.get(k, -1) for k in ["instruction_following", "executability", "consistency", "quality"]]
-            return all(s > 0 for s in scores)
+            scores = [eval_data.get(k) for k in ["instruction_following", "executability", "consistency", "quality"]]
+            return _all_scores_valid(scores)
 
         elif self.domain == "database":
             # Database completion is determined by comparing prediction to labels
-            # This requires external validation
             return bool(eval_data.get("predicted"))
 
         return False

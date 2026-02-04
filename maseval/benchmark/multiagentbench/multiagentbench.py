@@ -5,8 +5,10 @@ This module provides benchmark classes for the MARBLE MultiAgentBench suite:
 - MarbleMultiAgentBenchBenchmark: Exact MARBLE reproduction mode
 """
 
+import logging
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
 from maseval import (
     AgentAdapter,
@@ -19,10 +21,16 @@ from maseval import (
 )
 from maseval.core.callback import BenchmarkCallback
 
+from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR
 from maseval.benchmark.multiagentbench.environment import MultiAgentBenchEnvironment
 from maseval.benchmark.multiagentbench.evaluator import (
     MultiAgentBenchEvaluator,
 )
+
+if TYPE_CHECKING:
+    from maseval.benchmark.multiagentbench.adapters.marble_adapter import MarbleAgentAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class MultiAgentBenchBenchmark(Benchmark):
@@ -134,7 +142,6 @@ class MultiAgentBenchBenchmark(Benchmark):
         """
         return MultiAgentBenchEnvironment(
             task_data=task.environment_data,
-            callbacks=self.callbacks,
         )
 
     def setup_user(
@@ -272,7 +279,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         task: Task,
         environment: Environment,
         query: str,
-    ) -> Any:
+    ) -> Dict[str, Any]:
         """Execute the multi-agent system.
 
         For MultiAgentBench, this runs all agents on the task and
@@ -285,20 +292,35 @@ class MultiAgentBenchBenchmark(Benchmark):
             query: The query/task content
 
         Returns:
-            Combined agent outputs
+            Dict with agent_results, communications, and coordination_mode
         """
         results: List[Dict[str, Any]] = []
+        communications: List[str] = []
+
+        coordination_mode = task.environment_data.get("coordinate_mode", "cooperative")
 
         for agent in agents:
             result = agent.run(query)
+            agent_id = getattr(agent, "agent_id", str(agent))
+
             results.append(
                 {
-                    "agent_id": getattr(agent, "agent_id", str(agent)),
+                    "agent_id": agent_id,
                     "result": result,
                 }
             )
 
-        return results
+            # Collect communication logs if available
+            if hasattr(agent, "get_serialized_messages"):
+                comm = agent.get_serialized_messages()  # type: ignore[operator]
+                if comm:
+                    communications.append(comm)
+
+        return {
+            "agent_results": results,
+            "communications": communications,
+            "coordination_mode": coordination_mode,
+        }
 
     def evaluate(
         self,
@@ -409,7 +431,6 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             agent_configs=agent_configs,
             marble_env=marble_env,
             model=model_id,
-            callbacks=self.callbacks,
         )
 
         # Set up agent graph for inter-agent communication
@@ -419,7 +440,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         for agent_id, adapter in agents_dict.items():
             self.register("agents", agent_id, adapter)
 
-        return agents_list, agents_dict
+        return agents_list, agents_dict  # type: ignore[return-value]
 
     def _create_marble_env(self, task: Task) -> Any:
         """Create a MARBLE environment for the task.
@@ -431,9 +452,9 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             MARBLE environment instance
         """
         try:
-            from .marble.environments.base_env import BaseEnvironment
+            from .marble.environments.base_env import BaseEnvironment  # type: ignore[unresolved-import]
         except ImportError as e:
-            raise ImportError(f"MARBLE is not available. Clone MARBLE to maseval/benchmark/multiagentbench/marble/\nOriginal error: {e}") from e
+            raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 
         env_config = task.environment_data.get("environment", {})
         task_config = task.environment_data.get("task", {})
@@ -448,37 +469,30 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
     def _setup_agent_graph(
         self,
-        agents_dict: Dict[str, AgentAdapter],
+        agents_dict: Dict[str, "MarbleAgentAdapter"],
         task: Task,
         marble_env: Any,
     ) -> None:
         """Set up MARBLE's AgentGraph for inter-agent communication.
 
         Args:
-            agents_dict: Dict of agent adapters
+            agents_dict: Dict of MARBLE agent adapters
             task: Task with relationship data
             marble_env: MARBLE environment
         """
         try:
-            from .marble.graph.agent_graph import AgentGraph
+            from .marble.graph.agent_graph import AgentGraph  # type: ignore[unresolved-import]
         except ImportError:
             # MARBLE not available, skip graph setup
             return
 
         # Extract MARBLE agents from adapters
-        marble_agents = [adapter.marble_agent for adapter in agents_dict.values()]  # type: ignore[attr-defined]
+        marble_agents = [adapter.marble_agent for adapter in agents_dict.values()]
 
-        # Build config for AgentGraph
+        # Build config for AgentGraph (MARBLE expects an object with these attributes)
         relationships = task.environment_data.get("relationships", [])
         coordination_mode = task.environment_data.get("coordinate_mode", "cooperative")
-
-        # Create a minimal Config object
-        class MinimalConfig:
-            def __init__(self) -> None:
-                self.coordination_mode = coordination_mode
-                self.relationships = relationships
-
-        config = MinimalConfig()
+        config = SimpleNamespace(coordination_mode=coordination_mode, relationships=relationships)
 
         try:
             # Create agent graph
@@ -488,59 +502,9 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             for agent in marble_agents:
                 agent.set_agent_graph(graph)
 
-        except Exception:
+        except (ValueError, KeyError, AttributeError) as e:
             # Graph creation failed, agents will work without inter-agent communication
-            pass
-
-    def run_agents(
-        self,
-        agents: Sequence[AgentAdapter],
-        task: Task,
-        environment: Environment,
-        query: str,
-    ) -> Any:
-        """Execute agents using MARBLE's coordination patterns.
-
-        Args:
-            agents: Agents to run (MarbleAgentAdapters)
-            task: The task
-            environment: The environment
-            query: The task query
-
-        Returns:
-            Combined agent outputs with communication logs
-        """
-        results: List[Dict[str, Any]] = []
-        communications: List[str] = []
-
-        # Get coordination mode
-        coordination_mode = task.environment_data.get("coordinate_mode", "cooperative")
-
-        # Simple execution: each agent acts on the task
-        # More complex coordination modes (star, tree, hierarchical) would
-        # require the MARBLE Engine, which is outside the scope of this adapter
-        for agent in agents:
-            result = agent.run(query)
-            agent_id = getattr(agent, "agent_id", str(agent))
-
-            results.append(
-                {
-                    "agent_id": agent_id,
-                    "result": result,
-                }
-            )
-
-            # Collect communication logs if available
-            if hasattr(agent, "get_serialized_messages"):
-                comm = agent.get_serialized_messages()  # type: ignore
-                if comm:
-                    communications.append(comm)
-
-        return {
-            "agent_results": results,
-            "communications": communications,
-            "coordination_mode": coordination_mode,
-        }
+            logger.warning("AgentGraph setup failed, agents will run without inter-agent communication: %s", e)
 
     @abstractmethod
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> ModelAdapter:
