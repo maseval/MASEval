@@ -351,10 +351,12 @@ class TestSeedGeneratorScoping:
                     task_ids_seen.append(seed_generator._task_id)
                 return super().setup_agents(agent_data, environment, task, user, seed_generator)
 
-        tasks = TaskQueue.from_list([
-            {"query": "Task 1", "environment_data": {}},
-            {"query": "Task 2", "environment_data": {}},
-        ])
+        tasks = TaskQueue.from_list(
+            [
+                {"query": "Task 1", "environment_data": {}},
+                {"query": "Task 2", "environment_data": {}},
+            ]
+        )
         benchmark = CapturingBenchmark(seed=42)
         benchmark.run(tasks, agent_data={})
 
