@@ -13,8 +13,7 @@ Domains:
     - coding: Software development collaboration
     - database: Database manipulation and querying (requires Docker)
     - minecraft: Collaborative building (requires external server)
-    - web: Web-based task completion
-    - worldsimulation: World simulation and interaction
+    - werewolf: Adversarial social deduction game with roles
 
 Setup:
     This benchmark requires MARBLE source code. It will be automatically

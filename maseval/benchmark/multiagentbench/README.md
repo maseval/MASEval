@@ -133,22 +133,22 @@ for result in results:
 
 ## Domains
 
-MultiAgentBench includes 7 domains with different requirements:
+MultiAgentBench includes 6 domains with different requirements:
 
-| Domain          | External Dependencies | Initial Support |
-| --------------- | --------------------- | --------------- |
-| Research        | None                  | Yes             |
-| Bargaining      | None                  | Yes             |
-| Coding          | Filesystem access     | Yes             |
-| Web             | Network access        | Yes             |
-| WorldSimulation | None                  | Yes             |
-| Database        | Docker + PostgreSQL   | Optional        |
-| Minecraft       | External game server  | Deferred        |
+| Domain     | External Dependencies | Initial Support |
+| ---------- | --------------------- | --------------- |
+| Research   | None                  | Yes             |
+| Bargaining | None                  | Yes             |
+| Coding     | Filesystem access     | Yes             |
+| Werewolf   | None                  | Yes             |
+| Database   | Docker + PostgreSQL   | Optional        |
+| Minecraft  | External game server  | Deferred        |
 
 ### Domain-Specific Notes
 
 - **Research/Bargaining**: Recommended for initial testing - no infrastructure required
 - **Coding**: Creates files in a workspace directory
+- **Werewolf**: Config-based social deduction game (no JSONL task data; uses MARBLE's WerewolfEnv engine)
 - **Database**: Requires Docker with PostgreSQL image
 - **Minecraft**: Not currently supported (requires external game server)
 

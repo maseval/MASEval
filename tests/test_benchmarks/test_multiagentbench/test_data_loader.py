@@ -28,7 +28,7 @@ class TestValidDomains:
 
     def test_valid_domains_contains_expected(self):
         """VALID_DOMAINS should contain all expected domains."""
-        expected = {"coding", "database", "minecraft", "research", "bargaining", "web", "worldsimulation"}
+        expected = {"coding", "database", "minecraft", "research", "bargaining", "werewolf"}
         assert expected == VALID_DOMAINS
 
     def test_valid_domains_is_frozen(self):
@@ -535,7 +535,7 @@ class TestGetDomainInfoAllDomains:
 
     @pytest.mark.parametrize(
         "domain",
-        ["coding", "database", "minecraft", "research", "bargaining", "web", "worldsimulation"],
+        ["coding", "database", "minecraft", "research", "bargaining", "werewolf"],
     )
     def test_all_domains_have_info(self, domain):
         """All valid domains should return info."""
@@ -550,14 +550,8 @@ class TestGetDomainInfoAllDomains:
         assert info["coordination_mode"] == "tree"
         assert info["requires_infrastructure"] is False
 
-    def test_web_domain_info(self):
-        """Web domain should have star coordination."""
-        info = get_domain_info("web")
-        assert info["coordination_mode"] == "star"
-        assert info["requires_infrastructure"] is False
-
-    def test_worldsimulation_domain_info(self):
-        """WorldSimulation domain should have cooperative coordination."""
-        info = get_domain_info("worldsimulation")
+    def test_werewolf_domain_info(self):
+        """Werewolf domain should have cooperative coordination."""
+        info = get_domain_info("werewolf")
         assert info["coordination_mode"] == "cooperative"
         assert info["requires_infrastructure"] is False

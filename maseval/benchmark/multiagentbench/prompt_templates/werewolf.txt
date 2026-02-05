@@ -1,0 +1,18 @@
+Evaluate the following Werewolf game performance based on the players' strategic and social abilities.
+
+Task: {task}
+
+Game Result:
+{result}
+
+Rate each dimension on a scale of 1-5:
+- game_outcome: Did the team achieve their win condition?
+- deception_detection: How well did players identify or execute deception?
+- voting_strategy: How effective were voting decisions and alliances?
+- role_fulfillment: How well did each player execute their role's abilities?
+- information_usage: How effectively was gathered information used?
+- collaboration: How well did teammates coordinate and communicate?
+- survival_rate: How well did players protect themselves and key allies?
+
+Respond with a JSON object:
+{{"game_outcome": <score>, "deception_detection": <score>, "voting_strategy": <score>, "role_fulfillment": <score>, "information_usage": <score>, "collaboration": <score>, "survival_rate": <score>}}

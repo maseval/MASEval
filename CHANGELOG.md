@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Support for 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, noise (PR: #26)
   - Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #26)
 
-- MultiAgentBench Benchmark: Integration with MARBLE MultiAgentBench for evaluating multi-agent collaboration across research, bargaining, coding, and database domains (PR: #25)
+- MultiAgentBench Benchmark: Integration with MARBLE MultiAgentBench for evaluating multi-agent collaboration across all 6 paper-defined domains: research, bargaining, coding, database, werewolf, and minecraft (PR: #25)
   - `MultiAgentBenchBenchmark` abstract base class for framework-agnostic multi-agent evaluation with seeding support for evaluators and agents (PR: #25)
   - `MarbleMultiAgentBenchBenchmark` for exact MARBLE reproduction mode using native MARBLE agents (note: MARBLE's internal LLM calls bypass MASEval seeding) (PR: #25)
   - `MultiAgentBenchEnvironment` and `MultiAgentBenchEvaluator` components (PR: #25)
@@ -48,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
 
 ### Changed
+
+**Benchmarks**
+
+- MultiAgentBench: Aligned domains with MARBLE paper. Removed `web` and `worldsimulation` (not in paper, no task data). Added `werewolf` domain with evaluation support. Fixed `bargaining` environment mapping to use `WorldSimulationEnvironment`. (PR: #PR_NUMBER_PLACEHOLDER)
 
 **Core**
 

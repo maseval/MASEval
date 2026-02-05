@@ -119,6 +119,11 @@ class MultiAgentBenchEvaluator(Evaluator):
                     "prompt": self._load_template("coding.txt"),
                 }
             },
+            "werewolf": {
+                "task_evaluation": {
+                    "prompt": self._load_template("werewolf.txt"),
+                }
+            },
         }
 
     def filter_traces(self, traces: Dict[str, Any]) -> Dict[str, Any]:
@@ -210,12 +215,14 @@ class MultiAgentBenchEvaluator(Evaluator):
 
         if self.domain == "research":
             metrics.task_evaluation = self._evaluate_research(task_desc, final_result)
-        elif self.domain in ("bargaining", "worldsimulation"):
+        elif self.domain == "bargaining":
             metrics.task_evaluation = self._evaluate_bargaining(task_desc, final_result)
         elif self.domain == "coding":
             metrics.task_evaluation = self._evaluate_coding(task_desc, final_result)
         elif self.domain == "database":
             metrics.task_evaluation = self._evaluate_database(task_desc, final_result)
+        elif self.domain == "werewolf":
+            metrics.task_evaluation = self._evaluate_werewolf(task_desc, final_result)
         else:
             # Default: check if task has a completion marker
             metrics.task_completion = bool(final_result)
@@ -345,6 +352,25 @@ class MultiAgentBenchEvaluator(Evaluator):
             "root_cause": [],  # Would be filled from task data
         }
 
+    def _evaluate_werewolf(self, task: str, result: str) -> Dict[str, Any]:
+        """Evaluate werewolf game output."""
+        prompt_template = self._evaluation_prompts["werewolf"]["task_evaluation"]["prompt"]
+        prompt = prompt_template.format(task=task, result=result)
+
+        try:
+            response = self.model_adapter.generate(prompt)
+            return self._parse_werewolf_ratings(response)
+        except Exception:
+            return {
+                "game_outcome": None,
+                "deception_detection": None,
+                "voting_strategy": None,
+                "role_fulfillment": None,
+                "information_usage": None,
+                "collaboration": None,
+                "survival_rate": None,
+            }
+
     def _parse_score(self, response: str) -> Optional[float]:
         """Parse a single score from LLM response.
 
@@ -448,6 +474,31 @@ class MultiAgentBenchEvaluator(Evaluator):
             "quality": None,
         }
 
+    def _parse_werewolf_ratings(self, response: str) -> Dict[str, Optional[int]]:
+        """Parse werewolf evaluation ratings."""
+        keys = [
+            "game_outcome",
+            "deception_detection",
+            "voting_strategy",
+            "role_fulfillment",
+            "information_usage",
+            "collaboration",
+            "survival_rate",
+        ]
+        try:
+            content = response.strip()
+            json_start = content.find("{")
+            json_end = content.rfind("}") + 1
+
+            if json_start >= 0 and json_end > json_start:
+                json_str = content[json_start:json_end]
+                ratings = json.loads(json_str)
+                return {k: int(ratings[k]) if k in ratings else None for k in keys}
+        except Exception:
+            pass
+
+        return {k: None for k in keys}
+
     def _determine_completion(self, metrics: MultiAgentBenchMetrics) -> bool:
         """Determine if task was completed based on metrics.
 
@@ -467,7 +518,7 @@ class MultiAgentBenchEvaluator(Evaluator):
             scores = [eval_data.get(k) for k in ["innovation", "safety", "feasibility"]]
             return _all_scores_valid(scores)
 
-        elif self.domain in ("bargaining", "worldsimulation"):
+        elif self.domain == "bargaining":
             buyer = eval_data.get("buyer", {})
             seller = eval_data.get("seller", {})
             buyer_scores = [buyer.get(k) for k in ["effectiveness_of_strategies", "progress_and_outcome", "interaction_dynamics"]]
@@ -481,5 +532,20 @@ class MultiAgentBenchEvaluator(Evaluator):
         elif self.domain == "database":
             # Database completion is determined by comparing prediction to labels
             return bool(eval_data.get("predicted"))
+
+        elif self.domain == "werewolf":
+            scores = [
+                eval_data.get(k)
+                for k in [
+                    "game_outcome",
+                    "deception_detection",
+                    "voting_strategy",
+                    "role_fulfillment",
+                    "information_usage",
+                    "collaboration",
+                    "survival_rate",
+                ]
+            ]
+            return _all_scores_valid(scores)
 
         return False

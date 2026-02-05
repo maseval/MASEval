@@ -142,10 +142,9 @@ class MultiAgentBenchEnvironment(Environment):
             "coding": "marble.environments.coding_env.CodingEnvironment",
             "database": "marble.environments.db_env.DBEnvironment",
             "research": "marble.environments.research_env.ResearchEnvironment",
-            "bargaining": "marble.environments.bargaining_env.BargainingEnvironment",
-            "web": "marble.environments.web_env.WebEnvironment",
-            "worldsimulation": "marble.environments.world_env.WorldSimulationEnvironment",
+            "bargaining": "marble.environments.world_env.WorldSimulationEnvironment",
             "minecraft": "marble.environments.minecraft_env.MinecraftEnvironment",
+            "werewolf": "marble.environments.werewolf_env.WerewolfEnv",
         }
 
         env_class_path = env_mapping.get(domain_lower)

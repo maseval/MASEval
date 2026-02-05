@@ -27,8 +27,7 @@ VALID_DOMAINS: FrozenSet[str] = frozenset(
         "minecraft",
         "research",
         "bargaining",
-        "web",
-        "worldsimulation",
+        "werewolf",
     }
 )
 
@@ -292,7 +291,7 @@ def load_tasks(
 
     Args:
         domain: Domain name (one of: coding, database, minecraft, research,
-            bargaining, web, worldsimulation)
+            bargaining, werewolf)
         data_dir: Optional path to MARBLE data directory
         limit: Maximum number of tasks to load (None for all)
 
@@ -427,14 +426,9 @@ def get_domain_info(domain: str) -> Dict[str, Any]:
             "description": "Negotiation and bargaining scenarios",
             "coordination_mode": "cooperative",
         },
-        "web": {
+        "werewolf": {
             "requires_infrastructure": False,
-            "description": "Web-based task completion",
-            "coordination_mode": "star",
-        },
-        "worldsimulation": {
-            "requires_infrastructure": False,
-            "description": "World simulation and interaction tasks",
+            "description": "Adversarial social deduction game with roles (wolf, villager, seer, witch, guard)",
             "coordination_mode": "cooperative",
         },
     }

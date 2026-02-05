@@ -385,55 +385,85 @@ class TestDatabaseEvaluation:
         assert "passed" in result
 
 
-class TestWorldSimulationEvaluation:
-    """Tests for worldsimulation domain (alias for bargaining)."""
+class TestWerewolfEvaluation:
+    """Tests for werewolf-specific evaluation."""
 
     @pytest.fixture
-    def worldsim_evaluator(self):
-        """Create evaluator for worldsimulation domain."""
+    def werewolf_evaluator(self):
+        """Create evaluator with werewolf-specific responses."""
         adapter = DummyModelAdapter(
             model_id="test",
             responses=[
-                '{"effectiveness_of_strategies": 4, "progress_and_outcome": 4, "interaction_dynamics": 4}',
-                '{"effectiveness_of_strategies": 4, "progress_and_outcome": 4, "interaction_dynamics": 4}',
+                '{"game_outcome": 4, "deception_detection": 3, "voting_strategy": 4, '
+                '"role_fulfillment": 5, "information_usage": 3, "collaboration": 4, "survival_rate": 3}',
             ],
         )
         return MultiAgentBenchEvaluator(
-            domain="worldsimulation",
+            domain="werewolf",
             model_adapter=adapter,
         )
 
-    def test_worldsimulation_uses_bargaining_eval(self, worldsim_evaluator):
-        """worldsimulation domain should use bargaining evaluation."""
+    def test_evaluate_werewolf_returns_all_metrics(self, werewolf_evaluator):
+        """_evaluate_werewolf should return all werewolf metrics."""
+        ratings = werewolf_evaluator._evaluate_werewolf("Task", "Result")
+
+        assert "game_outcome" in ratings
+        assert "deception_detection" in ratings
+        assert "voting_strategy" in ratings
+        assert "role_fulfillment" in ratings
+        assert "information_usage" in ratings
+        assert "collaboration" in ratings
+        assert "survival_rate" in ratings
+
+    def test_determine_completion_werewolf_positive(self, werewolf_evaluator):
+        """_determine_completion should work for werewolf domain."""
+        metrics = MultiAgentBenchMetrics(
+            task_evaluation={
+                "game_outcome": 4,
+                "deception_detection": 3,
+                "voting_strategy": 4,
+                "role_fulfillment": 5,
+                "information_usage": 3,
+                "collaboration": 4,
+                "survival_rate": 3,
+            }
+        )
+        assert werewolf_evaluator._determine_completion(metrics) is True
+
+    def test_determine_completion_werewolf_negative(self, werewolf_evaluator):
+        """_determine_completion should return False for None werewolf scores."""
+        metrics = MultiAgentBenchMetrics(
+            task_evaluation={
+                "game_outcome": 4,
+                "deception_detection": None,
+                "voting_strategy": 4,
+                "role_fulfillment": 5,
+                "information_usage": 3,
+                "collaboration": 4,
+                "survival_rate": 3,
+            }
+        )
+        assert werewolf_evaluator._determine_completion(metrics) is False
+
+    def test_call_werewolf_domain(self, werewolf_evaluator):
+        """__call__ should work for werewolf domain."""
         traces = {
             "agents": {"agent1": {"token_usage": 100, "action_log": [], "communication_log": []}},
             "environment": {},
         }
-        final_answer = "Simulation result"
+        final_answer = "Villagers won the game"
 
-        result = worldsim_evaluator(traces, final_answer)
+        result = werewolf_evaluator(traces, final_answer)
 
-        assert result["domain"] == "worldsimulation"
-        assert "buyer" in result["metrics"]["task_evaluation"]
-        assert "seller" in result["metrics"]["task_evaluation"]
+        assert result["domain"] == "werewolf"
+        assert "passed" in result
+        assert "game_outcome" in result["metrics"]["task_evaluation"]
 
-    def test_determine_completion_worldsimulation(self, worldsim_evaluator):
-        """_determine_completion should work for worldsimulation domain."""
-        metrics = MultiAgentBenchMetrics(
-            task_evaluation={
-                "buyer": {
-                    "effectiveness_of_strategies": 4,
-                    "progress_and_outcome": 4,
-                    "interaction_dynamics": 4,
-                },
-                "seller": {
-                    "effectiveness_of_strategies": 4,
-                    "progress_and_outcome": 4,
-                    "interaction_dynamics": 4,
-                },
-            }
-        )
-        assert worldsim_evaluator._determine_completion(metrics) is True
+    def test_parse_werewolf_ratings_invalid(self, werewolf_evaluator):
+        """_parse_werewolf_ratings should return None for invalid response."""
+        ratings = werewolf_evaluator._parse_werewolf_ratings("Invalid JSON")
+        assert ratings["game_outcome"] is None
+        assert ratings["collaboration"] is None
 
 
 class TestUnknownDomainEvaluation:
