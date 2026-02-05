@@ -262,7 +262,7 @@ class Gaia2Benchmark(Benchmark):
             - gsr: Goal Success Rate
             - partial_gsr: Partial success rate
             - passed: Boolean
-            - event_results: Per-event results
+            - rationale: Judge rationale (if available)
 
         Args:
             evaluators: List of evaluators

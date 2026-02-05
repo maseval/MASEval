@@ -97,7 +97,7 @@ def load_tasks(
 
     # Import dependencies (optional)
     try:
-        from datasets import load_dataset
+        from datasets import Dataset, load_dataset
     except ImportError as e:
         raise ImportError("HuggingFace datasets library is required for loading Gaia2 tasks.\nInstall with: pip install datasets") from e
 
@@ -114,11 +114,13 @@ def load_tasks(
     config_name = capability if capability else DEFAULT_CONFIG
 
     # Load dataset from HuggingFace
+    # Passing `split` guarantees the return type is Dataset (not DatasetDict)
     dataset = load_dataset(
         HF_DATASET_ID,
         name=config_name,
         split=split,
     )
+    assert isinstance(dataset, Dataset)
 
     # Apply limit
     if limit:

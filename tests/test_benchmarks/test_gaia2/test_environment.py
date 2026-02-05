@@ -317,7 +317,7 @@ class TestGaia2EnvironmentAccessors:
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
-        mock_env_instance.time_manager.current_time = 123.5
+        mock_env_instance.current_time = 123.5
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
@@ -377,7 +377,7 @@ class TestGaia2EnvironmentTracing:
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
-        mock_env_instance.time_manager.current_time = 0.0
+        mock_env_instance.current_time = 0.0
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400

@@ -106,7 +106,7 @@ class TestGaia2BenchmarkSetupEnvironment:
         mock_are_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_are_env_instance
         mock_are_env_instance.get_tools.return_value = []
-        mock_are_env_instance.get_completed_events.return_value = []
+        mock_are_env_instance.event_log.list_view.return_value = []
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400

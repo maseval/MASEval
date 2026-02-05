@@ -115,7 +115,6 @@ class TestGaia2EvaluatorCall:
 
         mock_env = MagicMock()
         mock_are_env = MagicMock()
-        mock_are_env.get_completed_events.return_value = []
         mock_env.get_are_environment.return_value = mock_are_env
         mock_env.get_scenario.return_value = MagicMock()
 
@@ -128,11 +127,11 @@ class TestGaia2EvaluatorCall:
         mock_are = MagicMock()
         mock_judge = MagicMock()
         mock_result = MagicMock()
-        mock_result.passed = True
-        mock_result.partial_score = 1.0
-        mock_result.event_results = []
-        mock_judge.evaluate.return_value = mock_result
-        mock_are.simulation.validation.JudgeFactory.create.return_value = mock_judge
+        mock_result.success = True
+        mock_result.rationale = None
+        mock_judge.validate.return_value = mock_result
+        mock_factory_instance = MagicMock(return_value=mock_judge)
+        mock_are.simulation.validation.JudgeFactory.return_value = mock_factory_instance
 
         with patch.dict(
             sys.modules,
@@ -140,7 +139,6 @@ class TestGaia2EvaluatorCall:
                 "are": mock_are,
                 "are.simulation": mock_are.simulation,
                 "are.simulation.validation": mock_are.simulation.validation,
-                "are.simulation.validation.config": mock_are.simulation.validation.config,
             },
         ):
             result = evaluator({}, None)
@@ -154,7 +152,6 @@ class TestGaia2EvaluatorCall:
 
         mock_env = MagicMock()
         mock_are_env = MagicMock()
-        mock_are_env.get_completed_events.return_value = []
         mock_env.get_are_environment.return_value = mock_are_env
         mock_env.get_scenario.return_value = MagicMock()
 
@@ -167,10 +164,11 @@ class TestGaia2EvaluatorCall:
         mock_are = MagicMock()
         mock_judge = MagicMock()
         mock_result = MagicMock()
-        mock_result.passed = False
-        mock_result.partial_score = 0.3
-        mock_judge.evaluate.return_value = mock_result
-        mock_are.simulation.validation.JudgeFactory.create.return_value = mock_judge
+        mock_result.success = False
+        mock_result.rationale = "Failed"
+        mock_judge.validate.return_value = mock_result
+        mock_factory_instance = MagicMock(return_value=mock_judge)
+        mock_are.simulation.validation.JudgeFactory.return_value = mock_factory_instance
 
         with patch.dict(
             sys.modules,
@@ -178,13 +176,11 @@ class TestGaia2EvaluatorCall:
                 "are": mock_are,
                 "are.simulation": mock_are.simulation,
                 "are.simulation.validation": mock_are.simulation.validation,
-                "are.simulation.validation.config": mock_are.simulation.validation.config,
             },
         ):
             result = evaluator({}, None)
 
             assert result["gsr"] == 0.0
-            assert result["partial_gsr"] == 0.3
             assert result["passed"] is False
 
     def test_handles_missing_are_environment(self, sample_gaia2_task):
@@ -207,7 +203,6 @@ class TestGaia2EvaluatorCall:
                 "are": mock_are,
                 "are.simulation": mock_are.simulation,
                 "are.simulation.validation": mock_are.simulation.validation,
-                "are.simulation.validation.config": mock_are.simulation.validation.config,
             },
         ):
             result = evaluator({}, None)

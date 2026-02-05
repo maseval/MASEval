@@ -81,8 +81,9 @@ class Gaia2Environment(Environment):
         )
         self._are_env = AREEnvironment(config)
 
-        # Initialize scenario (loads apps, events, state)
-        self._are_env.initialize_scenario(scenario)
+        # Run scenario (registers apps, schedules events, starts event loop)
+        # wait_for_end=False so control returns immediately for agent interaction
+        self._are_env.run(scenario, wait_for_end=False, schedule_events=True)
 
         return {
             "scenario_id": getattr(scenario, "scenario_id", None),
@@ -126,7 +127,7 @@ class Gaia2Environment(Environment):
             return 0.0
 
         try:
-            return self._are_env.time_manager.current_time
+            return self._are_env.current_time
         except AttributeError:
             return 0.0
 

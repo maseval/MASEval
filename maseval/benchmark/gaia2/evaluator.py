@@ -110,18 +110,13 @@ class Gaia2Evaluator(Evaluator):
                 - gsr: Goal Success Rate (0.0 or 1.0)
                 - partial_gsr: Partial success rate
                 - passed: Boolean indicating full success
-                - event_results: Per-event evaluation results
+                - rationale: Judge rationale (if available)
                 - capability: Task capability type
         """
         # Import ARE judge (required dependency for Gaia2)
-        from are.simulation.validation import JudgeFactory  # type: ignore[import-not-found]
-        from are.simulation.validation.config import GraphPerEventJudgeConfig  # type: ignore[import-not-found]
+        from are.simulation.validation import GraphPerEventJudgeConfig, JudgeFactory  # type: ignore[import-not-found]
 
-        # Create ARE judge
-        judge_config = GraphPerEventJudgeConfig()
-        judge = JudgeFactory.create(judge_config)
-
-        # Get ARE environment and completed events
+        # Get ARE environment
         are_env = self.environment.get_are_environment()
         if are_env is None:
             return {
@@ -132,28 +127,24 @@ class Gaia2Evaluator(Evaluator):
                 "capability": self.task.metadata.get("capability"),
             }
 
-        try:
-            completed_events = are_env.get_completed_events()
-        except AttributeError:
-            completed_events = []
+        # Create ARE judge via factory
+        judge_config = GraphPerEventJudgeConfig()
+        judge = JudgeFactory()(judge_config)
 
-        # Run ARE's judge
+        # Run ARE's judge: initialize with scenario, then validate against environment
         try:
-            result = judge.evaluate(
-                oracle_events=self.oracle_events,
-                completed_events=completed_events,
-                scenario=self.environment.get_scenario(),
-            )
+            judge.initialize_state(self.environment.get_scenario())
+            result = judge.validate(are_env)
 
-            # Convert ARE result to MASEval format
-            gsr = 1.0 if result.passed else 0.0
-            partial_gsr = getattr(result, "partial_score", gsr)
+            # Convert ARE ScenarioValidationResult to MASEval format
+            passed = bool(result.success)
+            gsr = 1.0 if passed else 0.0
 
             return {
                 "gsr": gsr,
-                "partial_gsr": partial_gsr,
-                "passed": result.passed,
-                "event_results": getattr(result, "event_results", []),
+                "partial_gsr": gsr,
+                "passed": passed,
+                "rationale": getattr(result, "rationale", None),
                 "capability": self.task.metadata.get("capability"),
                 "tool_call_count": len(traces.get("tool_invocations", [])),
                 "final_simulation_time": traces.get("simulation_time", 0),

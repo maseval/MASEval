@@ -75,6 +75,17 @@ class MockAREApp:
         return self._tools
 
 
+class MockEventLog:
+    """Mock for ARE's EventLog class."""
+
+    def __init__(self, events: Optional[List[Any]] = None):
+        self._events = events or []
+
+    def list_view(self) -> List[Any]:
+        """Return list of completed events."""
+        return self._events
+
+
 class MockAREEnvironment:
     """Mock for ARE's simulation Environment.
 
@@ -106,50 +117,50 @@ class MockAREEnvironment:
         self.apps = {name: MockAREApp(tool_list) for name, tool_list in apps_dict.items()}
         self._completed_events = completed_events or []
         self._current_time = current_time
-        self._initialized = False
+        self._running = False
         self._stopped = False
 
-        # Also expose time_manager for compatibility
-        self.time_manager = MagicMock()
-        self.time_manager.current_time = current_time
+        # Match real ARE instance attributes
+        self.current_time = current_time
+        self.event_log = MockEventLog(self._completed_events)
 
-    def initialize_scenario(self, scenario: Any) -> None:
-        """Initialize scenario."""
-        self._initialized = True
-
-    def get_completed_events(self) -> List[Any]:
-        """Get completed events for evaluation."""
-        return self._completed_events
+    def run(self, scenario: Any, wait_for_end: bool = True, schedule_events: bool = True) -> None:
+        """Run scenario (registers apps, schedules events, starts event loop)."""
+        self._running = True
 
     def stop(self) -> None:
         """Stop the environment."""
         self._stopped = True
 
     @property
-    def is_initialized(self) -> bool:
-        return self._initialized
+    def is_running(self) -> bool:
+        return self._running
 
     @property
     def is_stopped(self) -> bool:
         return self._stopped
 
 
-class MockJudgeResult:
-    """Mock for ARE's judge evaluation result."""
+class MockScenarioValidationResult:
+    """Mock for ARE's ScenarioValidationResult."""
 
-    def __init__(self, passed: bool = True, partial_score: float = 1.0, event_results: Optional[List] = None):
-        self.passed = passed
-        self.partial_score = partial_score
-        self.event_results = event_results or []
+    def __init__(self, success: bool = True, rationale: Optional[str] = None):
+        self.success = success
+        self.rationale = rationale
 
 
 class MockGraphPerEventJudge:
     """Mock for ARE's GraphPerEventJudge."""
 
-    def __init__(self, result: Optional[MockJudgeResult] = None):
-        self._result = result or MockJudgeResult()
+    def __init__(self, result: Optional[MockScenarioValidationResult] = None):
+        self._result = result or MockScenarioValidationResult()
 
-    def evaluate(self, oracle_events: Any, completed_events: Any, scenario: Any) -> MockJudgeResult:
+    def initialize_state(self, scenario: Any) -> None:
+        """Initialize judge with scenario."""
+        pass
+
+    def validate(self, env: Any) -> MockScenarioValidationResult:
+        """Validate against environment."""
         return self._result
 
 
@@ -297,14 +308,14 @@ def mock_are_environment(mock_are_tools) -> MockAREEnvironment:
 
 @pytest.fixture
 def mock_judge_passed() -> MockGraphPerEventJudge:
-    """Create a mock judge that returns passed=True."""
-    return MockGraphPerEventJudge(MockJudgeResult(passed=True, partial_score=1.0))
+    """Create a mock judge that returns success=True."""
+    return MockGraphPerEventJudge(MockScenarioValidationResult(success=True))
 
 
 @pytest.fixture
 def mock_judge_failed() -> MockGraphPerEventJudge:
-    """Create a mock judge that returns passed=False."""
-    return MockGraphPerEventJudge(MockJudgeResult(passed=False, partial_score=0.0))
+    """Create a mock judge that returns success=False."""
+    return MockGraphPerEventJudge(MockScenarioValidationResult(success=False))
 
 
 @pytest.fixture
