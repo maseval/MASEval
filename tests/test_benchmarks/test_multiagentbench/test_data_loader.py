@@ -20,6 +20,8 @@ from maseval.benchmark.multiagentbench.data_loader import (
     VALID_DOMAINS,
     _parse_task_entry,
     _resolve_data_dir,
+    _load_werewolf_tasks,
+    _parse_werewolf_config_basic,
 )
 
 
@@ -555,3 +557,153 @@ class TestGetDomainInfoAllDomains:
         info = get_domain_info("werewolf")
         assert info["coordination_mode"] == "cooperative"
         assert info["requires_infrastructure"] is False
+
+
+class TestLoadWerewolfTasks:
+    """Tests for werewolf config-based task loading."""
+
+    def _create_werewolf_structure(self, tmpdir: Path) -> Path:
+        """Helper to create a mock MARBLE structure with werewolf config.
+
+        Creates the expected structure where data_dir = tmpdir/multiagentbench/
+        and data_dir.parent = tmpdir has marble/configs/.
+
+        Returns:
+            data_dir (tmpdir/multiagentbench/) for passing to _load_werewolf_tasks
+        """
+        # Create configs: tmpdir/marble/configs/test_config/werewolf_config/werewolf_config.yaml
+        configs_dir = tmpdir / "marble" / "configs" / "test_config" / "werewolf_config"
+        configs_dir.mkdir(parents=True)
+
+        config_path = configs_dir / "werewolf_config.yaml"
+        config_content = (
+            'openai_api_key: "test"\nroles:\n  - wolf\n  - wolf\n  - villager\n  - villager\n  - seer\ncooperation_mode: "cooperative"\n'
+        )
+        config_path.write_text(config_content)
+
+        # Create data_dir (simulating marble/multiagentbench/)
+        data_dir = tmpdir / "multiagentbench"
+        data_dir.mkdir()
+
+        return data_dir
+
+    def test_load_werewolf_tasks_finds_configs(self):
+        """_load_werewolf_tasks should find and parse werewolf configs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = self._create_werewolf_structure(Path(tmpdir))
+
+            tasks = _load_werewolf_tasks(data_dir)
+
+            assert len(tasks) == 1
+            assert tasks[0].id == "werewolf_0"
+            assert tasks[0].metadata["domain"] == "werewolf"
+            assert tasks[0].environment_data["scenario"] == "werewolf"
+
+    def test_load_werewolf_tasks_extracts_agents_from_roles(self):
+        """_load_werewolf_tasks should create agent specs from roles."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = self._create_werewolf_structure(Path(tmpdir))
+
+            tasks = _load_werewolf_tasks(data_dir)
+
+            agents = tasks[0].environment_data["agents"]
+            assert len(agents) == 5
+            assert agents[0]["role"] == "wolf"
+            assert agents[2]["role"] == "villager"
+            assert agents[4]["role"] == "seer"
+
+    def test_load_werewolf_tasks_stores_config_path(self):
+        """_load_werewolf_tasks should store config path in task data."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = self._create_werewolf_structure(Path(tmpdir))
+
+            tasks = _load_werewolf_tasks(data_dir)
+
+            config_path = tasks[0].environment_data["werewolf_config_path"]
+            assert "werewolf_config.yaml" in config_path
+
+    def test_load_werewolf_tasks_with_limit(self):
+        """_load_werewolf_tasks should respect limit parameter."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            marble_root = Path(tmpdir)
+            configs_dir = marble_root / "marble" / "configs"
+
+            # Create two config files
+            for i in range(2):
+                cfg_dir = configs_dir / f"config_{i}"
+                cfg_dir.mkdir(parents=True)
+                cfg_path = cfg_dir / f"werewolf_config_{i}.yaml"
+                cfg_path.write_text("roles:\n  - wolf\n  - villager\n")
+
+            # data_dir must be a subdir of marble_root
+            data_dir = marble_root / "multiagentbench"
+            data_dir.mkdir()
+
+            tasks = _load_werewolf_tasks(data_dir, limit=1)
+            assert len(tasks) == 1
+
+    def test_load_werewolf_tasks_no_configs_raises(self):
+        """_load_werewolf_tasks should raise if no configs found."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            marble_root = Path(tmpdir)
+            # Create configs dir but no werewolf configs
+            (marble_root / "marble" / "configs").mkdir(parents=True)
+            data_dir = marble_root / "multiagentbench"
+            data_dir.mkdir()
+
+            with pytest.raises(FileNotFoundError, match="No werewolf config"):
+                _load_werewolf_tasks(data_dir)
+
+    def test_load_werewolf_tasks_no_configs_dir_raises(self):
+        """_load_werewolf_tasks should raise if configs dir missing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "multiagentbench"
+            data_dir.mkdir()
+
+            with pytest.raises(FileNotFoundError, match="configs directory not found"):
+                _load_werewolf_tasks(data_dir)
+
+    def test_load_tasks_werewolf_domain_routes_to_config_loader(self):
+        """load_tasks('werewolf') should use config-based loading."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = self._create_werewolf_structure(Path(tmpdir))
+
+            tasks = load_tasks("werewolf", data_dir=data_dir)
+            assert len(tasks) == 1
+            assert tasks[0].metadata["domain"] == "werewolf"
+
+
+class TestParseWerewolfConfigBasic:
+    """Tests for _parse_werewolf_config_basic fallback parser."""
+
+    def test_parse_key_value_pairs(self):
+        """Should parse simple key-value pairs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "test.yaml"
+            config_path.write_text('cooperation_mode: "cooperative"\nuse_random_names: True\n')
+
+            config = _parse_werewolf_config_basic(config_path)
+
+            assert config["cooperation_mode"] == "cooperative"
+            assert config["use_random_names"] == "True"
+
+    def test_parse_list_values(self):
+        """Should parse list values."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "test.yaml"
+            config_path.write_text("roles:\n  - wolf\n  - villager\n  - seer\n")
+
+            config = _parse_werewolf_config_basic(config_path)
+
+            assert config["roles"] == ["wolf", "villager", "seer"]
+
+    def test_parse_skips_comments_and_empty_lines(self):
+        """Should skip comments and empty lines."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "test.yaml"
+            config_path.write_text("# Comment\n\nkey: value\n")
+
+            config = _parse_werewolf_config_basic(config_path)
+
+            assert config["key"] == "value"
+            assert len(config) == 1

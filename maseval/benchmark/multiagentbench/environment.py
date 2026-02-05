@@ -11,7 +11,7 @@ from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR
 
 
 # Domains requiring external infrastructure
-INFRASTRUCTURE_DOMAINS = frozenset({"database", "minecraft"})
+INFRASTRUCTURE_DOMAINS = frozenset({"database"})
 
 
 class MultiAgentBenchEnvironment(Environment):
@@ -75,6 +75,10 @@ class MultiAgentBenchEnvironment(Environment):
             "max_iterations": env_config.get("max_iterations") or task_data.get("max_iterations", 10),
         }
 
+        # Pass werewolf config path for WerewolfEnv (different constructor)
+        if domain.lower() == "werewolf":
+            marble_config["werewolf_config_path"] = task_data.get("werewolf_config_path", "")
+
         # Try to create MARBLE environment (may fail if MARBLE not available)
         try:
             self._marble_env = self._create_marble_environment(domain, marble_config)
@@ -104,10 +108,6 @@ class MultiAgentBenchEnvironment(Environment):
         if domain_lower == "database":
             # Check Docker availability
             return shutil.which("docker") is not None
-
-        if domain_lower == "minecraft":
-            # Minecraft requires external server - always fail for now
-            return False
 
         return True
 
@@ -160,6 +160,12 @@ class MultiAgentBenchEnvironment(Environment):
             module_path = module_path.replace("marble.", ".marble.marble.", 1)
             module = __import__(module_path, globals(), locals(), [class_name], 1)
             env_class = getattr(module, class_name)
+
+            # WerewolfEnv has a different constructor: (name, config_path, log_dir)
+            if domain_lower == "werewolf":
+                config_path = config.get("werewolf_config_path", "")
+                return env_class(env_name, config_path)
+
             return env_class(env_name, config)
         except (ImportError, AttributeError):
             # Fall back to base environment

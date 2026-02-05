@@ -466,6 +466,95 @@ class TestWerewolfEvaluation:
         assert ratings["collaboration"] is None
 
 
+class TestMinecraftEvaluation:
+    """Tests for minecraft-specific evaluation."""
+
+    @pytest.fixture
+    def minecraft_evaluator(self):
+        """Create evaluator with minecraft-specific responses."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            responses=[
+                '{"structural_completeness": 4, "blueprint_accuracy": 3, "coordination": 5, "efficiency": 4}',
+            ],
+        )
+        return MultiAgentBenchEvaluator(
+            domain="minecraft",
+            model_adapter=adapter,
+        )
+
+    def test_evaluate_minecraft_returns_all_metrics(self, minecraft_evaluator):
+        """_evaluate_minecraft should return all minecraft metrics."""
+        ratings = minecraft_evaluator._evaluate_minecraft("Task", "Result")
+
+        assert "structural_completeness" in ratings
+        assert "blueprint_accuracy" in ratings
+        assert "coordination" in ratings
+        assert "efficiency" in ratings
+
+    def test_determine_completion_minecraft_positive(self, minecraft_evaluator):
+        """_determine_completion should work for minecraft domain."""
+        metrics = MultiAgentBenchMetrics(
+            task_evaluation={
+                "structural_completeness": 4,
+                "blueprint_accuracy": 3,
+                "coordination": 5,
+                "efficiency": 4,
+            }
+        )
+        assert minecraft_evaluator._determine_completion(metrics) is True
+
+    def test_determine_completion_minecraft_negative(self, minecraft_evaluator):
+        """_determine_completion should return False for None minecraft scores."""
+        metrics = MultiAgentBenchMetrics(
+            task_evaluation={
+                "structural_completeness": 4,
+                "blueprint_accuracy": None,
+                "coordination": 5,
+                "efficiency": 4,
+            }
+        )
+        assert minecraft_evaluator._determine_completion(metrics) is False
+
+    def test_call_minecraft_domain(self, minecraft_evaluator):
+        """__call__ should work for minecraft domain."""
+        traces = {
+            "agents": {"agent1": {"token_usage": 100, "action_log": [], "communication_log": []}},
+            "environment": {},
+        }
+        final_answer = "Structure built successfully"
+
+        result = minecraft_evaluator(traces, final_answer)
+
+        assert result["domain"] == "minecraft"
+        assert "passed" in result
+        assert "structural_completeness" in result["metrics"]["task_evaluation"]
+
+    def test_parse_minecraft_ratings_invalid(self, minecraft_evaluator):
+        """_parse_minecraft_ratings should return None for invalid response."""
+        ratings = minecraft_evaluator._parse_minecraft_ratings("Invalid JSON")
+        assert ratings["structural_completeness"] is None
+        assert ratings["blueprint_accuracy"] is None
+        assert ratings["coordination"] is None
+        assert ratings["efficiency"] is None
+
+    def test_evaluate_minecraft_on_error(self):
+        """_evaluate_minecraft should return default values on error."""
+        from unittest.mock import MagicMock
+
+        mock_adapter = MagicMock()
+        mock_adapter.generate.side_effect = RuntimeError("Model failed")
+
+        evaluator = MultiAgentBenchEvaluator(
+            domain="minecraft",
+            model_adapter=mock_adapter,
+        )
+
+        result = evaluator._evaluate_minecraft("Task", "Result")
+        assert result["structural_completeness"] is None
+        assert result["efficiency"] is None
+
+
 class TestUnknownDomainEvaluation:
     """Tests for unknown domain handling."""
 

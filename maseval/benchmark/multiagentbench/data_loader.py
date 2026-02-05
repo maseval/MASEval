@@ -282,12 +282,161 @@ def _parse_task_entry(entry: Dict[str, Any], domain: str, idx: int) -> Task:
     )
 
 
+def _load_werewolf_tasks(
+    data_dir: Path,
+    limit: Optional[int] = None,
+) -> List[Task]:
+    """Load werewolf tasks from MARBLE config files.
+
+    Werewolf uses a config-based game engine rather than JSONL task data.
+    This function finds werewolf config YAMLs in the MARBLE configs directory
+    and constructs Task objects from them.
+
+    Args:
+        data_dir: Resolved MARBLE data directory (typically marble/multiagentbench/)
+        limit: Maximum number of tasks to load (None for all)
+
+    Returns:
+        List of Task objects for werewolf games
+
+    Raises:
+        FileNotFoundError: If no werewolf configs found
+    """
+    # Navigate from data_dir (marble/multiagentbench/) to MARBLE root (marble/)
+    marble_root = data_dir.parent
+
+    # Search for werewolf config YAMLs
+    configs_dir = marble_root / "marble" / "configs"
+    if not configs_dir.exists():
+        raise FileNotFoundError(
+            f"MARBLE configs directory not found: {configs_dir}\n"
+            "Ensure MARBLE is cloned to multiagentbench/marble/\n"
+            "See multiagentbench/README.md for setup instructions."
+        )
+
+    config_paths = sorted(configs_dir.glob("**/werewolf_config*.yaml"))
+
+    if not config_paths:
+        raise FileNotFoundError(f"No werewolf config files found in {configs_dir}\nExpected files matching: **/werewolf_config*.yaml")
+
+    tasks = []
+    for idx, config_path in enumerate(config_paths):
+        if limit is not None and idx >= limit:
+            break
+
+        # Parse the YAML config to extract game setup
+        try:
+            import yaml
+
+            with config_path.open(encoding="utf-8") as f:
+                config = yaml.safe_load(f)
+        except ImportError:
+            # Fall back to basic parsing if PyYAML not available
+            config = _parse_werewolf_config_basic(config_path)
+
+        roles = config.get("roles", [])
+        cooperation_mode = config.get("cooperation_mode", "cooperative")
+
+        # Build agent specs from roles
+        agents = []
+        for role_idx, role in enumerate(roles):
+            agents.append(
+                {
+                    "agent_id": f"player_{role_idx}",
+                    "profile": f"Werewolf game player with role: {role}",
+                    "type": "WerewolfAgent",
+                    "role": role,
+                }
+            )
+
+        task = Task(
+            id=f"werewolf_{idx}",
+            query="Play a Werewolf social deduction game",
+            environment_data={
+                "scenario": "werewolf",
+                "coordinate_mode": cooperation_mode,
+                "relationships": [],
+                "environment": {
+                    "type": "Werewolf",
+                    "description": "Werewolf social deduction game",
+                },
+                "task": {
+                    "content": "Play a Werewolf social deduction game",
+                },
+                "agents": agents,
+                "max_iterations": 20,
+                "engine_planner": {},
+                "memory": {},
+                "output": {},
+                "werewolf_config_path": str(config_path),
+                "raw_marble_config": config,
+            },
+            evaluation_data={
+                "metrics": {},
+                "output_format": "",
+            },
+            metadata={
+                "domain": "werewolf",
+                "task_id": idx,
+                "scenario": "werewolf",
+                "config_path": str(config_path),
+            },
+        )
+        tasks.append(task)
+
+    return tasks
+
+
+def _parse_werewolf_config_basic(config_path: Path) -> Dict[str, Any]:
+    """Parse a werewolf YAML config without PyYAML.
+
+    Basic key-value and list parsing for werewolf configs.
+
+    Args:
+        config_path: Path to the YAML config file
+
+    Returns:
+        Parsed config dictionary
+    """
+    config: Dict[str, Any] = {}
+    current_key = ""
+    current_list: List[str] = []
+
+    with config_path.open(encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+
+            if stripped.startswith("- "):
+                # List item
+                current_list.append(stripped[2:].strip())
+                config[current_key] = current_list
+            elif ":" in stripped:
+                # Key-value pair
+                key, _, value = stripped.partition(":")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+
+                if value:
+                    config[key] = value
+                else:
+                    # Start of a list or nested object
+                    current_key = key
+                    current_list = []
+
+    return config
+
+
 def load_tasks(
     domain: str,
     data_dir: Optional[Path] = None,
     limit: Optional[int] = None,
 ) -> List[Task]:
-    """Load MultiAgentBench tasks from JSONL files.
+    """Load MultiAgentBench tasks for a domain.
+
+    Most domains load from JSONL files. Werewolf uses config-based
+    task loading since it has no JSONL data (it uses a game engine).
 
     Args:
         domain: Domain name (one of: coding, database, minecraft, research,
@@ -316,6 +465,11 @@ def load_tasks(
 
     # Find data directory
     resolved_data_dir = _resolve_data_dir(data_dir)
+
+    # Werewolf uses config-based loading (no JSONL data)
+    if domain_lower == "werewolf":
+        return _load_werewolf_tasks(resolved_data_dir, limit)
+
     jsonl_path = resolved_data_dir / domain_lower / f"{domain_lower}_main.jsonl"
 
     if not jsonl_path.exists():
@@ -413,7 +567,7 @@ def get_domain_info(domain: str) -> Dict[str, Any]:
         },
         "minecraft": {
             "requires_infrastructure": True,
-            "description": "Collaborative building in Minecraft (requires game server)",
+            "description": "Collaborative building in Minecraft (untested; requires Minecraft Server 1.19.2, Node.js, npm)",
             "coordination_mode": "cooperative",
         },
         "research": {

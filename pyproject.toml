@@ -48,7 +48,7 @@ wandb = ["wandb>=0.15.0"]
 langfuse = ["langfuse>=3.3.4"]
 
 # Benchmarks
-gaia2 = ["are>=1.2.0", "datasets>=3.0.0"]
+gaia2 = ["meta-agents-research-environments>=1.2.0", "datasets>=3.0.0"]
 
 # Dependencies for running examples (only what's actually used)
 examples = [

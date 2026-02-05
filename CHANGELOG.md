@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Benchmarks**
 
-- MultiAgentBench: Aligned domains with MARBLE paper. Removed `web` and `worldsimulation` (not in paper, no task data). Added `werewolf` domain with evaluation support. Fixed `bargaining` environment mapping to use `WorldSimulationEnvironment`. (PR: #PR_NUMBER_PLACEHOLDER)
+- MultiAgentBench: Full alignment with MARBLE paper — all 6 domains now fully supported end-to-end. Removed `web` and `worldsimulation` (not in paper, no task data). Added `werewolf` domain with config-based task loading and LLM evaluation. Added `minecraft` domain evaluation. Fixed `bargaining` environment mapping to use `WorldSimulationEnvironment`. Fixed `WerewolfEnv` constructor handling. Removed hard-coded minecraft infrastructure block. (PR: #PR_NUMBER_PLACEHOLDER)
 
 **Core**
 

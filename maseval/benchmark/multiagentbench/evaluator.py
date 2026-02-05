@@ -124,6 +124,11 @@ class MultiAgentBenchEvaluator(Evaluator):
                     "prompt": self._load_template("werewolf.txt"),
                 }
             },
+            "minecraft": {
+                "task_evaluation": {
+                    "prompt": self._load_template("minecraft.txt"),
+                }
+            },
         }
 
     def filter_traces(self, traces: Dict[str, Any]) -> Dict[str, Any]:
@@ -223,6 +228,8 @@ class MultiAgentBenchEvaluator(Evaluator):
             metrics.task_evaluation = self._evaluate_database(task_desc, final_result)
         elif self.domain == "werewolf":
             metrics.task_evaluation = self._evaluate_werewolf(task_desc, final_result)
+        elif self.domain == "minecraft":
+            metrics.task_evaluation = self._evaluate_minecraft(task_desc, final_result)
         else:
             # Default: check if task has a completion marker
             metrics.task_completion = bool(final_result)
@@ -371,6 +378,27 @@ class MultiAgentBenchEvaluator(Evaluator):
                 "survival_rate": None,
             }
 
+    def _evaluate_minecraft(self, task: str, result: str) -> Dict[str, Any]:
+        """Evaluate minecraft building task output.
+
+        Warning:
+            Minecraft evaluation is untested. It requires a running Minecraft
+            Server (1.19.2) and Node.js/npm for Mineflayer bot dependencies.
+        """
+        prompt_template = self._evaluation_prompts["minecraft"]["task_evaluation"]["prompt"]
+        prompt = prompt_template.format(task=task, result=result)
+
+        try:
+            response = self.model_adapter.generate(prompt)
+            return self._parse_minecraft_ratings(response)
+        except Exception:
+            return {
+                "structural_completeness": None,
+                "blueprint_accuracy": None,
+                "coordination": None,
+                "efficiency": None,
+            }
+
     def _parse_score(self, response: str) -> Optional[float]:
         """Parse a single score from LLM response.
 
@@ -499,6 +527,28 @@ class MultiAgentBenchEvaluator(Evaluator):
 
         return {k: None for k in keys}
 
+    def _parse_minecraft_ratings(self, response: str) -> Dict[str, Optional[int]]:
+        """Parse minecraft evaluation ratings."""
+        keys = [
+            "structural_completeness",
+            "blueprint_accuracy",
+            "coordination",
+            "efficiency",
+        ]
+        try:
+            content = response.strip()
+            json_start = content.find("{")
+            json_end = content.rfind("}") + 1
+
+            if json_start >= 0 and json_end > json_start:
+                json_str = content[json_start:json_end]
+                ratings = json.loads(json_str)
+                return {k: int(ratings[k]) if k in ratings else None for k in keys}
+        except Exception:
+            pass
+
+        return {k: None for k in keys}
+
     def _determine_completion(self, metrics: MultiAgentBenchMetrics) -> bool:
         """Determine if task was completed based on metrics.
 
@@ -544,6 +594,18 @@ class MultiAgentBenchEvaluator(Evaluator):
                     "information_usage",
                     "collaboration",
                     "survival_rate",
+                ]
+            ]
+            return _all_scores_valid(scores)
+
+        elif self.domain == "minecraft":
+            scores = [
+                eval_data.get(k)
+                for k in [
+                    "structural_completeness",
+                    "blueprint_accuracy",
+                    "coordination",
+                    "efficiency",
                 ]
             ]
             return _all_scores_valid(scores)

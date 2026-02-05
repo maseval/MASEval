@@ -17,12 +17,12 @@ class TestInfrastructureDomains:
     def test_infrastructure_domains_contains_expected(self):
         """INFRASTRUCTURE_DOMAINS should contain expected domains."""
         assert "database" in INFRASTRUCTURE_DOMAINS
-        assert "minecraft" in INFRASTRUCTURE_DOMAINS
 
     def test_infrastructure_domains_excludes_simple(self):
         """INFRASTRUCTURE_DOMAINS should not include simple domains."""
         assert "research" not in INFRASTRUCTURE_DOMAINS
         assert "bargaining" not in INFRASTRUCTURE_DOMAINS
+        assert "minecraft" not in INFRASTRUCTURE_DOMAINS
 
 
 class TestMultiAgentBenchEnvironment:
@@ -139,8 +139,8 @@ class TestInfrastructureCheck:
                 # Expected if MARBLE not available
                 pass
 
-    def test_minecraft_always_raises(self):
-        """Environment should raise for minecraft (not supported)."""
+    def test_minecraft_no_infrastructure_check(self):
+        """Minecraft should not require infrastructure check (fails at runtime instead)."""
         task_data = {
             "scenario": "minecraft",
             "environment": {"type": "Minecraft"},
@@ -148,8 +148,10 @@ class TestInfrastructureCheck:
             "agents": [{"agent_id": "agent1"}],
         }
 
-        with pytest.raises(EnvironmentError, match="requires external infrastructure"):
-            MultiAgentBenchEnvironment(task_data=task_data)
+        # Should not raise EnvironmentError - minecraft is no longer in INFRASTRUCTURE_DOMAINS
+        # MARBLE env creation may fail with ImportError (which is caught), but no infrastructure check
+        env = MultiAgentBenchEnvironment(task_data=task_data)
+        assert env.domain == "minecraft"
 
 
 class TestApplyAction:

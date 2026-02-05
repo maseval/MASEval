@@ -4,7 +4,7 @@ The **MultiAgentBench** benchmark evaluates multi-agent collaboration and compet
 
 [MultiAgentBench](https://github.com/ulab-uiuc/MARBLE) (from the MARBLE framework) is designed to evaluate how multiple LLM-based agents collaborate and compete to solve complex tasks. The benchmark features:
 
-- **6 diverse domains**: research, bargaining, coding, database, werewolf, minecraft
+- **6 diverse domains**: research, bargaining, coding, database, werewolf, minecraft (minecraft is untested)
 - **Multiple coordination modes**: cooperative, star, tree, hierarchical
 - **LLM-based evaluation**: Matches MARBLE's evaluation methodology
 - **Framework-agnostic**: Use with any agent framework or MARBLE's native agents

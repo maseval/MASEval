@@ -135,22 +135,22 @@ for result in results:
 
 MultiAgentBench includes 6 domains with different requirements:
 
-| Domain     | External Dependencies | Initial Support |
-| ---------- | --------------------- | --------------- |
-| Research   | None                  | Yes             |
-| Bargaining | None                  | Yes             |
-| Coding     | Filesystem access     | Yes             |
-| Werewolf   | None                  | Yes             |
-| Database   | Docker + PostgreSQL   | Optional        |
-| Minecraft  | External game server  | Deferred        |
+| Domain     | External Dependencies                      | Support     |
+| ---------- | ------------------------------------------ | ----------- |
+| Research   | None                                       | Full        |
+| Bargaining | None                                       | Full        |
+| Coding     | Filesystem access                          | Full        |
+| Werewolf   | None                                       | Full        |
+| Database   | Docker with PostgreSQL image               | Full        |
+| Minecraft  | Minecraft Server 1.19.2, Node.js, npm      | Untested    |
 
 ### Domain-Specific Notes
 
 - **Research/Bargaining**: Recommended for initial testing - no infrastructure required
 - **Coding**: Creates files in a workspace directory
 - **Werewolf**: Config-based social deduction game (no JSONL task data; uses MARBLE's WerewolfEnv engine)
-- **Database**: Requires Docker with PostgreSQL image
-- **Minecraft**: Not currently supported (requires external game server)
+- **Database**: Requires Docker with a PostgreSQL image. Ensure Docker is installed and running before using this domain.
+- **Minecraft**: **Untested.** Requires a running Minecraft Server (version 1.19.2) on `localhost:25565`, plus Node.js and npm for the Mineflayer bot framework. MARBLE's MinecraftEnvironment connects real Minecraft bots to the server over the Minecraft protocol. You must set up and run your own Minecraft server before using this domain. See the MARBLE documentation for full server setup instructions.
 
 ## Known Limitations
 
