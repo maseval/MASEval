@@ -17,8 +17,10 @@ from maseval import Task
 logger = logging.getLogger(__name__)
 
 # MARBLE repository configuration
-MARBLE_REPO_URL = "https://github.com/ulab-uiuc/MARBLE.git"
-MARBLE_DEFAULT_COMMIT = "8d60fa17b5596b44458a52d4296061b9fc13d6f2"  # Pinned for reproducibility
+# Original: https://github.com/ulab-uiuc/MARBLE (where the work was done)
+# Using fork: https://github.com/cemde/MARBLE (contains bug fixes)
+MARBLE_REPO_URL = "https://github.com/cemde/MARBLE.git"
+MARBLE_DEFAULT_COMMIT = None  # Unpinned while bug fixes are being added; will pin once stable
 
 # Valid domain names
 VALID_DOMAINS: FrozenSet[str] = frozenset(
@@ -149,7 +151,7 @@ def ensure_marble_exists(auto_download: bool = True) -> Path:
         raise FileNotFoundError(
             f"MARBLE not found at {marble_dir}.\n"
             "Run `ensure_marble_exists(auto_download=True)` to download automatically,\n"
-            "or manually clone: git clone https://github.com/ulab-uiuc/MARBLE.git marble"
+            "or manually clone: git clone https://github.com/cemde/MARBLE.git marble"
         )
 
     return download_marble(marble_dir)

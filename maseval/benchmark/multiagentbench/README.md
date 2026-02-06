@@ -6,7 +6,11 @@ Framework-agnostic implementation of the MultiAgentBench benchmark suite from MA
 **Original Paper**: "MultiAgentBench: Evaluating the Collaboration and Competition of LLM agents"
 (arXiv:2503.01935)
 
-**Original Repository**: https://github.com/ulab-uiuc/MARBLE
+**Original Repository**: https://github.com/ulab-uiuc/MARBLE (where the original work was done)
+
+**Fork Used**: https://github.com/cemde/MARBLE (contains bug fixes for MASEval integration)
+
+> **Note**: We use a fork of MARBLE that contains critical bug fixes needed for integration. All credit for the original work goes to the MARBLE team (Haofei Yu et al.).
 
 ## Setup
 
@@ -33,7 +37,7 @@ If you prefer to clone manually:
 
 ```bash
 cd maseval/benchmark/multiagentbench
-git clone https://github.com/ulab-uiuc/MARBLE.git marble
+git clone https://github.com/cemde/MARBLE.git marble
 cd marble
 # Pin to tested version (recommended)
 git checkout <pinned-commit-hash>
