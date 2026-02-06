@@ -7,9 +7,10 @@ MARBLE's MultiAgentBench JSONL files.
 import json
 import logging
 import os
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Optional
+
+import git
 
 from maseval import Task
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # MARBLE repository configuration
 MARBLE_REPO_URL = "https://github.com/ulab-uiuc/MARBLE.git"
-MARBLE_DEFAULT_COMMIT = None  # Set to a specific commit hash for reproducibility, or None for latest
+MARBLE_DEFAULT_COMMIT = "8d60fa17b5596b44458a52d4296061b9fc13d6f2"  # Pinned for reproducibility
 
 # Valid domain names
 VALID_DOMAINS: FrozenSet[str] = frozenset(
@@ -84,31 +85,18 @@ def download_marble(
     logger.info(f"Cloning MARBLE from {MARBLE_REPO_URL} to {target_dir}")
 
     try:
-        subprocess.run(
-            ["git", "clone", MARBLE_REPO_URL, str(target_dir)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to clone MARBLE: {e.stderr}") from e
-    except FileNotFoundError:
-        raise RuntimeError("git is not installed or not in PATH. Please install git and try again.")
+        repo = git.Repo.clone_from(MARBLE_REPO_URL, str(target_dir))
+    except git.GitCommandError as e:
+        raise RuntimeError(f"Failed to clone MARBLE: {e}") from e
 
     # Checkout specific commit if requested
     checkout_commit = commit or MARBLE_DEFAULT_COMMIT
     if checkout_commit:
         logger.info(f"Checking out commit: {checkout_commit}")
         try:
-            subprocess.run(
-                ["git", "checkout", checkout_commit],
-                cwd=target_dir,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to checkout commit {checkout_commit}: {e.stderr}") from e
+            repo.git.checkout(checkout_commit)
+        except git.GitCommandError as e:
+            raise RuntimeError(f"Failed to checkout commit {checkout_commit}: {e}") from e
 
     # Create __init__.py at clone root so Python can traverse it as a package.
     # The actual MARBLE Python package lives at marble/marble/ inside the clone,
@@ -145,6 +133,18 @@ def ensure_marble_exists(auto_download: bool = True) -> Path:
 
     # Check if MARBLE exists and has the expected structure
     if marble_dir.exists() and (marble_dir / "multiagentbench").exists():
+        # Verify pinned commit if set
+        if MARBLE_DEFAULT_COMMIT:
+            try:
+                repo = git.Repo(marble_dir)
+                current_commit = repo.head.commit.hexsha
+                if current_commit != MARBLE_DEFAULT_COMMIT:
+                    logger.info(
+                        f"MARBLE at {current_commit[:12]} but pinned to {MARBLE_DEFAULT_COMMIT[:12]}, checking out..."
+                    )
+                    repo.git.checkout(MARBLE_DEFAULT_COMMIT)
+            except (git.InvalidGitRepositoryError, git.GitCommandError):
+                logger.warning("Could not verify MARBLE commit (not a git repo or checkout failed)")
         return marble_dir
 
     if not auto_download:
