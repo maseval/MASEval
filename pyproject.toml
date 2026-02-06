@@ -49,6 +49,7 @@ langfuse = ["langfuse>=3.3.4"]
 
 # Benchmarks
 gaia2 = ["meta-agents-research-environments>=1.2.0", "datasets>=3.0.0"]
+multiagentbench = ["ruamel.yaml>=0.17.0"]
 
 # Dependencies for running examples (only what's actually used)
 examples = [
