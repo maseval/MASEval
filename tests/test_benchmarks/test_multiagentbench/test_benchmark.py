@@ -1,7 +1,9 @@
 """Tests for MultiAgentBench benchmark classes."""
 
+import sys
+
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from maseval import Task
 from maseval.benchmark.multiagentbench import (
@@ -461,8 +463,20 @@ class TestMarbleMultiAgentBenchBenchmark:
         """_create_marble_env should raise ImportError when MARBLE not available."""
         benchmark = marble_benchmark_class(progress_bar=False)
 
-        with pytest.raises(ImportError, match="MARBLE is not available"):
-            benchmark._create_marble_env(sample_research_task)
+        # Mock MARBLE import to simulate it not being available
+        # Temporarily remove marble modules from sys.modules
+        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
+        for module_name in marble_modules:
+            sys.modules.pop(module_name, None)
+
+        try:
+            # Patch the import to raise ImportError
+            with patch.dict("sys.modules", {"maseval.benchmark.multiagentbench.marble.marble.environments.base_env": None}):
+                with pytest.raises(ImportError, match="MARBLE is not available"):
+                    benchmark._create_marble_env(sample_research_task)
+        finally:
+            # Restore marble modules
+            sys.modules.update(marble_modules)
 
     def test_setup_agent_graph_silently_fails(
         self,

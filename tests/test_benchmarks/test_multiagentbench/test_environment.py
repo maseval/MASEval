@@ -1,8 +1,10 @@
 """Tests for MultiAgentBench environment."""
 
-import pytest
+import sys
 from typing import Any, Dict
 from unittest.mock import patch, MagicMock
+
+import pytest
 
 from maseval.benchmark.multiagentbench.environment import (
     MultiAgentBenchEnvironment,
@@ -71,9 +73,19 @@ class TestMultiAgentBenchEnvironment:
 
     def test_get_marble_state_empty_without_marble(self, sample_research_task_data: Dict[str, Any]):
         """get_marble_state should return empty dict without MARBLE."""
-        env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+        # Temporarily remove marble modules to simulate MARBLE not being available
+        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
+        for module_name in marble_modules:
+            sys.modules.pop(module_name, None)
 
-        assert env.get_marble_state() == {}
+        try:
+            # Patch import to raise ImportError
+            with patch.dict("sys.modules", {"maseval.benchmark.multiagentbench.marble.marble.environments.base_env": None}):
+                env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+                assert env.get_marble_state() == {}
+        finally:
+            # Restore marble modules
+            sys.modules.update(marble_modules)
 
     def test_get_tool_descriptions_empty_without_marble(self, sample_research_task_data: Dict[str, Any]):
         """get_tool_descriptions should return empty dict without MARBLE."""
@@ -159,10 +171,21 @@ class TestApplyAction:
 
     def test_apply_action_without_marble_raises(self, sample_research_task_data: Dict[str, Any]):
         """apply_action should raise without MARBLE environment."""
-        env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+        # Temporarily remove marble modules to simulate MARBLE not being available
+        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
+        for module_name in marble_modules:
+            sys.modules.pop(module_name, None)
 
-        with pytest.raises(EnvironmentError, match="not available"):
-            env.apply_action("agent1", "some_action", {"arg": "value"})
+        try:
+            # Patch import to raise ImportError
+            with patch.dict("sys.modules", {"maseval.benchmark.multiagentbench.marble.marble.environments.base_env": None}):
+                env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+
+                with pytest.raises(EnvironmentError, match="not available"):
+                    env.apply_action("agent1", "some_action", {"arg": "value"})
+        finally:
+            # Restore marble modules
+            sys.modules.update(marble_modules)
 
 
 class TestWithMockedMarbleEnv:

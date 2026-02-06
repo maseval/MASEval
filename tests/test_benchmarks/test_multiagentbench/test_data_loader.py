@@ -1,12 +1,12 @@
 """Tests for MultiAgentBench data loading functionality."""
 
 import json
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
+import git
 import pytest
 
 from maseval import Task
@@ -366,54 +366,61 @@ class TestDownloadMarble:
         with tempfile.TemporaryDirectory() as tmpdir:
             marble_dir = Path(tmpdir) / "marble"
             marble_dir.mkdir()
-            (marble_dir / "test_file.txt").write_text("test")
+            test_file = marble_dir / "test_file.txt"
+            test_file.write_text("test")
 
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
+            # Mock git operations
+            mock_repo = MagicMock()
+            with patch("git.Repo.clone_from", return_value=mock_repo) as mock_clone:
                 download_marble(target_dir=marble_dir, force=True)
 
-                # Directory should have been removed and git clone called
-                mock_run.assert_called()
+                # Directory should have been removed (test file gone)
+                assert not test_file.exists()
+                # Git clone should have been called
+                mock_clone.assert_called_once()
 
     def test_download_marble_git_clone_called(self):
         """download_marble should call git clone."""
         with tempfile.TemporaryDirectory() as tmpdir:
             marble_dir = Path(tmpdir) / "marble"
 
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
+            # Mock git operations
+            mock_repo = MagicMock()
+            with patch("git.Repo.clone_from", return_value=mock_repo) as mock_clone:
                 download_marble(target_dir=marble_dir)
 
-                # Verify git clone was called
-                calls = mock_run.call_args_list
-                assert len(calls) >= 1
-                clone_call = calls[0]
-                assert "git" in clone_call[0][0]
-                assert "clone" in clone_call[0][0]
+                # Verify git clone was called with correct arguments
+                mock_clone.assert_called_once()
+                args, kwargs = mock_clone.call_args
+                from maseval.benchmark.multiagentbench.data_loader import MARBLE_REPO_URL
+
+                assert args[0] == MARBLE_REPO_URL
+                assert args[1] == str(marble_dir)
 
     def test_download_marble_with_commit(self):
         """download_marble should checkout specific commit if provided."""
         with tempfile.TemporaryDirectory() as tmpdir:
             marble_dir = Path(tmpdir) / "marble"
 
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
+            # Mock git operations
+            mock_git = MagicMock()
+            mock_repo = MagicMock()
+            mock_repo.git = mock_git
+
+            with patch("git.Repo.clone_from", return_value=mock_repo):
                 download_marble(target_dir=marble_dir, commit="abc123")
 
-                # Verify git checkout was called
-                calls = mock_run.call_args_list
-                assert len(calls) >= 2
-                checkout_call = calls[1]
-                assert "checkout" in checkout_call[0][0]
-                assert "abc123" in checkout_call[0][0]
+                # Verify git checkout was called with the commit
+                mock_git.checkout.assert_called_once_with("abc123")
 
     def test_download_marble_clone_fails(self):
         """download_marble should raise RuntimeError on clone failure."""
         with tempfile.TemporaryDirectory() as tmpdir:
             marble_dir = Path(tmpdir) / "marble"
 
-            with patch("subprocess.run") as mock_run:
-                mock_run.side_effect = subprocess.CalledProcessError(1, "git clone", stderr="Clone failed")
+            with patch("git.Repo.clone_from") as mock_clone:
+                # Simulate git clone failure
+                mock_clone.side_effect = git.GitCommandError("clone", 1, stderr=b"Clone failed")
 
                 with pytest.raises(RuntimeError, match="Failed to clone MARBLE"):
                     download_marble(target_dir=marble_dir)
@@ -423,10 +430,11 @@ class TestDownloadMarble:
         with tempfile.TemporaryDirectory() as tmpdir:
             marble_dir = Path(tmpdir) / "marble"
 
-            with patch("subprocess.run") as mock_run:
-                mock_run.side_effect = FileNotFoundError()
+            with patch("git.Repo.clone_from") as mock_clone:
+                # Simulate git executable not found
+                mock_clone.side_effect = git.exc.GitCommandNotFound("git", "git: command not found")
 
-                with pytest.raises(RuntimeError, match="git is not installed"):
+                with pytest.raises(RuntimeError, match="Failed to clone MARBLE"):
                     download_marble(target_dir=marble_dir)
 
     def test_download_marble_checkout_fails(self):
@@ -434,13 +442,15 @@ class TestDownloadMarble:
         with tempfile.TemporaryDirectory() as tmpdir:
             marble_dir = Path(tmpdir) / "marble"
 
-            def mock_run_side_effect(*args, **kwargs):
-                cmd = args[0]
-                if "checkout" in cmd:
-                    raise subprocess.CalledProcessError(1, "git checkout", stderr="Checkout failed")
-                return MagicMock(returncode=0)
+            # Mock git operations
+            mock_git = MagicMock()
+            mock_repo = MagicMock()
+            mock_repo.git = mock_git
 
-            with patch("subprocess.run", side_effect=mock_run_side_effect):
+            # Simulate checkout failure
+            mock_git.checkout.side_effect = git.GitCommandError("checkout", 1, stderr=b"Checkout failed")
+
+            with patch("git.Repo.clone_from", return_value=mock_repo):
                 with pytest.raises(RuntimeError, match="Failed to checkout commit"):
                     download_marble(target_dir=marble_dir, commit="invalid")
 

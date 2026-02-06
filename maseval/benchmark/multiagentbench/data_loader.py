@@ -86,7 +86,7 @@ def download_marble(
 
     try:
         repo = git.Repo.clone_from(MARBLE_REPO_URL, str(target_dir))
-    except git.GitCommandError as e:
+    except (git.GitCommandError, git.exc.GitCommandNotFound) as e:
         raise RuntimeError(f"Failed to clone MARBLE: {e}") from e
 
     # Checkout specific commit if requested
@@ -139,9 +139,7 @@ def ensure_marble_exists(auto_download: bool = True) -> Path:
                 repo = git.Repo(marble_dir)
                 current_commit = repo.head.commit.hexsha
                 if current_commit != MARBLE_DEFAULT_COMMIT:
-                    logger.info(
-                        f"MARBLE at {current_commit[:12]} but pinned to {MARBLE_DEFAULT_COMMIT[:12]}, checking out..."
-                    )
+                    logger.info(f"MARBLE at {current_commit[:12]} but pinned to {MARBLE_DEFAULT_COMMIT[:12]}, checking out...")
                     repo.git.checkout(MARBLE_DEFAULT_COMMIT)
             except (git.InvalidGitRepositoryError, git.GitCommandError):
                 logger.warning("Could not verify MARBLE commit (not a git repo or checkout failed)")
