@@ -452,8 +452,17 @@ class TestMarbleMultiAgentBenchBenchmark:
         benchmark = marble_benchmark_class(progress_bar=False)
         env = benchmark.setup_environment({}, sample_research_task, seed_gen)
 
-        with pytest.raises(ImportError, match="MARBLE is not available"):
-            benchmark.setup_agents({}, env, sample_research_task, None, seed_gen)
+        # Temporarily remove marble modules to simulate MARBLE not being available
+        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
+        for module_name in marble_modules:
+            sys.modules.pop(module_name, None)
+
+        try:
+            with patch.dict("sys.modules", {"marble.agent.base_agent": None}):
+                with pytest.raises(ImportError, match="MARBLE is not available"):
+                    benchmark.setup_agents({}, env, sample_research_task, None, seed_gen)
+        finally:
+            sys.modules.update(marble_modules)
 
     def test_create_marble_env_raises_import_error(
         self,
@@ -471,23 +480,23 @@ class TestMarbleMultiAgentBenchBenchmark:
 
         try:
             # Patch the import to raise ImportError
-            with patch.dict("sys.modules", {"maseval.benchmark.multiagentbench.marble.marble.environments.base_env": None}):
+            with patch.dict("sys.modules", {"marble.environments.base_env": None}):
                 with pytest.raises(ImportError, match="MARBLE is not available"):
                     benchmark._create_marble_env(sample_research_task)
         finally:
             # Restore marble modules
             sys.modules.update(marble_modules)
 
-    def test_setup_agent_graph_silently_fails(
+    def test_setup_agent_graph_with_missing_agents_raises(
         self,
         marble_benchmark_class,
         sample_research_task: Task,
     ):
-        """_setup_agent_graph should not raise when MARBLE not available."""
+        """_setup_agent_graph should raise when agents referenced in relationships don't exist."""
         benchmark = marble_benchmark_class(progress_bar=False)
 
-        # Should not raise, just return silently
-        benchmark._setup_agent_graph({}, sample_research_task, None)
+        with pytest.raises(ValueError, match="does not exist"):
+            benchmark._setup_agent_graph({}, sample_research_task, None)
 
     def test_run_agents_returns_structured_output(
         self,

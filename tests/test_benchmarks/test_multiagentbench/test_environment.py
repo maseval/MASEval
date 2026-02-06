@@ -43,6 +43,19 @@ class TestMultiAgentBenchEnvironment:
 
         assert env.domain == "bargaining"
 
+    def test_init_raises_without_marble(self, sample_research_task_data: Dict[str, Any]):
+        """Constructor should raise ImportError when MARBLE is not available."""
+        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
+        for module_name in marble_modules:
+            sys.modules.pop(module_name, None)
+
+        try:
+            with patch.dict("sys.modules", {"marble.environments.base_env": None}):
+                with pytest.raises(ImportError, match="MARBLE is not available"):
+                    MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+        finally:
+            sys.modules.update(marble_modules)
+
     def test_setup_state_extracts_domain(self, sample_research_task_data: Dict[str, Any]):
         """setup_state should extract domain from task data."""
         env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
@@ -61,44 +74,13 @@ class TestMultiAgentBenchEnvironment:
         """is_done should return False initially."""
         env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
 
-        # Without MARBLE env, always returns False
         assert env.is_done() is False
 
     def test_is_task_completed_initially_false(self, sample_research_task_data: Dict[str, Any]):
         """is_task_completed should return False initially."""
         env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
 
-        # Without MARBLE env, always returns False
         assert env.is_task_completed() is False
-
-    def test_get_marble_state_empty_without_marble(self, sample_research_task_data: Dict[str, Any]):
-        """get_marble_state should return empty dict without MARBLE."""
-        # Temporarily remove marble modules to simulate MARBLE not being available
-        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
-        for module_name in marble_modules:
-            sys.modules.pop(module_name, None)
-
-        try:
-            # Patch import to raise ImportError
-            with patch.dict("sys.modules", {"maseval.benchmark.multiagentbench.marble.marble.environments.base_env": None}):
-                env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
-                assert env.get_marble_state() == {}
-        finally:
-            # Restore marble modules
-            sys.modules.update(marble_modules)
-
-    def test_get_tool_descriptions_empty_without_marble(self, sample_research_task_data: Dict[str, Any]):
-        """get_tool_descriptions should return empty dict without MARBLE."""
-        env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
-
-        assert env.get_tool_descriptions() == {}
-
-    def test_create_tools_empty_without_marble(self, sample_research_task_data: Dict[str, Any]):
-        """create_tools should return empty dict without MARBLE."""
-        env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
-        tools = env.create_tools()
-
-        assert tools == {}
 
     def test_gather_traces_includes_domain(self, sample_research_task_data: Dict[str, Any]):
         """gather_traces should include domain information."""
@@ -107,6 +89,8 @@ class TestMultiAgentBenchEnvironment:
 
         assert traces["domain"] == "research"
         assert "tool_invocations" in traces
+        assert "marble_state" in traces
+        assert "is_done" in traces
 
     def test_gather_config_includes_domain(self, sample_research_task_data: Dict[str, Any]):
         """gather_config should include domain information."""
@@ -115,6 +99,12 @@ class TestMultiAgentBenchEnvironment:
 
         assert config["domain"] == "research"
         assert "tool_descriptions" in config
+
+    def test_marble_env_type_in_state(self, sample_research_task_data: Dict[str, Any]):
+        """setup_state should include MARBLE env type."""
+        env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+
+        assert env.state["marble_env_type"] == "ResearchEnvironment"
 
 
 class TestInfrastructureCheck:
@@ -133,8 +123,8 @@ class TestInfrastructureCheck:
             with pytest.raises(EnvironmentError, match="requires external infrastructure"):
                 MultiAgentBenchEnvironment(task_data=task_data)
 
-    def test_database_with_docker_succeeds(self):
-        """Environment should succeed for database with Docker."""
+    def test_database_with_docker_passes_infra_check(self):
+        """Database domain should pass infrastructure check when Docker is available."""
         task_data = {
             "scenario": "database",
             "environment": {"type": "DB"},
@@ -143,13 +133,10 @@ class TestInfrastructureCheck:
         }
 
         with patch("shutil.which", return_value="/usr/bin/docker"):
-            # Should not raise, but MARBLE env creation may still fail
-            try:
+            # Mock _create_marble_environment since DBEnvironment.__init__ starts Docker + DB
+            with patch.object(MultiAgentBenchEnvironment, "_create_marble_environment", return_value=MagicMock()):
                 env = MultiAgentBenchEnvironment(task_data=task_data)
                 assert env.domain == "database"
-            except ImportError:
-                # Expected if MARBLE not available
-                pass
 
     def test_minecraft_no_infrastructure_check(self):
         """Minecraft should not require infrastructure check (fails at runtime instead)."""
@@ -160,32 +147,8 @@ class TestInfrastructureCheck:
             "agents": [{"agent_id": "agent1"}],
         }
 
-        # Should not raise EnvironmentError - minecraft is no longer in INFRASTRUCTURE_DOMAINS
-        # MARBLE env creation may fail with ImportError (which is caught), but no infrastructure check
         env = MultiAgentBenchEnvironment(task_data=task_data)
         assert env.domain == "minecraft"
-
-
-class TestApplyAction:
-    """Tests for apply_action method."""
-
-    def test_apply_action_without_marble_raises(self, sample_research_task_data: Dict[str, Any]):
-        """apply_action should raise without MARBLE environment."""
-        # Temporarily remove marble modules to simulate MARBLE not being available
-        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
-        for module_name in marble_modules:
-            sys.modules.pop(module_name, None)
-
-        try:
-            # Patch import to raise ImportError
-            with patch.dict("sys.modules", {"maseval.benchmark.multiagentbench.marble.marble.environments.base_env": None}):
-                env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
-
-                with pytest.raises(EnvironmentError, match="not available"):
-                    env.apply_action("agent1", "some_action", {"arg": "value"})
-        finally:
-            # Restore marble modules
-            sys.modules.update(marble_modules)
 
 
 class TestWithMockedMarbleEnv:
