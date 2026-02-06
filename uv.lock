@@ -2834,25 +2834,44 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "anthropic" },
+    { name = "arxiv" },
+    { name = "beartype" },
+    { name = "beautifulsoup4" },
     { name = "camel-ai" },
+    { name = "colorlog" },
     { name = "datasets" },
+    { name = "flask" },
     { name = "google-genai" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
+    { name = "javascript" },
     { name = "jupyter" },
+    { name = "keybert" },
     { name = "langchain" },
     { name = "langchain-google-genai" },
     { name = "langfuse" },
     { name = "langgraph" },
+    { name = "levenshtein" },
     { name = "litellm" },
     { name = "llama-index-core" },
     { name = "mcp" },
     { name = "meta-agents-research-environments" },
+    { name = "names" },
     { name = "openai" },
+    { name = "psycopg2-binary" },
+    { name = "pymysql" },
+    { name = "pypdf2" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "ruamel-yaml" },
+    { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "semanticscholar" },
     { name = "smolagents" },
     { name = "transformers" },
     { name = "typing-extensions" },
+    { name = "waitress" },
     { name = "wandb" },
 ]
 anthropic = [
@@ -2978,8 +2997,8 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.0.0" },
     { name = "litellm", marker = "extra == 'multiagentbench'", specifier = ">=1.0.0" },
     { name = "llama-index-core", marker = "extra == 'llamaindex'", specifier = ">=0.12.0" },
-    { name = "maseval", extras = ["examples", "transformers", "wandb"], marker = "extra == 'all'" },
-    { name = "maseval", extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "litellm", "langfuse", "gaia2"], marker = "extra == 'examples'" },
+    { name = "maseval", extras = ["examples", "transformers", "wandb", "multiagentbench"], marker = "extra == 'all'" },
+    { name = "maseval", extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "litellm", "langfuse", "gaia2", "macs", "tau2"], marker = "extra == 'examples'" },
     { name = "mcp", marker = "extra == 'examples'", specifier = ">=1.22.0" },
     { name = "meta-agents-research-environments", marker = "extra == 'gaia2'", specifier = ">=1.2.0" },
     { name = "names", marker = "extra == 'multiagentbench'", specifier = ">=0.3.0" },
@@ -3002,7 +3021,7 @@ requires-dist = [
     { name = "waitress", marker = "extra == 'multiagentbench'", specifier = ">=3.0.0" },
     { name = "wandb", marker = "extra == 'wandb'", specifier = ">=0.15.0" },
 ]
-provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "gaia2", "multiagentbench", "examples", "all"]
+provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "gaia2", "macs", "multiagentbench", "tau2", "examples", "all"]
 
 [package.metadata.requires-dev]
 dev = [
