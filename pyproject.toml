@@ -49,6 +49,7 @@ langfuse = ["langfuse>=3.3.4"]
 
 # Benchmarks
 gaia2 = ["meta-agents-research-environments>=1.2.0", "datasets>=3.0.0"]
+macs = []
 multiagentbench = [
     # Core MARBLE runtime
     "litellm>=1.0.0",
@@ -77,10 +78,11 @@ multiagentbench = [
     # Evaluation
     "scikit-learn>=1.3.0",
 ]
+tau2 = []
 
 # Dependencies for running examples (only what's actually used)
 examples = [
-    "maseval[smolagents,langgraph,llamaindex,camel,anthropic,openai,google-genai,litellm,langfuse,gaia2]",
+    "maseval[smolagents,langgraph,llamaindex,camel,anthropic,openai,google-genai,litellm,langfuse,gaia2,macs,tau2]",
     # Additional integrations used in examples
     "langchain>=0.3.27",
     "langchain-google-genai>=2.1.12",
@@ -94,7 +96,7 @@ examples = [
 ]
 
 # Complete installation with absolutely everything (uses self-reference for DRY)
-all = ["maseval[examples,transformers,wandb]"]
+all = ["maseval[examples,transformers,wandb,multiagentbench]"]
 
 [project.urls]
 "Homepage" = "https://github.com/parameterlab/MASEval"
