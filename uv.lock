@@ -2867,6 +2867,7 @@ all = [
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "semanticscholar" },
+    { name = "sentence-transformers" },
     { name = "smolagents" },
     { name = "transformers" },
     { name = "typing-extensions" },
@@ -2939,6 +2940,7 @@ multiagentbench = [
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "semanticscholar" },
+    { name = "sentence-transformers" },
     { name = "waitress" },
 ]
 openai = [
@@ -3013,6 +3015,7 @@ requires-dist = [
     { name = "ruamel-yaml", marker = "extra == 'multiagentbench'", specifier = ">=0.17.0" },
     { name = "scikit-learn", marker = "extra == 'multiagentbench'", specifier = ">=1.3.0" },
     { name = "semanticscholar", marker = "extra == 'multiagentbench'", specifier = ">=0.8.0" },
+    { name = "sentence-transformers", marker = "extra == 'multiagentbench'", specifier = ">=2.3.0" },
     { name = "smolagents", marker = "extra == 'smolagents'", specifier = ">=1.21.3" },
     { name = "tqdm", specifier = ">=4.66.0" },
     { name = "transformers", marker = "extra == 'transformers'", specifier = ">=4.37.0" },
