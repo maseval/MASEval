@@ -135,7 +135,10 @@ override-dependencies = [
     "datasets>=3.0.0",
     "docstring-parser>=0.16",
     "fsspec>=2024.12.0",
-    "huggingface-hub<0.20.0",
+    # # Compromise between ARE (wants >=0.28.0) and multiagentbench (needs <0.20.0)
+    # # Using >=0.19 allows 0.19.x which satisfies multiagentbench's <0.20.0 requirement
+    # # TODO: Verify ARE actually works with huggingface-hub 0.19.x (it pins to 0.28.0 originally)
+    # "huggingface-hub>=0.19",
     "inputimeout>=1.0.4",
     "jinja2>=3.1.0",
     "litellm>=1.0.0",
