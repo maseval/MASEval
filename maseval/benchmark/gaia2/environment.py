@@ -81,6 +81,10 @@ class Gaia2Environment(Environment):
         )
         self._are_env = AREEnvironment(config)
 
+        # Initialize scenario (populates apps, applies augmentations, builds events)
+        # ARE's Environment.run() requires scenario._initialized == True
+        scenario.initialize()
+
         # Run scenario (registers apps, schedules events, starts event loop)
         # wait_for_end=False so control returns immediately for agent interaction
         self._are_env.run(scenario, wait_for_end=False, schedule_events=True)
