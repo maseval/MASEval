@@ -140,6 +140,7 @@ def load_tasks(
             oracle_events=oracle_events,
             timeout_seconds=timeout_seconds,
             max_retries=max_retries,
+            config_capability=config_name,
         )
         tasks.append(task)
 
@@ -172,6 +173,7 @@ def _convert_gaia2_to_maseval(
     oracle_events: List[Any],
     timeout_seconds: Optional[float],
     max_retries: int,
+    config_capability: str,
 ) -> Task:
     """Convert Gaia2 scenario to MASEval Task.
 
@@ -181,6 +183,7 @@ def _convert_gaia2_to_maseval(
         oracle_events: List of oracle events for evaluation
         timeout_seconds: Maximum execution time per task
         max_retries: Maximum retry attempts
+        config_capability: The capability from the HuggingFace config name
 
     Returns:
         MASEval Task object
@@ -188,8 +191,8 @@ def _convert_gaia2_to_maseval(
     # Extract query from scenario's task definition
     query = getattr(scenario, "task_instruction", "")
 
-    # Parse capability from scenario metadata or row
-    capability = row.get("category") or _get_scenario_metadata(scenario, "capability", "unknown")
+    # Use capability from config name (which determines which dataset subset was loaded)
+    capability = config_capability
 
     # Build environment_data
     environment_data: Dict[str, Any] = {

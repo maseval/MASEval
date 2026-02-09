@@ -52,10 +52,13 @@ class MockARETool:
         self.function_description = description  # ARE fallback
 
         # Create args list from inputs schema (ARE format)
-        self.args = self._create_args_from_inputs(inputs or {
-            "properties": {"arg1": {"type": "string", "description": "First argument"}},
-            "required": ["arg1"],
-        })
+        self.args = self._create_args_from_inputs(
+            inputs
+            or {
+                "properties": {"arg1": {"type": "string", "description": "First argument"}},
+                "required": ["arg1"],
+            }
+        )
 
         # Keep old attributes for backward compatibility with tests
         self.description = description
@@ -79,9 +82,9 @@ class MockARETool:
         for param_name, param_info in properties.items():
             arg = SimpleNamespace(
                 name=param_name,
-                type=param_info.get("type", "string"),
+                arg_type=param_info.get("type", "string"),  # ARE uses arg_type, not type
                 description=param_info.get("description", ""),
-                required=param_name in required_set,
+                has_default=param_name not in required_set,  # ARE uses has_default, not required
             )
             args.append(arg)
 

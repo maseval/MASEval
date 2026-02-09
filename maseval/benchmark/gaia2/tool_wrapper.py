@@ -117,11 +117,11 @@ class Gaia2GenericTool(TraceableMixin, ConfigurableMixin):
                 continue
 
             properties[param_name] = {
-                "type": getattr(arg, "type", "string"),
+                "type": arg.arg_type,
                 "description": getattr(arg, "description", ""),
             }
 
-            if getattr(arg, "required", False):
+            if not arg.has_default:
                 required.append(param_name)
 
         return {"properties": properties, "required": required}
