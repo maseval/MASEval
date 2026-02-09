@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from maseval import Environment
 
-from maseval.benchmark.gaia2.tool_wrapper import AREToolWrapper
+from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
 
 class Gaia2Environment(Environment):
@@ -46,7 +46,7 @@ class Gaia2Environment(Environment):
         """
         self._scenario = task_data.get("scenario")
         self._are_env: Any = None
-        self._tool_wrappers: Dict[str, AREToolWrapper] = {}
+        self._tool_wrappers: Dict[str, Gaia2GenericTool] = {}
 
         super().__init__(task_data, callbacks)
 
@@ -96,8 +96,11 @@ class Gaia2Environment(Environment):
             "universe_id": task_data.get("universe_id"),
         }
 
-    def create_tools(self) -> Dict[str, AREToolWrapper]:
+    def create_tools(self) -> Dict[str, Gaia2GenericTool]:
         """Wrap all ARE app tools for MASEval tracing.
+
+        Creates framework-agnostic Gaia2GenericTool instances that provide
+        clean API with built-in tracing.
 
         Includes critical tools:
             - SystemApp.get_current_time(): Query simulation time
@@ -105,9 +108,9 @@ class Gaia2Environment(Environment):
             - All domain app tools (calendar, email, messaging, etc.)
 
         Returns:
-            Dict mapping tool names to AREToolWrapper instances
+            Dict mapping tool names to Gaia2GenericTool instances
         """
-        tools: Dict[str, AREToolWrapper] = {}
+        tools: Dict[str, Gaia2GenericTool] = {}
 
         if self._are_env is None:
             return tools
@@ -115,7 +118,7 @@ class Gaia2Environment(Environment):
         # Get all tools from all apps in the ARE environment
         for app in self._are_env.apps.values():
             for tool in app.get_tools():
-                wrapper = AREToolWrapper(tool, self)
+                wrapper = Gaia2GenericTool(tool, self)
                 tools[tool.name] = wrapper
                 self._tool_wrappers[tool.name] = wrapper
 

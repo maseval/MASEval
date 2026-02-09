@@ -102,7 +102,7 @@ class TestGaia2EnvironmentCreateTools:
     def test_create_tools_wraps_are_tools(self):
         """Test create_tools returns wrapped ARE tools."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
-        from maseval.benchmark.gaia2.tool_wrapper import AREToolWrapper
+        from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
         # Create mock ARE modules
         mock_are = MagicMock()
@@ -135,7 +135,7 @@ class TestGaia2EnvironmentCreateTools:
             tools = env.create_tools()
 
             assert "TestTool__do_something" in tools
-            assert isinstance(tools["TestTool__do_something"], AREToolWrapper)
+            assert isinstance(tools["TestTool__do_something"], Gaia2GenericTool)
 
     def test_create_tools_returns_empty_when_no_are_env(self):
         """Test create_tools returns empty dict when ARE env is None."""

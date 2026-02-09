@@ -68,7 +68,7 @@ from maseval.benchmark.gaia2.evaluator import (
 
 # Tool wrapper
 from maseval.benchmark.gaia2.tool_wrapper import (
-    AREToolWrapper,
+    Gaia2GenericTool,
     wrap_are_tools,
 )
 
@@ -95,7 +95,7 @@ __all__ = [
     "Gaia2Evaluator",
     "compute_gaia2_metrics",
     # Tool wrapper
-    "AREToolWrapper",
+    "Gaia2GenericTool",
     "wrap_are_tools",
     # Data loading
     "load_tasks",

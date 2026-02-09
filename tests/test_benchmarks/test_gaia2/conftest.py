@@ -34,7 +34,8 @@ from maseval.core.seeding import SeedGenerator
 class MockARETool:
     """Mock for ARE's AppTool class.
 
-    Simulates an ARE tool for testing AREToolWrapper and Gaia2Environment.
+    Simulates an ARE tool for testing Gaia2GenericTool and Gaia2Environment.
+    Includes ARE's actual attributes (_public_description, function_description, args).
     """
 
     def __init__(
@@ -45,13 +46,46 @@ class MockARETool:
         return_value: Any = "mock result",
     ):
         self.name = name
+
+        # ARE's actual attributes (used by Gaia2GenericTool)
+        self._public_description = description  # ARE uses this
+        self.function_description = description  # ARE fallback
+
+        # Create args list from inputs schema (ARE format)
+        self.args = self._create_args_from_inputs(inputs or {
+            "properties": {"arg1": {"type": "string", "description": "First argument"}},
+            "required": ["arg1"],
+        })
+
+        # Keep old attributes for backward compatibility with tests
         self.description = description
         self.inputs = inputs or {
             "properties": {"arg1": {"type": "string", "description": "First argument"}},
             "required": ["arg1"],
         }
+
         self._return_value = return_value
         self._calls: List[Dict[str, Any]] = []
+
+    @staticmethod
+    def _create_args_from_inputs(inputs: Dict[str, Any]) -> List[Any]:
+        """Convert inputs schema to ARE's args format."""
+        from types import SimpleNamespace
+
+        args = []
+        properties = inputs.get("properties", {})
+        required_set = set(inputs.get("required", []))
+
+        for param_name, param_info in properties.items():
+            arg = SimpleNamespace(
+                name=param_name,
+                type=param_info.get("type", "string"),
+                description=param_info.get("description", ""),
+                required=param_name in required_set,
+            )
+            args.append(arg)
+
+        return args
 
     def __call__(self, **kwargs) -> Any:
         self._calls.append(kwargs)
