@@ -108,8 +108,16 @@ class TestGaia2BenchmarkSetupEnvironment:
         mock_are_env_instance.get_tools.return_value = []
         mock_are_env_instance.event_log.list_view.return_value = []
 
+        # Mock build_event_id_to_turn_idx function
+        def mock_build_event_id_to_turn_idx(scenario):
+            scenario.nb_turns = 1
+            scenario.event_id_to_turn_idx = {}
+
+        mock_are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario.build_event_id_to_turn_idx = mock_build_event_id_to_turn_idx
+
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # Required by build_event_id_to_turn_idx
 
         # Patch sys.modules for ARE imports
         with patch.dict(
@@ -118,6 +126,9 @@ class TestGaia2BenchmarkSetupEnvironment:
                 "are": mock_are,
                 "are.simulation": mock_are.simulation,
                 "are.simulation.environment": mock_are.simulation.environment,
+                "are.simulation.scenarios": mock_are.simulation.scenarios,
+                "are.simulation.scenarios.scenario_imported_from_json": mock_are.simulation.scenarios.scenario_imported_from_json,
+                "are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario": mock_are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario,
             },
         ):
             # Add scenario to task environment_data

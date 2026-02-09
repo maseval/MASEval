@@ -63,6 +63,9 @@ class Gaia2Environment(Environment):
         try:
             from are.simulation.environment import Environment as AREEnvironment  # type: ignore[import-not-found]
             from are.simulation.environment import EnvironmentConfig  # type: ignore[import-not-found]
+            from are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario import (  # type: ignore[import-not-found]
+                build_event_id_to_turn_idx,
+            )
         except ImportError as e:
             raise ImportError(
                 "ARE (Agent Research Environments) is required for Gaia2 benchmark.\n"
@@ -84,6 +87,10 @@ class Gaia2Environment(Environment):
         # Initialize scenario (populates apps, applies augmentations, builds events)
         # ARE's Environment.run() requires scenario._initialized == True
         scenario.initialize()
+
+        # Build turn index mapping (required by ARE's judge for evaluation)
+        # Sets scenario.nb_turns and scenario.event_id_to_turn_idx
+        build_event_id_to_turn_idx(scenario)
 
         # Run scenario (registers apps, schedules events, starts event loop)
         # wait_for_end=False so control returns immediately for agent interaction
