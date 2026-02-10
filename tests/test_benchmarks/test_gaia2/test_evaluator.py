@@ -3,9 +3,8 @@
 Tests the evaluation layer that integrates with ARE's GraphPerEventJudge.
 """
 
-import sys
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 
 # =============================================================================
@@ -110,81 +109,68 @@ class TestGaia2EvaluatorCall:
     """Tests for Gaia2Evaluator.__call__()."""
 
     def test_returns_gsr_from_judge(self, sample_gaia2_task):
-        """Test evaluator returns GSR from ARE judge."""
+        """Test evaluator returns GSR from ARE judge on scenario."""
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
-        mock_env = MagicMock()
-        mock_are_env = MagicMock()
-        mock_env.get_are_environment.return_value = mock_are_env
-        mock_env.get_scenario.return_value = MagicMock()
-
-        evaluator = Gaia2Evaluator(
-            task=sample_gaia2_task,
-            environment=mock_env,
-        )
-
-        # Mock ARE imports via sys.modules
-        mock_are = MagicMock()
+        # Create scenario mock with an explicit judge
+        mock_scenario = MagicMock()
         mock_judge = MagicMock()
         mock_result = MagicMock()
         mock_result.success = True
         mock_result.rationale = None
         mock_judge.validate.return_value = mock_result
-        mock_factory_instance = MagicMock(return_value=mock_judge)
-        mock_are.simulation.validation.JudgeFactory.return_value = mock_factory_instance
-
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.validation": mock_are.simulation.validation,
-            },
-        ):
-            result = evaluator({}, None)
-
-            assert result["gsr"] == 1.0
-            assert result["passed"] is True
-
-    def test_returns_zero_gsr_on_failure(self, sample_gaia2_task):
-        """Test evaluator returns 0.0 GSR when judge fails."""
-        from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
+        mock_scenario.judge = mock_judge
 
         mock_env = MagicMock()
         mock_are_env = MagicMock()
         mock_env.get_are_environment.return_value = mock_are_env
-        mock_env.get_scenario.return_value = MagicMock()
+        mock_env.get_scenario.return_value = mock_scenario
 
         evaluator = Gaia2Evaluator(
             task=sample_gaia2_task,
             environment=mock_env,
         )
 
-        # Mock ARE imports via sys.modules
-        mock_are = MagicMock()
+        result = evaluator({}, None)
+
+        assert result["gsr"] == 1.0
+        assert result["passed"] is True
+
+    def test_returns_zero_gsr_on_failure(self, sample_gaia2_task):
+        """Test evaluator returns 0.0 GSR when judge fails."""
+        from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
+
+        # Create scenario mock with an explicit judge
+        mock_scenario = MagicMock()
         mock_judge = MagicMock()
         mock_result = MagicMock()
         mock_result.success = False
         mock_result.rationale = "Failed"
         mock_judge.validate.return_value = mock_result
-        mock_factory_instance = MagicMock(return_value=mock_judge)
-        mock_are.simulation.validation.JudgeFactory.return_value = mock_factory_instance
+        mock_scenario.judge = mock_judge
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.validation": mock_are.simulation.validation,
-            },
-        ):
-            result = evaluator({}, None)
+        mock_env = MagicMock()
+        mock_are_env = MagicMock()
+        mock_env.get_are_environment.return_value = mock_are_env
+        mock_env.get_scenario.return_value = mock_scenario
 
-            assert result["gsr"] == 0.0
-            assert result["passed"] is False
+        evaluator = Gaia2Evaluator(
+            task=sample_gaia2_task,
+            environment=mock_env,
+        )
+
+        result = evaluator({}, None)
+
+        assert result["gsr"] == 0.0
+        assert result["passed"] is False
 
     def test_handles_missing_are_environment(self, sample_gaia2_task):
-        """Test evaluator handles missing ARE environment."""
+        """Test evaluator handles missing ARE environment.
+
+        When ARE environment is not available, score is None (excluded from
+        scoring), matching ARE's behavior for no_validation results.
+        ARE benchmark/hf_upload_utils.py:47-48
+        """
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
         mock_env = MagicMock()
@@ -195,21 +181,12 @@ class TestGaia2EvaluatorCall:
             environment=mock_env,
         )
 
-        # Mock ARE imports via sys.modules
-        mock_are = MagicMock()
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.validation": mock_are.simulation.validation,
-            },
-        ):
-            result = evaluator({}, None)
+        result = evaluator({}, None)
 
-            assert result["gsr"] == 0.0
-            assert result["passed"] is False
-            assert "error" in result
+        assert result["gsr"] is None
+        assert result["passed"] is False
+        assert "error" in result
+        assert result["status"] == "no_validation"
 
 
 # =============================================================================

@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Tuple, Sequence
+from typing import Any, Dict, Sequence
 
 from dotenv import load_dotenv
 from openai import OpenAI

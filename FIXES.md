@@ -202,25 +202,25 @@ Here are all instances where the maseval implementation diverges from the origin
 
 ### Summary of Severity
 
-| # | Issue | Severity | Done |
-|---|-------|----------|------|
-| 1 | Scenario duration not set (preprocess_scenario skipped) | **Critical** | |
-| 2 | Task timeout 600s vs 1860s | **High** | |
-| 3 | Iteration counting (errors excluded vs included) | **High** | |
-| 4 | Max iterations doesn't call send_message_to_user tool | **High** | |
-| 5 | Missing current time in system prompt | **High** | |
-| 6 | Agent hints included vs excluded in prompt | **Medium** | |
-| 7 | Notification system description differs | **Medium** | |
-| 8 | Tool description format differs | **Medium** | |
-| 9 | Message history format differs | **Medium** | |
-| 10 | Pre-step notification polling missing | **Medium** | |
-| 11 | Environment stop message not checked | **Medium** | |
-| 12 | JSON parsing more lenient | **Low** | |
-| 13 | action_input default "" vs {} | **Low** | |
-| 14 | Exceptions scored as 0.0 vs excluded | **High** | |
-| 15 | Partial GSR always equals GSR | **Medium** | |
-| 16 | LLM judge not implemented | **Medium** | |
-| 17 | Turn initialization skipped | **Medium** | |
-| 18 | Invented 86400 duration fallback | **Medium** | |
-| 19 | judge_type stored but ignored | **Low** | |
-| 20 | Simulated generation time not implemented | **Low** | |
+| #   | Issue                                                   | Severity     | Done |
+| --- | ------------------------------------------------------- | ------------ | ---- |
+| 1   | Scenario duration not set (preprocess_scenario skipped) | **Critical** | ✓    |
+| 2   | Task timeout 600s vs 1860s                              | **High**     | ✓    |
+| 3   | Iteration counting (errors excluded vs included)        | **High**     | ✓    |
+| 4   | Max iterations doesn't call send_message_to_user tool   | **High**     | ✓    |
+| 5   | Missing current time in system prompt                   | **High**     | ✓    |
+| 6   | Agent hints included vs excluded in prompt              | **Medium**   | ✓    |
+| 7   | Notification system description differs                 | **Medium**   | ✓    |
+| 8   | Tool description format differs                         | **Medium**   | ✓    |
+| 9   | Message history format differs                          | **Medium**   | ✓    |
+| 10  | Pre-step notification polling missing                   | **Medium**   | ✓    |
+| 11  | Environment stop message not checked                    | **Medium**   | ✓    |
+| 12  | JSON parsing more lenient                               | **Low**      | ✓    |
+| 13  | action_input default "" vs {}                           | **Low**      | ✓    |
+| 14  | Exceptions scored as 0.0 vs excluded                    | **High**     | ✓    |
+| 15  | Partial GSR always equals GSR                           | **Medium**   | ✓    |
+| 16  | LLM judge not implemented                               | **Medium**   | ✓    |
+| 17  | Turn initialization skipped                             | **Medium**   | ✓    |
+| 18  | Invented 86400 duration fallback                        | **Medium**   | ✓    |
+| 19  | judge_type stored but ignored                           | **Low**      | ✓    |
+| 20  | Simulated generation time not implemented               | **Low**      | ✓    |

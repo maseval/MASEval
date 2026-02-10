@@ -37,7 +37,8 @@ VALID_CAPABILITIES: Tuple[str, ...] = (
 VALID_SPLITS: Tuple[str, ...] = ("validation",)  # Only validation has oracle events
 
 DEFAULT_CONFIG = "validation"  # Full dataset
-DEFAULT_TIMEOUT_SECONDS = 600.0  # 10 minutes per task
+# ARE scenarios/config.py:20: DEFAULT_SCENARIO_TIMEOUT = 1860
+DEFAULT_TIMEOUT_SECONDS = 1860.0  # 31 minutes per task (matching ARE)
 DEFAULT_MAX_RETRIES = 1
 
 # HuggingFace dataset info
@@ -63,15 +64,15 @@ def load_tasks(
             time, ambiguity, agent2agent, noise). None loads all.
         split: Dataset split (currently only "validation" available)
         limit: Maximum number of tasks to load
-        timeout_seconds: Maximum execution time per task. Default 600 (10 minutes).
-            Set to None to disable timeout.
+        timeout_seconds: Maximum execution time per task. Default 1860 (31 minutes,
+            matching ARE's DEFAULT_SCENARIO_TIMEOUT). Set to None to disable timeout.
         max_retries: Maximum retry attempts. Default 1 (skip on failure).
 
     Returns:
         TaskQueue with Task objects containing:
             - id: Unique scenario identifier
             - query: Initial task instructions
-            - environment_data: {"scenario": BenchmarkScenario, "capability": str, ...}
+            - environment_data: {"scenario": BenchmarkScenario, "capability": str}
             - evaluation_data: {"oracle_events": [...], "judge_type": str}
             - user_data: {}  # Gaia2 uses event-based simulation, not user turns
             - metadata: {"capability": str, "universe_id": str, ...}
@@ -195,11 +196,13 @@ def _convert_gaia2_to_maseval(
     capability = config_capability
 
     # Build environment_data
+    # Duration is NOT set here — ARE's preprocess_scenario() sets it during
+    # environment setup based on capability (1800s standard, 420s for Time).
+    # ARE scenarios/config.py:18-19, scenarios/scenario_imported_from_json/utils.py:69-76
     environment_data: Dict[str, Any] = {
         "scenario": scenario,
         "capability": capability,
         "universe_id": _get_scenario_metadata(scenario, "universe_id"),
-        "duration": getattr(scenario, "duration", 86400),
     }
 
     # Build evaluation_data with oracle events

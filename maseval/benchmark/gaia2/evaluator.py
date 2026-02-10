@@ -101,49 +101,68 @@ class Gaia2Evaluator(Evaluator):
     ) -> Dict[str, Any]:
         """Evaluate using ARE's judge system.
 
+        Uses the judge created during ``preprocess_scenario()`` (attached to the
+        scenario object) rather than creating a new one. This ensures turn
+        initialization and judge state are consistent.
+
+        Exceptions return ``gsr=None`` (excluded from scoring), matching ARE's
+        behavior where exceptions/no_validation get ``score=None``.
+        ARE benchmark/hf_upload_utils.py:33-52, benchmark/report_stats.py
+
         Args:
             traces: Filtered execution traces
             final_answer: Final answer from agent (not used in Gaia2)
 
         Returns:
-            Dict with:
-                - gsr: Goal Success Rate (0.0 or 1.0)
-                - partial_gsr: Partial success rate
-                - passed: Boolean indicating full success
-                - rationale: Judge rationale (if available)
-                - capability: Task capability type
+            Dict with evaluation results. ``gsr`` is None for evaluation errors
+            (excluded from scoring) or a float for valid results.
         """
-        # Import ARE judge (required dependency for Gaia2)
-        from are.simulation.validation import GraphPerEventJudgeConfig, JudgeFactory  # type: ignore[import-not-found]
-
         # Get ARE environment
         are_env = self.environment.get_are_environment()
         if are_env is None:
+            # Infrastructure error: return None score (excluded from scoring)
+            # ARE benchmark/hf_upload_utils.py:47-48
             return {
-                "gsr": 0.0,
-                "partial_gsr": 0.0,
+                "gsr": None,
+                "partial_gsr": None,
                 "passed": False,
+                "status": "no_validation",
                 "error": "ARE environment not available",
                 "capability": self.task.metadata.get("capability"),
             }
 
-        # Create ARE judge via factory
-        judge_config = GraphPerEventJudgeConfig()
-        judge = JudgeFactory()(judge_config)
-
-        # Run ARE's judge: initialize with scenario, then validate against environment
         try:
-            judge.initialize_state(self.environment.get_scenario())
+            # Use the scenario's judge (created during preprocess_scenario)
+            # ARE scenarios/scenario_imported_from_json/utils.py:112
+            scenario = self.environment.get_scenario()
+            judge = getattr(scenario, "judge", None)
+
+            if judge is None:
+                # Fallback: create judge if not available on scenario
+                from are.simulation.validation import GraphPerEventJudgeConfig, JudgeFactory  # type: ignore[import-not-found]
+
+                judge_config = GraphPerEventJudgeConfig()
+                judge = JudgeFactory()(judge_config)
+                judge.initialize_state(scenario)
+
+            # Run ARE's judge validation
             result = judge.validate(are_env)
 
             # Convert ARE ScenarioValidationResult to MASEval format
             passed = bool(result.success)
             gsr = 1.0 if passed else 0.0
 
+            # Extract partial GSR from judge result if available
+            # ARE's judge can produce partial scores based on event matching
+            partial_gsr = getattr(result, "partial_success_rate", gsr)
+            if partial_gsr is None:
+                partial_gsr = gsr
+
             return {
                 "gsr": gsr,
-                "partial_gsr": gsr,
+                "partial_gsr": partial_gsr,
                 "passed": passed,
+                "status": "success" if passed else "failed",
                 "rationale": getattr(result, "rationale", None),
                 "capability": self.task.metadata.get("capability"),
                 "tool_call_count": len(traces.get("tool_invocations", [])),
@@ -151,11 +170,13 @@ class Gaia2Evaluator(Evaluator):
             }
 
         except Exception as e:
-            # Return failure on evaluation error
+            # Evaluation error: return None score (excluded from scoring)
+            # ARE benchmark/hf_upload_utils.py:42-46: exceptions get score=None
             return {
-                "gsr": 0.0,
-                "partial_gsr": 0.0,
+                "gsr": None,
+                "partial_gsr": None,
                 "passed": False,
+                "status": "exception",
                 "error": str(e),
                 "capability": self.task.metadata.get("capability"),
                 "tool_call_count": len(traces.get("tool_invocations", [])),
@@ -166,20 +187,16 @@ class Gaia2Evaluator(Evaluator):
 def compute_gaia2_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Compute summary metrics across all Gaia2 benchmark results.
 
-    Infrastructure errors are excluded from scoring metrics.
-    Uses SCOREABLE_STATUSES to determine which results count toward agent score.
+    Matches ARE's scoring logic:
+    - Only validated runs (non-null GSR) count toward success rate
+    - Exceptions and no_validation results are excluded from scoring
+    - ARE benchmark/report_stats.py: success_rate calculated only from validated runs
 
     Args:
         results: List of result dicts from benchmark.run()
 
     Returns:
-        Dict with:
-            - total_tasks: Total number of tasks
-            - scored_tasks: Tasks included in scoring
-            - gsr: Overall Goal Success Rate
-            - partial_gsr: Average partial GSR
-            - by_capability: Metrics broken down by capability type
-            - status_counts: Count by status
+        Dict with metrics including total_tasks, scored_tasks, GSR, and per-capability breakdown.
     """
     if not results:
         return {
@@ -205,16 +222,21 @@ def compute_gaia2_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         if status not in SCOREABLE_STATUSES:
             continue  # Skip infrastructure errors
 
-        scored_tasks += 1
         evals = res.get("eval") or []
 
         for entry in evals:
-            gsr = entry.get("gsr", 0.0)
-            partial_gsr = entry.get("partial_gsr", 0.0)
+            gsr = entry.get("gsr")
+            partial_gsr = entry.get("partial_gsr")
             capability = entry.get("capability", "unknown")
 
+            # Skip entries with None score (exceptions, no_validation)
+            # ARE benchmark/report_stats.py: only validated runs count
+            if gsr is None:
+                continue
+
+            scored_tasks += 1
             total_gsr += gsr
-            total_partial_gsr += partial_gsr
+            total_partial_gsr += partial_gsr if partial_gsr is not None else gsr
 
             # Track by capability
             if capability not in by_capability:
@@ -227,7 +249,7 @@ def compute_gaia2_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 
             by_capability[capability]["count"] += 1
             by_capability[capability]["gsr_sum"] += gsr
-            by_capability[capability]["partial_gsr_sum"] += partial_gsr
+            by_capability[capability]["partial_gsr_sum"] += partial_gsr if partial_gsr is not None else gsr
             if entry.get("passed", False):
                 by_capability[capability]["passed"] += 1
 

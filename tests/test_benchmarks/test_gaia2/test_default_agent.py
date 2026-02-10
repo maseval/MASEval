@@ -79,8 +79,8 @@ Action:
             result = _parse_action_from_text(text)
             assert result is None, f"Expected None for: {text[:50]}..."
 
-    def test_handles_trailing_comma_in_json(self):
-        """Test that trailing commas in JSON are handled."""
+    def test_rejects_trailing_comma_in_json(self):
+        """Test that trailing commas in JSON are rejected (matching ARE)."""
         from maseval.benchmark.gaia2.gaia2 import _parse_action_from_text
 
         text = """Thought: Testing.
@@ -88,12 +88,11 @@ Action:
 Action:
 {"action": "test_tool", "action_input": {"key": "value",}}<end_action>"""
 
+        # ARE json_action_executor.py:33-57 does not fix trailing commas.
+        # Trailing commas are invalid JSON, so parsing should fail.
         result = _parse_action_from_text(text)
 
-        assert result is not None
-        _, tool_name, tool_args = result
-        assert tool_name == "test_tool"
-        assert tool_args == {"key": "value"}
+        assert result is None
 
     def test_handles_dict_action_input(self):
         """Test that nested dict action_input is handled."""
@@ -116,15 +115,16 @@ class TestBuildToolDescriptions:
     """Tests for _build_tool_descriptions helper function."""
 
     def test_builds_descriptions_from_tools(self, sample_tools_dict):
-        """Test building tool descriptions from a tools dict."""
+        """Test building tool descriptions matching ARE's Jinja2 format."""
         from maseval.benchmark.gaia2.gaia2 import _build_tool_descriptions
 
         # Create mock tools with proper attributes
         class MockTool:
-            def __init__(self, name, desc, inputs):
+            def __init__(self, name, desc, inputs, output_type="string"):
                 self.name = name
                 self.description = desc
                 self.inputs = inputs
+                self.output_type = output_type
 
             def __call__(self, **kwargs):
                 return "result"
@@ -142,10 +142,11 @@ class TestBuildToolDescriptions:
 
         result = _build_tool_descriptions(tools)
 
-        assert "TestTool" in result
-        assert "A test tool" in result
+        # ARE format: "- {name}: {desc}\n    Takes inputs: {inputs}\n    Returns an output of type: {output_type}"
+        assert "- TestTool: A test tool" in result
+        assert "Takes inputs:" in result
         assert "arg1" in result
-        assert "(required)" in result
+        assert "Returns an output of type: string" in result
 
     def test_handles_tools_without_attributes(self):
         """Test handling tools without description/inputs attributes."""
@@ -158,8 +159,10 @@ class TestBuildToolDescriptions:
 
         result = _build_tool_descriptions(tools)
 
-        assert "plain_tool" in result
-        assert "(no parameters)" in result
+        # ARE format: "- {name}: {desc}\n    Takes inputs: {inputs}\n    Returns an output of type: {output_type}"
+        assert "- plain_tool:" in result
+        assert "Takes inputs:" in result
+        assert "Returns an output of type: string" in result
 
 
 @pytest.mark.benchmark
@@ -320,20 +323,21 @@ class TestDefaultGaia2AgentRun:
         assert "notification" in result.lower()
 
     def test_retries_on_invalid_format(self, sample_tools_dict, gaia2_model_invalid_format):
-        """Test agent retries when format is invalid."""
+        """Test agent retries when format is invalid then hits max iterations."""
         from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
 
         agent = DefaultGaia2Agent(
             tools=sample_tools_dict,
             model=gaia2_model_invalid_format,
+            max_iterations=3,
             invalid_format_retries=3,
         )
 
         result = agent.run("Do something")
 
-        # Should fail after retries
-        assert "Failed to parse action" in result
-        assert agent._format_retry_count >= 3
+        # Agent should exhaust iterations; ARE base_agent.py:849 increments on every iteration
+        assert "Max iterations (3) reached" in result
+        assert agent.iteration_count == 3
 
     def test_respects_max_iterations(self, sample_tools_dict):
         """Test agent stops at max_iterations."""

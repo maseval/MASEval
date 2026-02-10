@@ -47,9 +47,11 @@ Default Agent Implementation:
 
 import json
 import re
+import time
 from abc import abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
 from maseval.core.callback import BenchmarkCallback
@@ -288,11 +290,66 @@ class Gaia2Benchmark(Benchmark):
 # Prompt templates directory
 _PROMPT_TEMPLATES_DIR = Path(__file__).parent / "prompt_templates"
 
-# ARE default parameters
+# ARE default parameters (documented with source locations)
+# ARE agents/are_simulation_agent_config.py:36
 _DEFAULT_MAX_ITERATIONS = 80
+# ARE agents/llm/llm_engine.py:17
 _DEFAULT_TEMPERATURE = 0.5
+# ARE agents/llm/llm_engine.py:16
 _DEFAULT_MAX_TOKENS = 16384
+# ARE agents/default_agent/base_agent.py:347
 _DEFAULT_INVALID_FORMAT_RETRIES = 10
+
+
+@dataclass
+class Gaia2SimulatedGenerationTimeConfig:
+    """Configuration for simulating the LLM's generation time.
+
+    Matches ARE's ``SimulatedGenerationTimeConfig`` (ARE types.py:1574-1592).
+
+    In "measured" mode, the simulation clock advances by the actual LLM
+    generation wall-clock time. In "fixed" mode, it advances by a fixed
+    number of seconds.
+
+    Attributes:
+        mode: "measured" uses actual LLM wall-clock time; "fixed" uses ``seconds``.
+        seconds: Fixed offset in seconds. Used when mode is "fixed".
+    """
+
+    # ARE types.py:1586
+    mode: Literal["fixed", "measured"] = "measured"
+    # ARE types.py:1587
+    seconds: Optional[float] = 1.0
+
+    def __post_init__(self) -> None:
+        # ARE types.py:1589-1592
+        if self.mode == "fixed":
+            if self.seconds is None:
+                raise ValueError("When mode is 'fixed', seconds must be provided and cannot be None.")
+
+
+def _get_offset_from_time_config_mode(
+    time_config: Gaia2SimulatedGenerationTimeConfig,
+    completion_duration: float,
+) -> float:
+    """Determine the time offset based on the config mode.
+
+    Matches ARE's ``get_offset_from_time_config_mode`` (base_agent.py:990-1006).
+
+    Args:
+        time_config: Simulated generation time configuration
+        completion_duration: Actual wall-clock LLM generation time in seconds
+
+    Returns:
+        Time offset in seconds to advance the simulation clock
+    """
+    if time_config.mode == "fixed" and time_config.seconds is not None:
+        return time_config.seconds
+    elif time_config.mode == "measured":
+        return completion_duration
+    else:
+        raise ValueError(f"Invalid simulated_generation_time_config: {time_config}")
+
 
 # Stop sequences for text-based action parsing
 _STOP_SEQUENCES = ["<end_action>", "Observation:"]
@@ -320,7 +377,12 @@ def _load_prompt_template(name: str) -> str:
 
 
 def _build_tool_descriptions(tools: Dict[str, Callable]) -> str:
-    """Build tool descriptions for embedding in system prompt.
+    """Build tool descriptions matching ARE's Jinja2 template format.
+
+    ARE tool_box.py:16-20 uses the template:
+    ``- {{ tool.name }}: {{ tool.description }}``
+    ``    Takes inputs: {{tool.inputs}}``
+    ``    Returns an output of type: {{tool.output_type}}``
 
     Args:
         tools: Dict of tool name -> callable
@@ -332,30 +394,106 @@ def _build_tool_descriptions(tools: Dict[str, Callable]) -> str:
     for name, tool in tools.items():
         desc = getattr(tool, "description", "") or ""
         inputs = getattr(tool, "inputs", {}) or {}
+        output_type = getattr(tool, "output_type", "string") or "string"
 
-        # Format parameters
-        params = []
-        properties = inputs.get("properties", {})
-        required = set(inputs.get("required", []))
+        # Match ARE's format: raw dict representation for inputs
+        descriptions.append(f"- {name}: {desc}\n    Takes inputs: {inputs}\n    Returns an output of type: {output_type}")
 
-        for param_name, param_info in properties.items():
-            param_type = param_info.get("type", "any")
-            param_desc = param_info.get("description", "")
-            req_marker = " (required)" if param_name in required else " (optional)"
-            params.append(f"    - {param_name}: {param_type}{req_marker} - {param_desc}")
-
-        params_str = "\n".join(params) if params else "    (no parameters)"
-
-        descriptions.append(f"Tool: {name}\nDescription: {desc}\nParameters:\n{params_str}")
-
-    return "\n\n".join(descriptions)
+    return "\n".join(descriptions)
 
 
-def _build_system_prompt(tools: Dict[str, Callable]) -> str:
-    """Build the full system prompt with tool descriptions.
+def _get_notification_system_prompt(environment: Optional[Any]) -> str:
+    """Generate notification system prompt matching ARE's behavior.
+
+    ARE agents/default_agent/prompts/notification_system.py:32-46
+
+    Args:
+        environment: Optional Gaia2Environment
+
+    Returns:
+        Notification system prompt string
+    """
+    if environment is None:
+        # Fallback: basic notification policy (matches ARE's NotificationSystem default)
+        return (
+            "Notification policy:\n"
+            "- All new messages from the User will be notified to you.\n"
+            "- The environment state may also change over time, but environment events will not be notified to you.\n"
+            "- You can also proactively check for any other update in an App by using the tools given to you.\n"
+            "- If a call to SystemApp__wait_for_notification times out, you will receive a notification."
+        )
+
+    try:
+        notification_system = environment.get_notification_system()
+        if notification_system is None:
+            # Same basic fallback
+            return (
+                "Notification policy:\n"
+                "- All new messages from the User will be notified to you.\n"
+                "- The environment state may also change over time, but environment events will not be notified to you.\n"
+                "- You can also proactively check for any other update in an App by using the tools given to you.\n"
+                "- If a call to SystemApp__wait_for_notification times out, you will receive a notification."
+            )
+
+        # Use ARE's notification prompt generator
+        from are.simulation.agents.default_agent.prompts.notification_system import (  # type: ignore[import-not-found]
+            get_notification_system_prompt,
+        )
+
+        are_env = environment.get_are_environment()
+        scenario = environment.get_scenario()
+        apps = getattr(scenario, "apps", None) or (list(are_env.apps.values()) if are_env else None)
+        return get_notification_system_prompt(notification_system, apps)
+    except Exception:
+        # Graceful fallback
+        return (
+            "Notification policy:\n"
+            "- All new messages from the User will be notified to you.\n"
+            "- The environment state may also change over time, but environment events will not be notified to you.\n"
+            "- You can also proactively check for any other update in an App by using the tools given to you.\n"
+            "- If a call to SystemApp__wait_for_notification times out, you will receive a notification."
+        )
+
+
+def _get_current_time_description(environment: Optional[Any]) -> str:
+    """Generate current time description matching ARE's behavior.
+
+    ARE agents/default_agent/are_simulation_main.py:156-164
+
+    Args:
+        environment: Optional Gaia2Environment
+
+    Returns:
+        Current time description string
+    """
+    if environment is None:
+        return ""
+
+    try:
+        from datetime import datetime, timezone
+
+        start_time = environment.get_start_time()
+        if start_time is None:
+            return ""
+
+        date_str = datetime.fromtimestamp(start_time, tz=timezone.utc).strftime("%Y-%m-%d %H")
+        return f"Today's date in 'YYYY-MM-DD HH' format is {date_str}"
+    except Exception:
+        return ""
+
+
+def _build_system_prompt(tools: Dict[str, Callable], environment: Optional[Any] = None) -> str:
+    """Build the full system prompt with tool descriptions and dynamic placeholders.
+
+    Matches ARE's system prompt construction:
+    - Tool descriptions in ARE's Jinja2 format
+    - Dynamic notification system policy from ARE's notification_system.py
+    - Current time from scenario start_time (ARE are_simulation_main.py:156-164)
+    - Empty agent_reminder_description (ARE are_simulation_main.py:166-171)
 
     Args:
         tools: Dict of tool name -> callable
+        environment: Optional Gaia2Environment for dynamic prompt generation
 
     Returns:
         Complete system prompt string
@@ -363,14 +501,28 @@ def _build_system_prompt(tools: Dict[str, Callable]) -> str:
     # Load templates
     general = _load_prompt_template("general_instructions")
     agent = _load_prompt_template("agent_instructions")
-    environment = _load_prompt_template("environment_instructions")
+    environment_template = _load_prompt_template("environment_instructions")
     template = _load_prompt_template("system_prompt")
 
-    # Build tool descriptions
+    # Build tool descriptions in ARE's format
     tool_descriptions = _build_tool_descriptions(tools)
 
     # Format environment instructions with tool descriptions
-    environment_formatted = environment.format(tool_descriptions=tool_descriptions)
+    environment_formatted = environment_template.format(tool_descriptions=tool_descriptions)
+
+    # Replace dynamic placeholders (matching ARE's are_simulation_main.py:138-171)
+    # 1. Notification system description
+    notification_prompt = _get_notification_system_prompt(environment)
+    environment_formatted = environment_formatted.replace("<<notification_system_description>>", notification_prompt)
+
+    # 2. Agent reminder description (always empty in ARE)
+    # ARE are_simulation_main.py:166-171
+    environment_formatted = environment_formatted.replace("<<agent_reminder_description>>", "")
+
+    # 3. Current time description
+    # ARE are_simulation_main.py:156-164
+    time_description = _get_current_time_description(environment)
+    environment_formatted = environment_formatted.replace("<<curent_time_description>>", time_description)
 
     # Assemble full prompt
     return template.format(
@@ -380,54 +532,63 @@ def _build_system_prompt(tools: Dict[str, Callable]) -> str:
     )
 
 
-def _parse_json_blob(json_blob: str) -> Optional[Dict[str, Any]]:
-    """Parse JSON blob using the same approach as original ARE.
+def _parse_json_blob(json_blob: str) -> Dict[str, Any]:
+    """Parse JSON blob matching ARE's ``parse_json_blob()``.
 
-    Finds the first '{' and last '}' to correctly handle nested JSON.
+    ARE agents/default_agent/tools/json_action_executor.py:33-57.
+    Finds the first '{' and last '}' to handle nested JSON. Raises on failure
+    (no lenient fallbacks — matching ARE's error propagation).
 
     Args:
         json_blob: String potentially containing JSON
 
     Returns:
-        Parsed dict or None if parsing fails
+        Parsed dict
+
+    Raises:
+        ValueError: If JSON parsing fails
     """
     try:
         first_brace = json_blob.find("{")
-        if first_brace == -1:
-            return None
+        last_brace_positions = [m.start() for m in re.finditer(r"}", json_blob)]
+        if first_brace == -1 or not last_brace_positions:
+            raise ValueError(f"No JSON object found in: {json_blob[:200]}")
 
-        # Find all closing braces and use the last one (handles nested JSON)
-        brace_positions = [m.start() for m in re.finditer(r"}", json_blob)]
-        if not brace_positions:
-            return None
-
-        last_brace = brace_positions[-1]
+        last_brace = last_brace_positions[-1]
         json_str = json_blob[first_brace : last_brace + 1]
 
-        # Handle escaped quotes
+        # Handle escaped quotes (ARE json_action_executor.py:38)
         json_str = json_str.replace('\\"', "'")
 
-        # Handle triple quotes
+        # Handle triple quotes (ARE json_action_executor.py:42)
         json_str = re.sub(r'"""(.*?)"""', r"'\1'", json_str, flags=re.DOTALL)
 
         return json.loads(json_str, strict=False)
-    except json.JSONDecodeError:
-        # Try to fix common issues
-        try:
-            # Remove trailing commas
-            fixed = re.sub(r",\s*}", "}", json_str)
-            fixed = re.sub(r",\s*]", "]", fixed)
-            return json.loads(fixed, strict=False)
-        except (json.JSONDecodeError, UnboundLocalError):
-            return None
-    except Exception:
-        return None
+    except json.JSONDecodeError as e:
+        # ARE json_action_executor.py:45-55: raises JsonParsingAgentError
+        place = e.pos or 0
+        if json_str[place - 1 : place + 2] == "},\n":
+            raise ValueError(
+                "JSON is invalid: you probably tried to provide multiple tool calls in one action. PROVIDE ONLY ONE TOOL CALL."
+            ) from e
+        raise ValueError(
+            f"The JSON blob you used is invalid due to the following error: {e}.\n"
+            f"JSON blob was: {json_str}, decoding failed on that specific part of the blob:\n"
+            f"'{json_str[place - 4 : place + 5]}'."
+        ) from e
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"Error in parsing the JSON blob: {e}") from e
 
 
-def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any] | str]]:
     """Parse Thought and Action from LLM text output.
 
-    Expected format:
+    Matches ARE's ``JsonActionExecutor.extract_action()`` and ``parse_json_tool_call()``.
+
+    Expected format::
+
         Thought: [reasoning]
 
         Action:
@@ -461,19 +622,22 @@ def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any
     if end_action_pos != -1:
         action_text = action_text[:end_action_pos]
 
-    # Parse JSON using the robust method (matching original ARE)
-    action_data = _parse_json_blob(action_text)
-    if action_data is None:
+    # Remove markdown code fences (ARE json_action_executor.py:61)
+    action_text = action_text.replace("```json", "").replace("```", "")
+
+    # Parse JSON (raises ValueError on failure, matching ARE)
+    try:
+        action_data = _parse_json_blob(action_text)
+    except ValueError:
         return None
 
-    tool_name = action_data.get("action", "")
-    tool_args = action_data.get("action_input", {})
+    tool_name = action_data.get("action")
+    if tool_name is None:
+        return None
+    tool_name = str(tool_name)
 
-    # Handle string action_input - pass through as-is (matching original ARE behavior)
-    # Original ARE passes string args directly to tools, we convert to dict with single arg
-    if isinstance(tool_args, str):
-        # Keep string as-is for tools that accept positional string args
-        pass
+    # ARE json_action_executor.py:70: missing action_input defaults to ""
+    tool_args = action_data.get("action_input", "")
 
     return (thought, tool_name, tool_args)
 
@@ -485,23 +649,29 @@ class DefaultGaia2Agent:
     action parsing (Thought/Action/Observation cycle) rather than native
     function calling.
 
-    Key characteristics matching ARE:
-        - Text-based JSON action format with <end_action> token
-        - Stop sequences: ["<end_action>", "Observation:"]
-        - Default temperature: 0.5
-        - Default max_tokens: 16384
-        - Default max_iterations: 80
-        - Invalid format retry: up to 10 times
-        - Terminates on send_message_to_user or wait_for_notification
+    Key characteristics matching ARE (base_agent.py, are_simulation.py):
+
+    - Text-based JSON action format with `<end_action>` token
+    - Stop sequences: ``["<end_action>", "Observation:"]``
+    - Default temperature: 0.5 (ARE llm_engine.py:17)
+    - Default max_tokens: 16384 (ARE llm_engine.py:16)
+    - Default max_iterations: 80 (ARE are_simulation_agent_config.py:36)
+    - Invalid format retry: up to 10 times (ARE base_agent.py:347)
+    - Iteration counter incremented EVERY loop (including errors) (ARE base_agent.py:849)
+    - Terminates on send_message_to_user or wait_for_notification
+    - Max-iterations sends message to user via tool (ARE are_simulation.py:109-116)
+    - Pre-step notification polling (ARE steps/are_simulation.py:26-62)
     """
 
     def __init__(
         self,
         tools: Dict[str, Callable],
         model: ModelAdapter,
+        environment: Optional[Any] = None,
         llm_args: Optional[Dict[str, Any]] = None,
         max_iterations: int = _DEFAULT_MAX_ITERATIONS,
         invalid_format_retries: int = _DEFAULT_INVALID_FORMAT_RETRIES,
+        simulated_generation_time_config: Optional[Gaia2SimulatedGenerationTimeConfig] = None,
         verbose: int = 0,
     ):
         """Initialize the agent.
@@ -509,20 +679,27 @@ class DefaultGaia2Agent:
         Args:
             tools: Dict of tool name -> callable
             model: ModelAdapter for LLM interactions
+            environment: Optional Gaia2Environment for notification polling
             llm_args: Additional arguments for model calls. Defaults are applied
                 for temperature (0.5), max_tokens (16384), and stop sequences.
             max_iterations: Maximum iterations before stopping. Default 80.
             invalid_format_retries: Max retries for invalid format. Default 10.
+            simulated_generation_time_config: Optional config for simulated generation
+                time. When set, the simulation is paused during LLM generation and
+                resumed with a time offset. Default None (disabled).
+                ARE agents/are_simulation_agent_config.py:28-30
             verbose: Verbosity level (0=quiet, 1=basic, 2=detailed)
         """
         self.tools = tools
         self.model = model
+        self.environment = environment
         self.max_iterations = max_iterations
         self.invalid_format_retries = invalid_format_retries
+        self.simulated_generation_time_config = simulated_generation_time_config
         self.verbose = verbose
 
         # Build system prompt with tool descriptions
-        self.system_prompt = _build_system_prompt(tools)
+        self.system_prompt = _build_system_prompt(tools, environment)
 
         # Apply default LLM args, allowing user overrides
         self.llm_args = {
@@ -538,6 +715,7 @@ class DefaultGaia2Agent:
         self._format_retry_count = 0
         self._terminated = False
         self._final_message: Optional[str] = None
+        self._step_count = 0  # Counts successful tool executions (for observation formatting)
 
     def reset(self) -> None:
         """Reset agent state."""
@@ -546,6 +724,7 @@ class DefaultGaia2Agent:
         self._format_retry_count = 0
         self._terminated = False
         self._final_message = None
+        self._step_count = 0
 
     def run(self, query: str) -> str:
         """Execute task and return final response.
@@ -556,82 +735,299 @@ class DefaultGaia2Agent:
         Returns:
             Final text response from agent
         """
-        self._messages.append({"role": "user", "content": query})
+        # Match ARE's message format: [TASK]: \n{content}\n
+        # ARE base_agent.py:97
+        self._messages.append({"role": "user", "content": f"[TASK]: \n{query}\n"})
         return self._react_loop()
+
+    def _pull_notifications(self) -> None:
+        """Pull messages from the ARE notification system.
+
+        Matches ARE's pre-step notification polling behavior.
+        ARE agents/default_agent/steps/are_simulation.py:26-62
+        """
+        if self.environment is None:
+            return
+
+        notification_system = self.environment.get_notification_system()
+        if notification_system is None:
+            return
+
+        try:
+            from datetime import datetime, timezone
+
+            timestamp = datetime.now(tz=timezone.utc)
+            unhandled = notification_system.message_queue.get_by_timestamp(timestamp=timestamp)
+
+            if not unhandled:
+                return
+
+            # Separate user messages from environment notifications
+            # ARE steps/are_simulation.py:34-61
+            user_messages = []
+            env_notifications = []
+            for notif in unhandled:
+                msg_type = getattr(notif, "message_type", None)
+                if msg_type is not None:
+                    # Import MessageType at call time to avoid import errors
+                    from are.simulation.notification_system import MessageType  # type: ignore[import-not-found]
+
+                    if msg_type == MessageType.USER_MESSAGE:
+                        user_messages.append(notif.message)
+                    elif msg_type == MessageType.ENVIRONMENT_NOTIFICATION:
+                        ts = notif.timestamp.strftime("%Y-%m-%d %H:%M:%S") if notif.timestamp else ""
+                        env_notifications.append(f"[{ts}] {notif.message}")
+
+            # Inject into message history matching ARE's format
+            # ARE base_agent.py:107: "User messages updates:\n***\n{content}\n***\n"
+            if user_messages:
+                content = "\n".join(user_messages)
+                self._messages.append({"role": "user", "content": f"User messages updates:\n***\n{content}\n***\n"})
+
+            # ARE base_agent.py:110-112: "Environment notifications updates:\n***\n{content}\n***\n"
+            if env_notifications:
+                content = "\n".join(env_notifications)
+                self._messages.append({"role": "user", "content": f"Environment notifications updates:\n***\n{content}\n***\n"})
+        except Exception:
+            pass  # Notification polling is best-effort
+
+    def _check_environment_stop(self) -> bool:
+        """Check if the environment has sent a stop message.
+
+        Matches ARE's termination_condition_are_simulation check.
+        ARE agents/default_agent/termination_methods/are_simulation.py:105-107
+
+        Returns:
+            True if environment has signaled stop
+        """
+        if self.environment is None:
+            return False
+
+        notification_system = self.environment.get_notification_system()
+        if notification_system is None:
+            return False
+
+        try:
+            return notification_system.message_queue.has_environment_stop_message()
+        except Exception:
+            return False
+
+    def _pause_env(self) -> None:
+        """Pause the ARE environment before LLM generation.
+
+        ARE base_agent.py:623-627
+        """
+        if self.environment is not None:
+            self.environment.pause()
+
+    def _resume_env(self, offset: float) -> None:
+        """Resume the ARE environment after LLM generation with time offset.
+
+        ARE base_agent.py:680-689
+
+        Args:
+            offset: Time in seconds to advance the simulation clock
+        """
+        if self.environment is not None:
+            self.environment.resume_with_offset(offset)
 
     def _react_loop(self) -> str:
         """ReAct loop: Thought -> Action -> Observation -> repeat.
+
+        Matches ARE's ``execute_agent_loop()`` and ``step()`` methods.
+        Key behavior matching ARE (base_agent.py:776-854):
+
+        - Iteration counter incremented on EVERY loop iteration (including errors)
+        - Format retries happen within a single iteration
+        - Max-iterations sends message to user via the actual tool
+        - Pre-step notification polling before each iteration
+        - Environment stop message checked for termination
+        - Simulated generation time: pause env before LLM, resume with offset after
 
         Returns:
             Final text response
         """
         while self._iteration_count < self.max_iterations and not self._terminated:
-            # Build messages for LLM
-            messages = [{"role": "system", "content": self.system_prompt}] + self._messages
+            # Pre-step: poll for notifications (matching ARE's pre-step)
+            # ARE agents/default_agent/steps/are_simulation.py:26-62
+            self._pull_notifications()
 
-            # Call LLM (text completion, no tools parameter)
+            # Check for environment stop message
+            # ARE agents/default_agent/termination_methods/are_simulation.py:105-107
+            if self._check_environment_stop():
+                self._terminated = True
+                break
+
+            try:
+                # Build messages for LLM
+                messages = [{"role": "system", "content": self.system_prompt}] + self._messages
+
+                # Pause environment before LLM generation
+                # ARE base_agent.py:623-627
+                if self.simulated_generation_time_config is not None:
+                    self._pause_env()
+
+                # Call LLM with retry for invalid format
+                # ARE base_agent.py:629-666
+                content, completion_duration = self._call_llm_with_format_retry(messages)
+
+                # Resume environment after LLM generation with time offset
+                # ARE base_agent.py:680-689
+                if self.simulated_generation_time_config is not None:
+                    offset = _get_offset_from_time_config_mode(
+                        time_config=self.simulated_generation_time_config,
+                        completion_duration=completion_duration,
+                    )
+                    self._resume_env(offset)
+
+                if content is None:
+                    # All format retries exhausted
+                    continue
+
+                # Parse action from text
+                parsed = _parse_action_from_text(content)
+                if parsed is None:
+                    # This shouldn't happen after format retry, but handle it
+                    self._messages.append({"role": "assistant", "content": content})
+                    error_msg = f"The LLM output was not formatted correctly: {content}"
+                    self._messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"[OUTPUT OF STEP {self._step_count}] ERROR:\n***\n{error_msg}\n***\n\n"
+                                "Now let's retry: take care not to repeat previous errors! "
+                                "If you have retried several times, try a completely different approach.\n"
+                            ),
+                        }
+                    )
+                    continue
+
+                thought, tool_name, tool_args = parsed
+                self._step_count += 1
+
+                # Add assistant message (Thought + Action)
+                self._messages.append({"role": "assistant", "content": content})
+
+                if self.verbose >= 1:
+                    print(f"[Iteration {self._iteration_count}] Tool: {tool_name}")
+
+                # Check for termination tools
+                # ARE agents/default_agent/termination_methods/are_simulation.py:76-118
+                if tool_name in _TERMINATION_TOOLS:
+                    self._terminated = True
+
+                    # Execute the termination tool
+                    observation = self._execute_tool(tool_name, tool_args)
+
+                    # For send_message_to_user, capture the message
+                    if tool_name == "AgentUserInterface__send_message_to_user":
+                        self._final_message = tool_args.get("content", str(observation)) if isinstance(tool_args, dict) else str(observation)
+                        return self._final_message
+
+                    # For wait_for_notification, return the observation
+                    return str(observation)
+
+                # Execute tool
+                observation = self._execute_tool(tool_name, tool_args)
+
+                # Add observation in ARE's format
+                # ARE base_agent.py:102: "[OUTPUT OF STEP {i}] Observation:\n***\n{content}\n***\n"
+                self._messages.append(
+                    {
+                        "role": "user",
+                        "content": f"[OUTPUT OF STEP {self._step_count}] Observation:\n***\n{observation}\n***\n",
+                    }
+                )
+
+            except Exception as e:
+                # Match ARE error handling: log error, add to messages, continue
+                # ARE base_agent.py:839-840, base_agent.py:105-106
+                error_msg = str(e)
+                self._messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"[OUTPUT OF STEP {self._step_count}] ERROR:\n***\n{error_msg}\n***\n\n"
+                            "Now let's retry: take care not to repeat previous errors! "
+                            "If you have retried several times, try a completely different approach.\n"
+                        ),
+                    }
+                )
+            finally:
+                # Safety resume: if environment is still paused due to an exception,
+                # resume without advancing time to prevent deadlock.
+                # ARE base_agent.py:841-848
+                if self.simulated_generation_time_config is not None:
+                    self._resume_env(0.0)
+                # ARE increments iterations on EVERY loop iteration, including errors
+                # ARE base_agent.py:849
+                self._iteration_count += 1
+
+        # Max iterations reached: send message to user via tool
+        # ARE agents/default_agent/termination_methods/are_simulation.py:109-116
+        if self._iteration_count >= self.max_iterations and not self._terminated:
+            max_iter_msg = f"Max iterations ({self.max_iterations}) reached. Stopping."
+            # Call the actual tool to record the event in the simulation
+            if "AgentUserInterface__send_message_to_user" in self.tools:
+                self._execute_tool("AgentUserInterface__send_message_to_user", {"content": max_iter_msg})
+            self._terminated = True
+            return max_iter_msg
+
+        return self._final_message or "Agent terminated without final message."
+
+    def _call_llm_with_format_retry(self, messages: List[Dict[str, Any]]) -> Tuple[Optional[str], float]:
+        """Call LLM with retry for invalid format, matching ARE's behavior.
+
+        ARE base_agent.py:629-666: retries until output contains Action: or Thought:,
+        up to ``invalid_format_retries`` times.
+
+        Args:
+            messages: Messages to send to LLM
+
+        Returns:
+            Tuple of (LLM output text or None, completion_duration in seconds).
+            completion_duration is the wall-clock time of the last successful LLM call.
+        """
+        format_try_count = 0
+        content: Optional[str] = None
+        completion_duration = 0.0
+
+        while content is None or ("Action:" not in content and "Thought:" not in content):
+            if content is not None:
+                # Invalid format - add error and retry
+                # ARE base_agent.py:642-650
+                error_msg = f"The LLM output was not formatted correctly: {content}"
+                self._messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"[OUTPUT OF STEP {self._step_count}] ERROR:\n***\n{error_msg}\n***\n\n"
+                            "Now let's retry: take care not to repeat previous errors! "
+                            "If you have retried several times, try a completely different approach.\n"
+                        ),
+                    }
+                )
+                # Rebuild messages with the error
+                messages = [{"role": "system", "content": self.system_prompt}] + self._messages
+
+            call_start = time.monotonic()
             response = self.model.chat(messages=messages, **self.llm_args)  # type: ignore[arg-type]
+            completion_duration = time.monotonic() - call_start
             content = response.content or ""
 
             if self.verbose >= 2:
-                print(f"[Iteration {self._iteration_count + 1}] LLM output:\n{content}\n")
+                print(f"[Iteration {self._iteration_count}, format try {format_try_count}] LLM output:\n{content}\n")
 
-            # Parse action from text
-            parsed = _parse_action_from_text(content)
+            format_try_count += 1
+            # ARE base_agent.py:664-666: failsafe from infinite loop
+            if format_try_count > self.invalid_format_retries:
+                break
 
-            if parsed is None:
-                # Invalid format - retry
-                self._format_retry_count += 1
-                if self._format_retry_count >= self.invalid_format_retries:
-                    self._messages.append({"role": "assistant", "content": content})
-                    return f"Failed to parse action after {self.invalid_format_retries} retries. Last output: {content}"
+        # ARE base_agent.py:705-708: raise error after retries exhausted
+        if content is None or ("Action:" not in content and "Thought:" not in content):
+            return None, completion_duration
 
-                # Add error observation and retry
-                error_msg = (
-                    "Error: Invalid action format. Please use the correct format:\n"
-                    "Thought: [your reasoning]\n\n"
-                    "Action:\n"
-                    '{"action": "tool_name", "action_input": {...}}<end_action>'
-                )
-                self._messages.append({"role": "assistant", "content": content})
-                self._messages.append({"role": "user", "content": f"Observation: {error_msg}"})
-                continue
-
-            thought, tool_name, tool_args = parsed
-            self._iteration_count += 1
-            self._format_retry_count = 0  # Reset on successful parse
-
-            # Add assistant message (Thought + Action)
-            self._messages.append({"role": "assistant", "content": content})
-
-            if self.verbose >= 1:
-                print(f"[Iteration {self._iteration_count}] Tool: {tool_name}")
-
-            # Check for termination tools
-            if tool_name in _TERMINATION_TOOLS:
-                self._terminated = True
-
-                # Execute the termination tool
-                observation = self._execute_tool(tool_name, tool_args)
-
-                # For send_message_to_user, capture the message
-                if tool_name == "AgentUserInterface__send_message_to_user":
-                    self._final_message = tool_args.get("content", str(observation))
-                    return self._final_message
-
-                # For wait_for_notification, return the observation
-                return str(observation)
-
-            # Execute tool
-            observation = self._execute_tool(tool_name, tool_args)
-
-            # Add observation
-            self._messages.append({"role": "user", "content": f"Observation: {observation}"})
-
-        if self._iteration_count >= self.max_iterations:
-            return f"Max iterations ({self.max_iterations}) reached."
-
-        return self._final_message or "Agent terminated without final message."
+        return content, completion_duration
 
     def _execute_tool(self, tool_name: str, tool_args: Dict[str, Any] | str) -> str:
         """Execute a tool call.
@@ -754,6 +1150,8 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
                 - llm_args: Optional model call arguments (temperature, max_tokens, etc.)
                 - max_iterations: Max iterations per task (default: 80)
                 - invalid_format_retries: Max retries for invalid format (default: 10)
+                - simulated_generation_time_config: Optional Gaia2SimulatedGenerationTimeConfig
+                    for simulating LLM generation time in the simulation (default: None)
                 - verbose: Verbosity level (default: 0)
             **kwargs: Additional Benchmark arguments
         """
@@ -809,6 +1207,7 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
         llm_args = merged_data.get("llm_args", {})
         max_iterations = merged_data.get("max_iterations", _DEFAULT_MAX_ITERATIONS)
         invalid_format_retries = merged_data.get("invalid_format_retries", _DEFAULT_INVALID_FORMAT_RETRIES)
+        simulated_generation_time_config = merged_data.get("simulated_generation_time_config")
         verbose = merged_data.get("verbose", 0)
 
         # Derive seed for agent model (returns None if seeding disabled)
@@ -820,9 +1219,11 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
         agent = DefaultGaia2Agent(
             tools=tools,  # type: ignore[arg-type]  # AREToolWrapper is Callable
             model=model,
+            environment=environment,
             llm_args=llm_args,
             max_iterations=max_iterations,
             invalid_format_retries=invalid_format_retries,
+            simulated_generation_time_config=simulated_generation_time_config,
             verbose=verbose,
         )
 

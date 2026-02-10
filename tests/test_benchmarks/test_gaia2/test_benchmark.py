@@ -107,17 +107,26 @@ class TestGaia2BenchmarkSetupEnvironment:
         mock_are.simulation.environment.Environment.return_value = mock_are_env_instance
         mock_are_env_instance.get_tools.return_value = []
         mock_are_env_instance.event_log.list_view.return_value = []
+        mock_are_env_instance.apps = {}
 
-        # Mock build_event_id_to_turn_idx function
-        def mock_build_event_id_to_turn_idx(scenario):
-            scenario.nb_turns = 1
-            scenario.event_id_to_turn_idx = {}
+        # Mock preprocess_scenario as a no-op
+        def mock_preprocess_scenario(scenario, judge_config, max_scenario_duration):
+            scenario.duration = max_scenario_duration
 
-        mock_are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario.build_event_id_to_turn_idx = mock_build_event_id_to_turn_idx
+        mock_are.simulation.scenarios.scenario_imported_from_json.utils.preprocess_scenario = mock_preprocess_scenario
+
+        # Mock get_scenario_duration
+        def mock_get_scenario_duration(scenario, max_time_duration, max_duration):
+            return max_duration
+
+        mock_are.simulation.scenarios.scenario_imported_from_json.utils.get_scenario_duration = mock_get_scenario_duration
+
+        # Mock scenario config constants
+        mock_are.simulation.scenarios.config.MAX_SCENARIO_DURATION = 1800
+        mock_are.simulation.scenarios.config.MAX_TIME_SCENARIO_DURATION = 420
 
         mock_scenario = MagicMock()
-        mock_scenario.duration = 86400
-        mock_scenario.events = []  # Required by build_event_id_to_turn_idx
+        mock_scenario.duration = 1800
 
         # Patch sys.modules for ARE imports
         with patch.dict(
@@ -126,9 +135,11 @@ class TestGaia2BenchmarkSetupEnvironment:
                 "are": mock_are,
                 "are.simulation": mock_are.simulation,
                 "are.simulation.environment": mock_are.simulation.environment,
+                "are.simulation.validation": mock_are.simulation.validation,
                 "are.simulation.scenarios": mock_are.simulation.scenarios,
+                "are.simulation.scenarios.config": mock_are.simulation.scenarios.config,
                 "are.simulation.scenarios.scenario_imported_from_json": mock_are.simulation.scenarios.scenario_imported_from_json,
-                "are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario": mock_are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario,
+                "are.simulation.scenarios.scenario_imported_from_json.utils": mock_are.simulation.scenarios.scenario_imported_from_json.utils,
                 "are.simulation.types": mock_are.simulation.types,
             },
         ):

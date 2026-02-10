@@ -16,23 +16,32 @@ def _make_are_mock():
     """
     mock_are = MagicMock()
 
-    # Default build_event_id_to_turn_idx that just sets required attrs
-    def _build_event_id_to_turn_idx(scenario):
-        scenario.nb_turns = getattr(scenario, "nb_turns", None) or 1
-        scenario.event_id_to_turn_idx = getattr(scenario, "event_id_to_turn_idx", None) or {}
+    # Mock preprocess_scenario as a no-op
+    def _preprocess_scenario(scenario, judge_config, max_scenario_duration):
+        scenario.duration = max_scenario_duration
 
-    mock_are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario.build_event_id_to_turn_idx = _build_event_id_to_turn_idx
+    mock_are.simulation.scenarios.scenario_imported_from_json.utils.preprocess_scenario = _preprocess_scenario
+
+    # Mock get_scenario_duration to return a sensible default
+    def _get_scenario_duration(scenario, max_time_duration, max_duration):
+        return max_duration
+
+    mock_are.simulation.scenarios.scenario_imported_from_json.utils.get_scenario_duration = _get_scenario_duration
+
+    # Mock scenario config constants
+    mock_are.simulation.scenarios.config.MAX_SCENARIO_DURATION = 1800
+    mock_are.simulation.scenarios.config.MAX_TIME_SCENARIO_DURATION = 420
 
     modules = {
         "are": mock_are,
         "are.simulation": mock_are.simulation,
         "are.simulation.environment": mock_are.simulation.environment,
         "are.simulation.types": mock_are.simulation.types,
+        "are.simulation.validation": mock_are.simulation.validation,
         "are.simulation.scenarios": mock_are.simulation.scenarios,
+        "are.simulation.scenarios.config": mock_are.simulation.scenarios.config,
         "are.simulation.scenarios.scenario_imported_from_json": (mock_are.simulation.scenarios.scenario_imported_from_json),
-        "are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario": (
-            mock_are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario
-        ),
+        "are.simulation.scenarios.scenario_imported_from_json.utils": (mock_are.simulation.scenarios.scenario_imported_from_json.utils),
     }
     return mock_are, modules
 

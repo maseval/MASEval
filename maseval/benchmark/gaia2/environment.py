@@ -41,7 +41,6 @@ class Gaia2Environment(Environment):
                 - scenario: ARE BenchmarkScenario object
                 - capability: Capability type (execution, search, etc.)
                 - universe_id: Universe identifier
-                - duration: Scenario duration in seconds
             callbacks: Optional callbacks
         """
         self._scenario = task_data.get("scenario")
@@ -53,15 +52,15 @@ class Gaia2Environment(Environment):
     def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize ARE scenario and start simulation.
 
-        Mirrors ARE's ``preprocess_scenario()`` flow:
+        Delegates to ARE's ``preprocess_scenario()`` for faithful preprocessing:
 
-        1. Initialize the scenario (populates apps, events).
-        2. Run the scenario in **oracle mode** to generate the expected
-           event log (``oracle_run_event_log``).  The judge compares agent
-           events against these oracle events during evaluation.
-        3. Soft-reset the scenario so app state is clean for the agent run.
-        4. Build the turn-index mapping required by the judge.
-        5. Start the agent-mode simulation.
+        1. Ensure SystemApp is present.
+        2. Set scenario duration from ARE defaults (1800s standard, 420s for Time).
+        3. Initialize the scenario (populates apps, events).
+        4. Run oracle mode to generate expected event log.
+        5. Soft-reset so app state is clean for agent run.
+        6. Create judge and initialize turns with trigger conditions.
+        7. Start the agent-mode simulation.
 
         Args:
             task_data: Task data with scenario, capability, universe_id
@@ -73,10 +72,11 @@ class Gaia2Environment(Environment):
         try:
             from are.simulation.environment import Environment as AREEnvironment  # type: ignore[import-not-found]
             from are.simulation.environment import EnvironmentConfig  # type: ignore[import-not-found]
-            from are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario import (  # type: ignore[import-not-found]
-                build_event_id_to_turn_idx,
+            from are.simulation.scenarios.scenario_imported_from_json.utils import (  # type: ignore[import-not-found]
+                get_scenario_duration,
+                preprocess_scenario,
             )
-            from are.simulation.types import OracleEvent  # type: ignore[import-not-found]
+            from are.simulation.validation import GraphPerEventJudgeConfig  # type: ignore[import-not-found]
         except ImportError as e:
             raise ImportError(
                 "ARE (Agent Research Environments) is required for Gaia2 benchmark.\n"
@@ -84,50 +84,35 @@ class Gaia2Environment(Environment):
                 "Or: uv add --optional gaia2 meta-agents-research-environments"
             ) from e
 
+        # Scenario duration defaults from ARE scenarios/config.py:18-19
+        from are.simulation.scenarios.config import (  # type: ignore[import-not-found]
+            MAX_SCENARIO_DURATION,
+            MAX_TIME_SCENARIO_DURATION,
+        )
+
         scenario = task_data.get("scenario")
         if scenario is None:
             raise ValueError("Task data must contain 'scenario' with ARE BenchmarkScenario")
 
-        # Initialize scenario (populates apps, applies augmentations, builds events)
-        # ARE's Environment.run() requires scenario._initialized == True
-        scenario.initialize()
+        # Determine scenario duration (matching ARE's get_scenario_duration)
+        # ARE scenarios/config.py:18: MAX_SCENARIO_DURATION = 1800 (30 min)
+        # ARE scenarios/config.py:19: MAX_TIME_SCENARIO_DURATION = 420 (7 min)
+        max_duration = get_scenario_duration(scenario, MAX_TIME_SCENARIO_DURATION, MAX_SCENARIO_DURATION)
 
-        # --- Oracle run (mirrors ARE's preprocess_scenario) ---
-        # The judge needs oracle_run_event_log to compare agent actions against
-        # expected actions.  Without this, evaluation always fails with
-        # "Oracle run event log not found".
-        has_oracle_events = any(isinstance(e, OracleEvent) for e in scenario.events)
-        if has_oracle_events:
-            oracle_env = AREEnvironment(
-                EnvironmentConfig(
-                    oracle_mode=True,
-                    queue_based_loop=True,
-                    start_time=scenario.start_time,
-                )
-            )
-            oracle_env.run(scenario)
-            oracle_env.stop()
-
-            oracle_log = oracle_env.event_log.list_view()
-            failed = [e for e in oracle_log if e.failed()]
-            if failed:
-                raise RuntimeError(
-                    f"Oracle run failed for scenario {getattr(scenario, 'scenario_id', '?')}: {[e.metadata.exception for e in failed]}"
-                )
-
-            scenario.oracle_run_event_log = oracle_log  # type: ignore[attr-defined]
-
-            # Reset app state so the agent starts from a clean slate
-            scenario.soft_reset()
-
-        # Build turn index mapping (required by ARE's judge for evaluation)
-        # Sets scenario.nb_turns and scenario.event_id_to_turn_idx
-        build_event_id_to_turn_idx(scenario)
+        # Use ARE's preprocess_scenario() for faithful preprocessing.
+        # This handles: SystemApp insertion, duration setting, scenario initialization,
+        # oracle run, soft reset, judge creation, turn initialization with trigger
+        # conditions, and judge state initialization.
+        # Passing GraphPerEventJudgeConfig() creates a deterministic judge (no LLM).
+        # ARE scenarios/scenario_imported_from_json/utils.py:43-157
+        judge_config = GraphPerEventJudgeConfig()
+        preprocess_scenario(
+            scenario=scenario,
+            judge_config=judge_config,
+            max_scenario_duration=max_duration,
+        )
 
         # Create ARE environment for the agent run
-        # ARE's EnvironmentConfig defaults duration to 60s; scenario.duration
-        # is set by preprocess_scenario from max_scenario_duration config.
-        # We pass it through directly — no invented fallback.
         config = EnvironmentConfig(
             oracle_mode=False,
             duration=scenario.duration,
@@ -140,9 +125,10 @@ class Gaia2Environment(Environment):
 
         return {
             "scenario_id": getattr(scenario, "scenario_id", None),
-            "duration": getattr(scenario, "duration", None),
+            "duration": scenario.duration,
             "capability": task_data.get("capability"),
             "universe_id": task_data.get("universe_id"),
+            "start_time": getattr(scenario, "start_time", None),
         }
 
     def create_tools(self) -> Dict[str, Gaia2GenericTool]:
@@ -204,6 +190,57 @@ class Gaia2Environment(Environment):
             ARE Environment instance
         """
         return self._are_env
+
+    def get_notification_system(self) -> Any:
+        """Get the ARE notification system.
+
+        Used by agents that need to poll for messages between iterations,
+        matching ARE's pre-step notification polling behavior.
+
+        Returns:
+            ARE NotificationSystem instance, or None if not available
+        """
+        if self._are_env is None:
+            return None
+        return getattr(self._are_env, "notification_system", None)
+
+    def get_start_time(self) -> Optional[float]:
+        """Get the scenario start time.
+
+        Returns:
+            Start time as Unix timestamp, or None if not available
+        """
+        return self.state.get("start_time")
+
+    def pause(self) -> None:
+        """Pause the ARE simulation environment.
+
+        Stops time progression during LLM generation, matching ARE's
+        simulated generation time behavior.
+        ARE simulation/environment.py:262-272
+
+        No-op if environment is not available or not running.
+        """
+        if self._are_env is not None:
+            try:
+                self._are_env.pause()
+            except Exception:
+                pass
+
+    def resume_with_offset(self, offset: float) -> None:
+        """Resume the ARE simulation environment with a time offset.
+
+        Advances simulation time by the given offset and resumes the event loop.
+        ARE simulation/environment.py:286-298
+
+        Args:
+            offset: Time in seconds to advance the simulation clock
+        """
+        if self._are_env is not None:
+            try:
+                self._are_env.resume_with_offset(offset)
+            except Exception:
+                pass
 
     def cleanup(self) -> None:
         """Stop ARE simulation when task completes.
