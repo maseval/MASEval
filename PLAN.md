@@ -199,17 +199,41 @@ This provides two levels of confidence:
 
 ### Phase 5: CI/CD Updates — NOT STARTED
 
-Update GitHub Actions workflow with composable marker filter expressions:
+Update `.github/workflows/test.yml` to leverage the composable marker system.
 
-| Job | Trigger | Filter Expression | Description |
-|-----|---------|-------------------|-------------|
-| test-fast | Every push/PR | `-m "not (slow or credentialed or smoke)"` | Fast offline tests |
-| test-credentialed | Daily schedule | `-m "credentialed and not smoke"` | Real API tests (with secrets) |
-| test-slow | Weekly schedule | `-m "slow and not credentialed"` | Data download + integrity (with cache) |
-| test-smoke | Manual dispatch | `-m smoke` | Full end-to-end pre-release |
+#### Current workflow (kept as-is)
 
-Store API keys as GitHub Secrets, only available to scheduled/manual runs.
-Add `actions/cache` for dataset directories in the `test-slow` job.
+These existing jobs remain unchanged — they already exclude `slow`, `credentialed`, and `smoke` via `addopts`:
+
+| Job | Trigger | Python versions | What it runs |
+|-----|---------|-----------------|--------------|
+| test-core | Every push/PR | 3.10–3.14 | `-m core` (fast, no optional deps) |
+| test-benchmark | Every push/PR | 3.10–3.14 | `-m benchmark` |
+| test-all | After core+benchmark | 3.10–3.14 | `pytest -v` (uses `addopts`, excludes slow/credentialed/smoke) |
+| coverage | Every push/PR | 3.12 | `pytest` with coverage reporting |
+
+#### New jobs to add
+
+| Job | Trigger | Python | Filter | Gate | Description |
+|-----|---------|--------|--------|------|-------------|
+| **test-slow** | Every PR | **3.12 only** | `-m "slow and not credentialed"` | None | Data download + integrity (47 tests). No secrets needed. Single version because download behavior doesn't vary across Python versions. Add `actions/cache` on data directories to avoid re-downloading on repeat runs. |
+| **test-credentialed** | Every PR | **3.12 only** | `-m "credentialed and not smoke"` | **GitHub Environment approval** | Real API tests (8 tests). Uses a `credentialed-tests` GitHub Environment with required reviewers. Maintainer clicks "Approve" in PR checks to trigger — secrets only exposed after approval. Prevents fork PRs from accessing keys and gives explicit cost control. |
+
+**No `test-smoke` job for now** — no smoke tests exist yet. Add when smoke tests are written.
+
+#### GitHub Environment setup (manual step)
+
+Create a `credentialed-tests` Environment in repo Settings → Environments:
+1. Add required reviewer(s) (maintainer)
+2. Add secrets: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`
+3. The job references `environment: credentialed-tests` — GitHub shows "Waiting for review" on PRs
+4. Maintainer approves → job runs with access to secrets
+5. If not approved, the check stays pending without blocking the PR
+
+#### Why not scheduled runs?
+
+- **Slow tests on every PR** catch data pipeline breakage before merge, not days later
+- **Credentialed tests behind approval** give the same control as a schedule but with better feedback — results appear on the PR that introduced the change, not in a disconnected nightly run
 
 ---
 
@@ -234,7 +258,7 @@ Add `actions/cache` for dataset directories in the `test-slow` job.
 - Keep mocked tests for fast CI (`core`, `interface`, `contract`, `benchmark` markers)
 - Mocked HTTP tests (Phase 3) run in default suite — no keys needed
 - `credentialed` marker for real API tests (Phase 4) — excluded by default
-- Run credentialed tests on schedule with API keys from secrets (Phase 5)
+- Credentialed tests on PRs behind GitHub Environment approval (Phase 5)
 
 ### Issue: Data Downloads Not Validated — PARTIALLY RESOLVED
 
@@ -254,7 +278,7 @@ Add `actions/cache` for dataset directories in the `test-slow` job.
 2. ~~**Week 2**: Add data integrity tests (`live` + `slow`), fix Tau2 skips~~ — DONE (Phase 2, Tau2 skips not yet addressed)
 3. ~~**Week 3**: Add HTTP mocking with `respx` library (define API contracts via mocks)~~ — DONE (Phase 3)
 4. ~~**Week 4**: Create credentialed tests for each LLM provider (validate mocks against real APIs)~~ — DONE (Phase 4)
-5. **Week 5**: Update CI workflow with filter expressions, add dataset caching — NOT STARTED (Phase 5)
+5. **Week 5**: Add `test-slow` and `test-credentialed` CI jobs, set up GitHub Environment — NOT STARTED (Phase 5)
 
 ---
 
@@ -265,5 +289,6 @@ Add `actions/cache` for dataset directories in the `test-slow` job.
 - [x] `pytest -m "live and slow"` validates all data downloads — 47 tests for Tau2 + MACS
 - [x] `pytest -m "not live"` gives a fully offline run — enforced via `credentialed` → `live` implication hook
 - [ ] Tau2 skipped tests reduced from 45+ to <5 — Not yet addressed
-- [ ] CI runs credentialed tests daily, slow tests weekly — Phase 5
-- [ ] Pre-release smoke tests validate full pipeline — Phase 5
+- [ ] CI runs slow tests on every PR (single Python version) — Phase 5
+- [ ] CI runs credentialed tests on PR with maintainer approval via GitHub Environment — Phase 5
+- [ ] Pre-release smoke tests validate full pipeline — Future (no smoke tests written yet)
