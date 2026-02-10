@@ -5,11 +5,14 @@ Evaluates Gaia2 scenarios using ARE's judge system with MASEval trace integratio
 Reference Paper: "GAIA-2: A Controllable Multi-Turn Conversational Benchmark for Agents"
 """
 
+import logging
 from typing import Any, Dict, List, Optional
 
 from maseval import Evaluator, Task, TaskExecutionStatus
 
 from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+logger = logging.getLogger(__name__)
 
 
 # Statuses where agent is accountable (included in scoring)
@@ -145,7 +148,22 @@ class Gaia2Evaluator(Evaluator):
                 judge = JudgeFactory()(judge_config)
                 judge.initialize_state(scenario)
 
-            # Run ARE's judge validation
+            # Run judge for intermediate turns before final validation.
+            # ARE's intended flow: judge(env) for turns 0..N-2, then
+            # judge.validate(env) for the final turn N-1. validate() checks
+            # (turn_idx + 1) == (nb_turns - 1) to confirm it's on the last
+            # turn, so prior judge(env) calls are required to advance turn_idx.
+            # Without this, turn_idx stays at -1 and multi-turn scenarios
+            # (nb_turns > 1) always fail the is_last_turn check.
+            # ARE simulation/validation/base.py:104
+            nb_turns = judge.state.nb_turns
+            for turn in range(nb_turns - 1):
+                judgment = judge(are_env)
+                if not judgment.success:
+                    logger.info("Intermediate turn %d/%d failed: %s", turn, nb_turns - 1, judgment.failure)
+                    break  # validate() will return failure via last_turn_success check
+
+            # Run ARE's judge validation for the final turn
             result = judge.validate(are_env)
 
             # Convert ARE ScenarioValidationResult to MASEval format

@@ -78,6 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+**Benchmarks**
+
+- GAIA2: Fixed multi-turn scenario evaluation always failing due to missing intermediate judge calls. The evaluator now calls `judge(env)` for each intermediate turn before `judge.validate(env)`, matching ARE's intended evaluation flow. Single-turn scenarios were unaffected. (PR: #PR_NUMBER_PLACEHOLDER)
+
 ### Removed
 
 ## [0.3.0] - 2025-01-18
