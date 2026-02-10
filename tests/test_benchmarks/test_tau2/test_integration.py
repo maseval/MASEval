@@ -48,15 +48,20 @@ class IntegrationTau2Benchmark(Tau2Benchmark):
 
 
 @pytest.mark.benchmark
-def test_tau2_dry_run():
-    """Smoke test for a full benchmark run with mocks."""
+@pytest.mark.parametrize("domain", ["retail", "airline", "telecom"])
+def test_tau2_dry_run(domain):
+    """Smoke test for a full benchmark run with mocks.
 
-    # Setup task
+    Parametrized across all Tau2 domains to ensure integration works
+    consistently regardless of domain.
+    """
+
+    # Setup task with parametrized domain
     task = MagicMock(spec=Task)
-    task.id = "test_1"
+    task.id = f"test_{domain}_1"
     task.metadata = {}
-    task.environment_data = {"domain": "retail"}
-    task.user_data = {"model_id": "mock-user", "instructions": "Test scenario"}
+    task.environment_data = {"domain": domain}
+    task.user_data = {"model_id": "mock-user", "instructions": f"Test {domain} scenario"}
     task.evaluation_data = {"reward_basis": ["DB"], "actions": []}
     task.query = "Help me."
     task.protocol = MagicMock()
@@ -65,9 +70,9 @@ def test_tau2_dry_run():
     # Setup benchmark
     benchmark = IntegrationTau2Benchmark(n_task_repeats=1)
 
-    # Mock Environment
+    # Mock Environment with parametrized domain
     env_mock = MagicMock()
-    env_mock.domain = "retail"
+    env_mock.domain = domain
     env_mock.get_db_hash.return_value = "hash1"
     env_mock.create_user_tools.return_value = {}
     env_mock.gather_traces.return_value = {"final_db_hash": "hash1"}
