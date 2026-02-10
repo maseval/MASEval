@@ -74,9 +74,9 @@ class TestTau2TaskCounts:
     """Validate that each domain has at least the expected number of tasks."""
 
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
-    def test_base_split_count(self, domain):
+    def test_base_split_count(self, domain, ensure_tau2_data):
         """Base split has at least the expected number of tasks."""
-        tasks = load_tasks(domain, split="base")
+        tasks = load_tasks(domain, split="base", data_dir=ensure_tau2_data)
         expected = BASE_SPLIT_COUNTS[domain]
         assert len(tasks) >= expected, f"{domain} base split: expected >= {expected} tasks, got {len(tasks)}"
 
@@ -90,9 +90,9 @@ class TestTau2TaskSchema:
     """Validate that task objects have the expected structure."""
 
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
-    def test_task_fields_populated(self, domain):
+    def test_task_fields_populated(self, domain, ensure_tau2_data):
         """Every task has a non-empty query and correctly shaped data dicts."""
-        tasks = load_tasks(domain, split="base", limit=10)
+        tasks = load_tasks(domain, split="base", limit=10, data_dir=ensure_tau2_data)
 
         for task in tasks:
             assert task.query, f"Task {task.id} has empty query"
@@ -102,9 +102,9 @@ class TestTau2TaskSchema:
             assert task.environment_data.get("db_path"), f"Task {task.id} missing db_path"
 
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
-    def test_evaluation_criteria_present(self, domain):
+    def test_evaluation_criteria_present(self, domain, ensure_tau2_data):
         """Every task has evaluation criteria."""
-        tasks = load_tasks(domain, split="base", limit=10)
+        tasks = load_tasks(domain, split="base", limit=10, data_dir=ensure_tau2_data)
 
         for task in tasks:
             eval_data = task.evaluation_data
@@ -125,32 +125,32 @@ class TestTau2DatabaseContent:
     domain tool tests would fire, silently reducing coverage.
     """
 
-    def test_retail_db_has_entities(self):
+    def test_retail_db_has_entities(self, ensure_tau2_data):
         """Retail DB has users, orders, and products."""
         from maseval.benchmark.tau2.domains.retail import RetailDB
 
-        config = load_domain_config("retail")
+        config = load_domain_config("retail", ensure_tau2_data)
         db = RetailDB.load(config["db_path"])
 
         assert len(db.users) > 0, "retail DB has no users"
         assert len(db.orders) > 0, "retail DB has no orders"
         assert len(db.products) > 0, "retail DB has no products"
 
-    def test_retail_db_users_have_payment_methods(self):
+    def test_retail_db_users_have_payment_methods(self, ensure_tau2_data):
         """At least one retail user has multiple payment methods."""
         from maseval.benchmark.tau2.domains.retail import RetailDB
 
-        config = load_domain_config("retail")
+        config = load_domain_config("retail", ensure_tau2_data)
         db = RetailDB.load(config["db_path"])
 
         max_methods = max(len(u.payment_methods) for u in db.users.values())
         assert max_methods >= 2, f"No retail user has >= 2 payment methods (max={max_methods}). This will cause test_retail_tools skips."
 
-    def test_airline_db_has_entities(self):
+    def test_airline_db_has_entities(self, ensure_tau2_data):
         """Airline DB has users, reservations, and flights."""
         from maseval.benchmark.tau2.domains.airline import AirlineDB
 
-        config = load_domain_config("airline")
+        config = load_domain_config("airline", ensure_tau2_data)
         db = AirlineDB.load(config["db_path"])
 
         assert len(db.users) > 0, "airline DB has no users"
@@ -158,21 +158,21 @@ class TestTau2DatabaseContent:
         assert len(db.flights) > 0, "airline DB has no flights"
 
     @pytest.mark.xfail(reason="v0.2.0 upstream data has no reservations with nonfree baggages")
-    def test_airline_db_has_nonfree_baggages(self):
+    def test_airline_db_has_nonfree_baggages(self, ensure_tau2_data):
         """At least one airline reservation has nonfree baggages."""
         from maseval.benchmark.tau2.domains.airline import AirlineDB
 
-        config = load_domain_config("airline")
+        config = load_domain_config("airline", ensure_tau2_data)
         db = AirlineDB.load(config["db_path"])
 
         has_nonfree = any(r.nonfree_baggages for r in db.reservations.values())
         assert has_nonfree, "No airline reservation has nonfree_baggages. This will cause test_airline_tools skips."
 
-    def test_telecom_db_has_entities(self):
+    def test_telecom_db_has_entities(self, ensure_tau2_data):
         """Telecom DB has customers, lines, bills, and plans."""
         from maseval.benchmark.tau2.domains.telecom import TelecomDB
 
-        config = load_domain_config("telecom")
+        config = load_domain_config("telecom", ensure_tau2_data)
         db = TelecomDB.load(config["db_path"])
 
         assert len(db.customers) > 0, "telecom DB has no customers"

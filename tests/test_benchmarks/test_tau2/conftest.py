@@ -21,16 +21,27 @@ from maseval import Task
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ensure_tau2_data():
-    """Download Tau2 domain data before running any benchmark tests.
+def ensure_tau2_data(tmp_path_factory):
+    """Download Tau2 domain data once per test session to temporary directory.
 
-    This fixture runs once per test session and ensures that the domain
-    data files (db.json, tasks.json, policy.md) exist locally.
+    This fixture runs once per test session and downloads domain data files
+    (db.json, tasks.json, policy.md) to a temporary directory. This ensures:
+    - The download function is tested with real network calls every pytest run
+    - Tests catch upstream data changes that could break production users
+    - All tests in the session reuse the same downloaded data for efficiency
+
+    The temporary directory is deleted after the pytest session ends.
     """
     from maseval.benchmark.tau2.data_loader import ensure_data_exists
 
+    # Create temporary directory for this test session
+    data_dir = tmp_path_factory.mktemp("tau2_data")
+
+    # Download data once for all tests in this session
     for domain in ["retail", "airline", "telecom"]:
-        ensure_data_exists(domain=domain)
+        ensure_data_exists(data_dir=data_dir, domain=domain)
+
+    return data_dir
 
 
 # =============================================================================
@@ -51,32 +62,32 @@ def temp_data_dir():
 
 
 @pytest.fixture
-def retail_db():
+def retail_db(ensure_tau2_data):
     """Load the retail domain database."""
-    from maseval.benchmark.tau2.data_loader import load_domain_config, DEFAULT_DATA_DIR
+    from maseval.benchmark.tau2.data_loader import load_domain_config
     from maseval.benchmark.tau2.domains.retail import RetailDB
 
-    config = load_domain_config("retail", DEFAULT_DATA_DIR)
+    config = load_domain_config("retail", ensure_tau2_data)
     return RetailDB.load(config["db_path"])
 
 
 @pytest.fixture
-def airline_db():
+def airline_db(ensure_tau2_data):
     """Load the airline domain database."""
-    from maseval.benchmark.tau2.data_loader import load_domain_config, DEFAULT_DATA_DIR
+    from maseval.benchmark.tau2.data_loader import load_domain_config
     from maseval.benchmark.tau2.domains.airline import AirlineDB
 
-    config = load_domain_config("airline", DEFAULT_DATA_DIR)
+    config = load_domain_config("airline", ensure_tau2_data)
     return AirlineDB.load(config["db_path"])
 
 
 @pytest.fixture
-def telecom_db():
+def telecom_db(ensure_tau2_data):
     """Load the telecom domain database."""
-    from maseval.benchmark.tau2.data_loader import load_domain_config, DEFAULT_DATA_DIR
+    from maseval.benchmark.tau2.data_loader import load_domain_config
     from maseval.benchmark.tau2.domains.telecom import TelecomDB
 
-    config = load_domain_config("telecom", DEFAULT_DATA_DIR)
+    config = load_domain_config("telecom", ensure_tau2_data)
     return TelecomDB.load(config["db_path"])
 
 
