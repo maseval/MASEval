@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `LangGraphUser` → `LangGraphLLMUser`
   - `LlamaIndexUser` → `LlamaIndexLLMUser`
 
+**Testing**
+
+- Added composable pytest markers (`live`, `credentialed`, `slow`, `smoke`) for fine-grained test selection. Default runs exclude slow, credentialed, and smoke tests. Use `-m credentialed` to run API tests, `-m "live and slow"` for data download validation, etc. (PR: #PR_NUMBER_PLACEHOLDER)
+- Added `credentialed` → `live` marker implication hook so `-m "not live"` always gives a fully offline run (PR: #PR_NUMBER_PLACEHOLDER)
+- Added `tests/markers.py` with `requires_openai`, `requires_anthropic`, `requires_google` skip decorators for tests needing API keys (PR: #PR_NUMBER_PLACEHOLDER)
+- Added data integrity tests for Tau2 and MACS benchmarks (`-m "live and slow"`) that validate download pipelines, file structures, JSON schemas, and database content (PR: #PR_NUMBER_PLACEHOLDER)
+- Added HTTP-level API contract tests for model adapters (OpenAI, Anthropic, Google GenAI, LiteLLM) using `respx` to mock real SDK clients, validating the full adapter → SDK → HTTP → ChatResponse chain without API keys (PR: #PR_NUMBER_PLACEHOLDER)
+
 ### Fixed
 
 ### Removed

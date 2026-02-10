@@ -82,6 +82,7 @@ dev = [
     "ruff>=0.14.0",
     "ty>=0.0.5",
     "pre-commit>=4.0.0",
+    "respx>=0.22.0",
 ]
 
 # Documentation building - for contributors only
