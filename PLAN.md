@@ -197,9 +197,9 @@ This provides two levels of confidence:
 - Mocked tests (Phase 3) catch code-level regressions (fast, every PR)
 - Real API tests (Phase 4) catch API contract changes (daily, with keys)
 
-### Phase 5: CI/CD Updates — DONE
+### Phase 5: CI/CD Updates — NOT STARTED
 
-~~Update `.github/workflows/test.yml` to leverage the composable marker system.~~
+Update `.github/workflows/test.yml` to leverage the composable marker system.
 
 #### Current workflow (kept as-is)
 
@@ -212,16 +212,16 @@ These existing jobs remain unchanged — they already exclude `slow`, `credentia
 | test-all | After core+benchmark | 3.10–3.14 | `pytest -v` (uses `addopts`, excludes slow/credentialed/smoke) |
 | coverage | Every push/PR | 3.12 | `pytest` with coverage reporting |
 
-#### New jobs added
+#### New jobs to add
 
 | Job | Trigger | Python | Filter | Gate | Description |
 |-----|---------|--------|--------|------|-------------|
-| ~~**test-slow**~~ | Every push/PR | **3.12 only** | `-m "slow and not credentialed"` | None | Data download + integrity (47 tests). No secrets needed. Single version because download behavior doesn't vary across Python versions. `actions/cache` on `maseval/benchmark/tau2/data/`, `maseval/benchmark/macs/data/`, and `maseval/benchmark/macs/prompt_templates/` keyed by data loader file hashes. |
-| ~~**test-credentialed**~~ | Every push/PR | **3.12 only** | `-m "credentialed and not smoke"` | **GitHub Environment approval** | Real API tests (8 tests). Uses `credentialed-tests` GitHub Environment with required reviewers. Secrets (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) only exposed after maintainer approval. |
+| **test-slow** | Every PR | **3.12 only** | `-m "slow and not credentialed"` | None | Data download + integrity (47 tests). No secrets needed. Single version because download behavior doesn't vary across Python versions. Add `actions/cache` on data directories to avoid re-downloading on repeat runs. |
+| **test-credentialed** | Every PR | **3.12 only** | `-m "credentialed and not smoke"` | **GitHub Environment approval** | Real API tests (8 tests). Uses a `credentialed-tests` GitHub Environment with required reviewers. Maintainer clicks "Approve" in PR checks to trigger — secrets only exposed after approval. Prevents fork PRs from accessing keys and gives explicit cost control. |
 
 **No `test-smoke` job for now** — no smoke tests exist yet. Add when smoke tests are written.
 
-#### GitHub Environment setup (manual step — NOT YET DONE)
+#### GitHub Environment setup (manual step)
 
 Create a `credentialed-tests` Environment in repo Settings → Environments:
 1. Add required reviewer(s) (maintainer)
@@ -278,7 +278,7 @@ Create a `credentialed-tests` Environment in repo Settings → Environments:
 2. ~~**Week 2**: Add data integrity tests (`live` + `slow`), fix Tau2 skips~~ — DONE (Phase 2, Tau2 skips not yet addressed)
 3. ~~**Week 3**: Add HTTP mocking with `respx` library (define API contracts via mocks)~~ — DONE (Phase 3)
 4. ~~**Week 4**: Create credentialed tests for each LLM provider (validate mocks against real APIs)~~ — DONE (Phase 4)
-5. ~~**Week 5**: Add `test-slow` and `test-credentialed` CI jobs~~ — DONE (Phase 5). GitHub Environment setup is a manual step (see Phase 5).
+5. **Week 5**: Add `test-slow` and `test-credentialed` CI jobs, set up GitHub Environment — NOT STARTED (Phase 5)
 
 ---
 
@@ -289,6 +289,6 @@ Create a `credentialed-tests` Environment in repo Settings → Environments:
 - [x] `pytest -m "live and slow"` validates all data downloads — 47 tests for Tau2 + MACS
 - [x] `pytest -m "not live"` gives a fully offline run — enforced via `credentialed` → `live` implication hook
 - [ ] Tau2 skipped tests reduced from 45+ to <5 — Not yet addressed
-- [x] CI runs slow tests on every push/PR (single Python version) — Phase 5
-- [x] CI runs credentialed tests on PR with maintainer approval via GitHub Environment — Phase 5 (environment setup is manual)
+- [ ] CI runs slow tests on every PR (single Python version) — Phase 5
+- [ ] CI runs credentialed tests on PR with maintainer approval via GitHub Environment — Phase 5
 - [ ] Pre-release smoke tests validate full pipeline — Future (no smoke tests written yet)
