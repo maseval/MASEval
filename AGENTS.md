@@ -483,128 +483,39 @@ We have zero obligation to maintain backwards compatibility. If you find code me
 
 MASEval is a scientific library. Scientific integrity is paramount. **Never introduce defaults that could silently alter benchmark behavior or experimental outcomes.**
 
-### The Boundary: When Defaults Are Acceptable
+### The Boundary
 
-**Acceptable defaults** are for **infrastructure and convenience** — things that don't affect scientific results:
+**Guiding principle:** If a researcher would need to report a parameter in a paper's "Experimental Setup" section, **do not invent a default for it.**
 
-- **Internal utilities:** `TaskQueue(limit=None)`, `Logger(verbose=False)`, `Cache(max_size=1000)`
-- **Display/formatting:** `print_results(color=True)`, `format_output(indent=2)`
-- **Non-experimental config:** `num_workers=1`, `batch_size=32`, `timeout=30`
-- **Optional features:** `enable_logging=False`, `save_checkpoints=False`
+**Acceptable (infrastructure/convenience):** `TaskQueue(limit=None)`, `Logger(verbose=False)`, `num_workers=1`, `print_results(color=True)` — these don't affect scientific results.
 
-These are implementation details. Changing them doesn't invalidate research findings.
+**Unacceptable (experimental parameters):** Temperature, seed, model version, prompt format, simulation duration, agent limits, dataset splits, scoring functions — these alter what's being measured.
 
-**Unacceptable defaults** are for **experimental parameters and benchmark reproduction** — anything that affects what's being measured:
+### Reproducing Benchmarks
 
-- **Benchmark parameters:** Temperature, seed, model version, prompt format
-- **Environment configuration:** Simulation duration, agent limits, termination conditions
-- **Data loading:** Dataset splits, preprocessing steps, filtering criteria
-- **Evaluation metrics:** Scoring functions, thresholds, aggregation methods
-
-**Guiding principle:** If a researcher would need to report this parameter in a paper's "Experimental Setup" section, **do not invent a default for it.**
-
-### Reproducing Benchmarks: Always Faithful to Source
-
-When integrating external benchmarks, **never invent fallback values** — always match the source implementation exactly. Making up a "reasonable" default silently changes behavior and invalidates results.
-
-**Bad: Invented defaults that alter benchmark behavior**
+When integrating external benchmarks, match the source implementation exactly. Never invent fallback values.
 
 ```python
-# BAD: 86400 is invented — EnvironmentConfig defaults duration to 60,
-# and the original scenario doesn't pass duration at all.
-# This silently changes simulation timing from 60s to 86400s (24 hours),
-# which can alter event scheduling and evaluation outcomes.
+# BAD: Invented defaults
 config = EnvironmentConfig(
-    oracle_mode=False,
     duration=getattr(scenario, "duration", 86400),  # Made-up fallback!
 )
+start_time = getattr(scenario, "start_time", None)  # Hides missing attributes
 
-# ALSO BAD: getattr with None fallback hides missing attributes.
-# The original implementation of scenario uses scenario.start_time directly —
-# if the attribute doesn't exist, that's a real bug that should surface.
-start_time=getattr(scenario, "start_time", None)  # Silent None!
-
-# BAD: Invented default changes model behavior
-model_config = ModelConfig(
-    temperature=0.7,  # Where did 0.7 come from? Source might use 0.0 or 1.0!
-    max_tokens=getattr(scenario, "max_tokens", 2048),  # Invented fallback
-)
-```
-
-**Good: Faithful to source, errors surface real issues**
-
-```python
-# GOOD: Pass values through directly, faithful to the source.
-# If scenario.duration is None, EnvironmentConfig handles it
-# (runs indefinitely, per ARE's own documentation).
-# If scenario.start_time doesn't exist, we get an AttributeError
-# that reveals the real problem.
+# GOOD: Pass through directly, let errors surface
 config = EnvironmentConfig(
-    oracle_mode=False,
     duration=scenario.duration,  # Trust the source
 )
-start_time = scenario.start_time  # Let missing attributes error
+start_time = scenario.start_time  # AttributeError if missing
 
-# GOOD: Use source's explicit defaults or require parameter
-model_config = ModelConfig(
-    temperature=scenario.temperature,  # Must exist in source
-    max_tokens=scenario.max_tokens,    # Errors if missing
-)
-```
-
-**Copying source defaults is acceptable (with documentation):**
-
-If the original benchmark defines defaults, you can copy them — but **always document where they came from**:
-
-```python
-# GOOD: Copying the original's default, with source documentation
+# GOOD: Copy source defaults with documentation
 # Default value copied from original_library/evaluator.py:L45
 EVAL_TEMPERATURE = 0.7
 
 class Evaluator:
     def run(self, temperature: Optional[float] = None):
         if temperature is None:
-            # Default from original_library/evaluator.py:L45
-            temperature = EVAL_TEMPERATURE
-        ...
-
-# ALSO OK: Inline comment with source
-class BenchmarkAdapter:
-    def __init__(self, max_retries: Optional[int] = None):
-        # Default copied from OriginalBenchmark.__init__ (source/benchmark.py:L123)
-        self.max_retries = max_retries if max_retries is not None else 3
+            temperature = EVAL_TEMPERATURE  # From source:L45
 ```
 
-**Key rule:** Only copy defaults that exist in the source. If the original doesn't provide a default, neither should you.
-
-### When to Use Defaults
-
-**Infrastructure (Acceptable):**
-
-```python
-# These don't affect scientific results
-queue = TaskQueue(limit=None)  # Internal utility
-logger = Logger(level="INFO")   # Display preference
-cache = Cache(ttl=3600)         # Performance optimization
-```
-
-**Benchmark Integration (Unacceptable):**
-
-```python
-# These alter experimental conditions
-# NEVER do this:
-run_benchmark(
-    temperature=0.7,        # Where did this come from?
-    seed=42,                # Arbitrary choice
-    max_steps=100,          # Invented limit
-)
-
-# ALWAYS do this:
-run_benchmark(
-    temperature=source_config.temperature,  # From original
-    seed=source_config.seed,                # From original
-    max_steps=source_config.max_steps,      # From original
-)
-```
-
-**Summary:** Defaults for convenience = fine. Defaults for science = dangerous. When in doubt, make it explicit or let it error.
+**Rule:** Only copy defaults that exist in the source. If the original doesn't provide a default, neither should you. Always document the source file and line number.
