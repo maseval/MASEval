@@ -129,6 +129,7 @@ class TestGaia2BenchmarkSetupEnvironment:
                 "are.simulation.scenarios": mock_are.simulation.scenarios,
                 "are.simulation.scenarios.scenario_imported_from_json": mock_are.simulation.scenarios.scenario_imported_from_json,
                 "are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario": mock_are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario,
+                "are.simulation.types": mock_are.simulation.types,
             },
         ):
             # Add scenario to task environment_data

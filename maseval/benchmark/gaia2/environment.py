@@ -53,6 +53,16 @@ class Gaia2Environment(Environment):
     def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize ARE scenario and start simulation.
 
+        Mirrors ARE's ``preprocess_scenario()`` flow:
+
+        1. Initialize the scenario (populates apps, events).
+        2. Run the scenario in **oracle mode** to generate the expected
+           event log (``oracle_run_event_log``).  The judge compares agent
+           events against these oracle events during evaluation.
+        3. Soft-reset the scenario so app state is clean for the agent run.
+        4. Build the turn-index mapping required by the judge.
+        5. Start the agent-mode simulation.
+
         Args:
             task_data: Task data with scenario, capability, universe_id
 
@@ -66,6 +76,7 @@ class Gaia2Environment(Environment):
             from are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario import (  # type: ignore[import-not-found]
                 build_event_id_to_turn_idx,
             )
+            from are.simulation.types import OracleEvent  # type: ignore[import-not-found]
         except ImportError as e:
             raise ImportError(
                 "ARE (Agent Research Environments) is required for Gaia2 benchmark.\n"
@@ -77,20 +88,51 @@ class Gaia2Environment(Environment):
         if scenario is None:
             raise ValueError("Task data must contain 'scenario' with ARE BenchmarkScenario")
 
-        # Create ARE environment with config
-        config = EnvironmentConfig(
-            oracle_mode=False,
-            duration=getattr(scenario, "duration", 86400),  # Default 24 hours
-        )
-        self._are_env = AREEnvironment(config)
-
         # Initialize scenario (populates apps, applies augmentations, builds events)
         # ARE's Environment.run() requires scenario._initialized == True
         scenario.initialize()
 
+        # --- Oracle run (mirrors ARE's preprocess_scenario) ---
+        # The judge needs oracle_run_event_log to compare agent actions against
+        # expected actions.  Without this, evaluation always fails with
+        # "Oracle run event log not found".
+        has_oracle_events = any(isinstance(e, OracleEvent) for e in scenario.events)
+        if has_oracle_events:
+            oracle_env = AREEnvironment(
+                EnvironmentConfig(
+                    oracle_mode=True,
+                    queue_based_loop=True,
+                    start_time=scenario.start_time,
+                )
+            )
+            oracle_env.run(scenario)
+            oracle_env.stop()
+
+            oracle_log = oracle_env.event_log.list_view()
+            failed = [e for e in oracle_log if e.failed()]
+            if failed:
+                raise RuntimeError(
+                    f"Oracle run failed for scenario {getattr(scenario, 'scenario_id', '?')}: {[e.metadata.exception for e in failed]}"
+                )
+
+            scenario.oracle_run_event_log = oracle_log  # type: ignore[attr-defined]
+
+            # Reset app state so the agent starts from a clean slate
+            scenario.soft_reset()
+
         # Build turn index mapping (required by ARE's judge for evaluation)
         # Sets scenario.nb_turns and scenario.event_id_to_turn_idx
         build_event_id_to_turn_idx(scenario)
+
+        # Create ARE environment for the agent run
+        # ARE's EnvironmentConfig defaults duration to 60s; scenario.duration
+        # is set by preprocess_scenario from max_scenario_duration config.
+        # We pass it through directly — no invented fallback.
+        config = EnvironmentConfig(
+            oracle_mode=False,
+            duration=scenario.duration,
+        )
+        self._are_env = AREEnvironment(config)
 
         # Run scenario (registers apps, schedules events, starts event loop)
         # wait_for_end=False so control returns immediately for agent interaction

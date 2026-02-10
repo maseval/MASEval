@@ -8,6 +8,35 @@ import sys
 from unittest.mock import MagicMock, patch
 
 
+def _make_are_mock():
+    """Create a fully-mocked ARE module structure for sys.modules patching.
+
+    Returns a (mock_are, modules_dict) tuple where modules_dict can be
+    passed directly to ``patch.dict(sys.modules, modules_dict)``.
+    """
+    mock_are = MagicMock()
+
+    # Default build_event_id_to_turn_idx that just sets required attrs
+    def _build_event_id_to_turn_idx(scenario):
+        scenario.nb_turns = getattr(scenario, "nb_turns", None) or 1
+        scenario.event_id_to_turn_idx = getattr(scenario, "event_id_to_turn_idx", None) or {}
+
+    mock_are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario.build_event_id_to_turn_idx = _build_event_id_to_turn_idx
+
+    modules = {
+        "are": mock_are,
+        "are.simulation": mock_are.simulation,
+        "are.simulation.environment": mock_are.simulation.environment,
+        "are.simulation.types": mock_are.simulation.types,
+        "are.simulation.scenarios": mock_are.simulation.scenarios,
+        "are.simulation.scenarios.scenario_imported_from_json": (mock_are.simulation.scenarios.scenario_imported_from_json),
+        "are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario": (
+            mock_are.simulation.scenarios.scenario_imported_from_json.benchmark_scenario
+        ),
+    }
+    return mock_are, modules
+
+
 # =============================================================================
 # Test Gaia2Environment Class Structure
 # =============================================================================
@@ -49,24 +78,17 @@ class TestGaia2EnvironmentInit:
         """Test environment stores scenario from task data."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        # Create mock ARE modules
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
         mock_scenario.scenario_id = "test_scenario"
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             task_data = {"scenario": mock_scenario}
             env = Gaia2Environment(task_data=task_data)
 
@@ -76,16 +98,9 @@ class TestGaia2EnvironmentInit:
         """Test raises error when scenario is missing."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        _, modules = _make_are_mock()
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             with pytest.raises(ValueError, match="scenario"):
                 Gaia2Environment(task_data={})
 
@@ -104,8 +119,7 @@ class TestGaia2EnvironmentCreateTools:
         from maseval.benchmark.gaia2.environment import Gaia2Environment
         from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
-        # Create mock ARE modules
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
 
@@ -121,16 +135,10 @@ class TestGaia2EnvironmentCreateTools:
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
         mock_scenario.scenario_id = "test"
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
             tools = env.create_tools()
 
@@ -141,22 +149,16 @@ class TestGaia2EnvironmentCreateTools:
         """Test create_tools returns empty dict when ARE env is None."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
             # Manually set _are_env to None
             env._are_env = None
@@ -178,22 +180,16 @@ class TestGaia2EnvironmentCleanup:
         """Test cleanup calls stop on ARE environment."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
             env.cleanup()
 
@@ -203,22 +199,16 @@ class TestGaia2EnvironmentCleanup:
         """Test cleanup handles case when no ARE environment."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
             env._are_env = None
 
@@ -229,7 +219,7 @@ class TestGaia2EnvironmentCleanup:
         """Test cleanup handles error during stop gracefully."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
@@ -237,15 +227,9 @@ class TestGaia2EnvironmentCleanup:
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
 
             # Should not raise
@@ -265,22 +249,16 @@ class TestGaia2EnvironmentAccessors:
         """Test get_are_environment returns ARE environment."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
 
             assert env.get_are_environment() is mock_env_instance
@@ -289,22 +267,16 @@ class TestGaia2EnvironmentAccessors:
         """Test get_scenario returns scenario."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
 
             assert env.get_scenario() is mock_scenario
@@ -313,7 +285,7 @@ class TestGaia2EnvironmentAccessors:
         """Test get_simulation_time returns current time."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
@@ -321,15 +293,9 @@ class TestGaia2EnvironmentAccessors:
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
 
             assert env.get_simulation_time() == 123.5
@@ -338,22 +304,16 @@ class TestGaia2EnvironmentAccessors:
         """Test get_simulation_time returns 0 when no environment."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
             env._are_env = None
 
@@ -373,7 +333,7 @@ class TestGaia2EnvironmentTracing:
         """Test gather_traces includes type information."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
@@ -381,15 +341,9 @@ class TestGaia2EnvironmentTracing:
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(task_data={"scenario": mock_scenario})
             traces = env.gather_traces()
 
@@ -400,23 +354,17 @@ class TestGaia2EnvironmentTracing:
         """Test gather_config includes environment information."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        mock_are = MagicMock()
+        mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
         mock_env_instance.apps = {}
 
         mock_scenario = MagicMock()
         mock_scenario.duration = 86400
+        mock_scenario.events = []  # No oracle events in mock scenario
         mock_scenario.scenario_id = "test_scenario"
 
-        with patch.dict(
-            sys.modules,
-            {
-                "are": mock_are,
-                "are.simulation": mock_are.simulation,
-                "are.simulation.environment": mock_are.simulation.environment,
-            },
-        ):
+        with patch.dict(sys.modules, modules):
             env = Gaia2Environment(
                 task_data={
                     "scenario": mock_scenario,
