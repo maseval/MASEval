@@ -174,3 +174,304 @@ class TestMACSRealDataWithEvaluators:
             # Validate evaluation data has assertions
             assertions = task.evaluation_data.get("assertions", [])
             assert len(assertions) > 0, f"Task {task.id} has no assertions"
+
+
+# =============================================================================
+# End-to-End Integration Tests with Real Data
+# =============================================================================
+
+
+class TestMACSBenchmarkWithRealData:
+    """End-to-end tests running the full MACS benchmark with real data.
+
+    These tests validate that the complete benchmark pipeline works correctly
+    with actual downloaded MACS tasks, not synthetic fixtures. This is the
+    real data equivalent of TestEndToEndPipeline in test_macs_integration.py.
+    """
+
+    @pytest.mark.parametrize("domain", VALID_DOMAINS)
+    def test_real_task_complete_lifecycle(self, domain, real_macs_data, macs_model_factory):
+        """Test complete task lifecycle with real MACS data: setup → run → evaluate."""
+        from conftest import DummyModelAdapter
+        from .conftest import ConcreteMACSBenchmark
+        from maseval.core.seeding import DefaultSeedGenerator
+
+        # Load real data
+        tasks = load_tasks(domain, data_dir=real_macs_data, limit=1)
+        agent_config = load_agent_config(domain, data_dir=real_macs_data)
+
+        assert len(tasks) > 0, f"No tasks loaded for domain {domain}"
+        task = tasks[0]
+
+        # Create model with responses for this test
+        # Note: Using DummyModelAdapter to avoid actual LLM calls in tests
+        responses = [
+            '{"text": "I can help with that.", "details": {}}',  # Tool simulation
+            '[{"assertion": "test", "answer": "TRUE", "evidence": "ok"}]',  # User evaluation
+            '[{"assertion": "test", "answer": "TRUE", "evidence": "ok"}]',  # System evaluation
+        ]
+        model = DummyModelAdapter(responses=responses)
+        benchmark = ConcreteMACSBenchmark(model)
+
+        # Setup phase - using real task data
+        seed_gen = DefaultSeedGenerator(global_seed=None).for_task(str(task.id)).for_repetition(0)
+
+        from maseval.benchmark.macs import MACSEnvironment, MACSUser
+        env = benchmark.setup_environment(agent_config, task, seed_gen)
+        user = benchmark.setup_user(agent_config, env, task, seed_gen)
+        agents_list, agents_dict = benchmark.setup_agents(agent_config, env, task, user, seed_gen)
+        evaluators = benchmark.setup_evaluators(env, task, agents_list, user, seed_gen)
+
+        # Verify setup with real data
+        assert isinstance(env, MACSEnvironment)
+        assert isinstance(user, MACSUser)
+        assert len(agents_list) > 0, f"No agents created for {domain}"
+        assert len(evaluators) == 2, "Should have user and system evaluators"
+
+        # Verify environment has real tools from task
+        assert len(env.tools) > 0, f"No tools in environment for {domain} task {task.id}"
+
+        # Run phase
+        final_answer = benchmark.run_agents(agents_list, task, env)
+        assert final_answer is not None
+
+        # Evaluate phase with real assertions
+        traces = {
+            "agents": {
+                "test_agent": {
+                    "messages": [
+                        {"role": "user", "content": task.query},
+                        {"role": "assistant", "content": final_answer},
+                    ]
+                }
+            },
+            "tools": {},
+        }
+        results = benchmark.evaluate(evaluators, agents_dict, final_answer, traces)
+
+        # Verify evaluation results
+        assert len(results) == 1
+        assert "user_gsr" in results[0]
+        assert "system_gsr" in results[0]
+        assert "overall_gsr" in results[0]
+
+    @pytest.mark.parametrize("domain", VALID_DOMAINS)
+    def test_real_task_full_benchmark_run(self, domain, real_macs_data):
+        """Full end-to-end test: real task through benchmark.run()."""
+        from conftest import DummyModelAdapter
+        from .conftest import ConcreteMACSBenchmark
+
+        # Load real data
+        tasks = load_tasks(domain, data_dir=real_macs_data, limit=1)
+        agent_config = load_agent_config(domain, data_dir=real_macs_data)
+
+        assert len(tasks) > 0, f"No tasks loaded for domain {domain}"
+
+        # Create model with appropriate responses
+        model = DummyModelAdapter(
+            responses=[
+                '{"text": "Response to user query", "details": {}}',
+                '[{"assertion": "test", "answer": "TRUE", "evidence": "ok"}]',
+                '[{"assertion": "test", "answer": "TRUE", "evidence": "ok"}]',
+            ]
+        )
+
+        benchmark = ConcreteMACSBenchmark(model)
+        reports = benchmark.run(tasks, agent_data=agent_config)
+
+        # Verify complete report structure with real data
+        assert len(reports) == 1, f"Expected 1 report for {domain}, got {len(reports)}"
+        report = reports[0]
+
+        assert report["task_id"] == str(tasks[0].id)
+        assert report["repeat_idx"] == 0
+        assert report["status"] == "success", f"Task failed: {report.get('error', 'unknown error')}"
+        assert "traces" in report
+        assert "config" in report
+        assert "eval" in report
+
+        # Verify evaluation contains real assertions
+        eval_data = report["eval"]
+        assert "user_gsr" in eval_data or "system_gsr" in eval_data, "No evaluation results"
+
+    @pytest.mark.parametrize("domain", VALID_DOMAINS)
+    def test_real_multiple_tasks_from_domain(self, domain, real_macs_data):
+        """Run benchmark with multiple real tasks from the same domain."""
+        from conftest import DummyModelAdapter
+        from .conftest import ConcreteMACSBenchmark
+
+        # Load multiple tasks
+        tasks = load_tasks(domain, data_dir=real_macs_data, limit=3)
+        agent_config = load_agent_config(domain, data_dir=real_macs_data)
+
+        assert len(tasks) > 0, f"No tasks loaded for domain {domain}"
+
+        model = DummyModelAdapter(
+            responses=[
+                '{"text": "Response", "details": {}}',
+                '[{"assertion": "test", "answer": "TRUE", "evidence": "ok"}]',
+                '[{"assertion": "test", "answer": "TRUE", "evidence": "ok"}]',
+            ]
+        )
+
+        benchmark = ConcreteMACSBenchmark(model)
+        reports = benchmark.run(tasks, agent_data=agent_config)
+
+        # Verify all tasks completed
+        assert len(reports) == len(tasks), f"Expected {len(tasks)} reports, got {len(reports)}"
+
+        for i, report in enumerate(reports):
+            assert report["status"] == "success", f"Task {i} failed: {report.get('error', 'unknown')}"
+            assert report["task_id"] == str(tasks[i].id)
+            assert "eval" in report
+
+    def test_real_tasks_across_all_domains(self, real_macs_data):
+        """Verify benchmark works with real tasks from all MACS domains."""
+        from conftest import DummyModelAdapter
+        from .conftest import ConcreteMACSBenchmark
+
+        # Collect one task from each domain
+        all_tasks = []
+        domain_configs = {}
+
+        for domain in VALID_DOMAINS:
+            tasks = load_tasks(domain, data_dir=real_macs_data, limit=1)
+            if tasks:
+                all_tasks.extend(tasks)
+                # Store first domain's config (they should all work with same agent structure)
+                if not domain_configs:
+                    domain_configs = load_agent_config(domain, data_dir=real_macs_data)
+
+        assert len(all_tasks) > 0, "No tasks loaded from any domain"
+        assert domain_configs, "No agent config loaded"
+
+        model = DummyModelAdapter(
+            responses=[
+                '{"text": "Response", "details": {}}',
+                '[{"assertion": "test", "answer": "TRUE", "evidence": "ok"}]',
+                '[{"assertion": "test", "answer": "TRUE", "evidence": "ok"}]',
+            ]
+        )
+
+        benchmark = ConcreteMACSBenchmark(model)
+        reports = benchmark.run(all_tasks, agent_data=domain_configs)
+
+        # Verify cross-domain execution
+        assert len(reports) == len(all_tasks)
+        for report in reports:
+            assert report["status"] == "success", f"Cross-domain task failed: {report.get('error', 'unknown')}"
+
+
+# =============================================================================
+# Real Data Validation Tests
+# =============================================================================
+
+
+class TestMACSRealDataIntegrity:
+    """Validate that real MACS data has expected structure and quality.
+
+    These tests fail loudly if real data is missing or malformed, similar to
+    tau2's approach of using assertions instead of skips.
+    """
+
+    @pytest.mark.parametrize("domain", VALID_DOMAINS)
+    def test_real_data_has_sufficient_tasks(self, domain, real_macs_data):
+        """Real MACS data should have a reasonable number of tasks per domain."""
+        tasks = load_tasks(domain, data_dir=real_macs_data)
+
+        assert len(tasks) > 0, (
+            f"Real MACS {domain} domain should have tasks. "
+            "This indicates download issue or upstream data problem. "
+            f"Found {len(tasks)} tasks."
+        )
+
+        # MACS domains should have at least a few tasks
+        assert len(tasks) >= 3, (
+            f"Real MACS {domain} domain should have at least 3 tasks. "
+            f"Found {len(tasks)} tasks. This may indicate incomplete download."
+        )
+
+    @pytest.mark.parametrize("domain", VALID_DOMAINS)
+    def test_real_data_has_agent_config(self, domain, real_macs_data):
+        """Real MACS data should have agent configurations."""
+        agent_config = load_agent_config(domain, data_dir=real_macs_data)
+
+        assert agent_config is not None, (
+            f"Real MACS {domain} domain should have agent config. "
+            "This indicates download issue or data structure problem."
+        )
+
+        assert "agents" in agent_config, (
+            f"Agent config for {domain} should have 'agents' key. "
+            f"Found keys: {list(agent_config.keys())}"
+        )
+
+        assert len(agent_config["agents"]) > 0, (
+            f"Agent config for {domain} should have at least one agent. "
+            f"Found {len(agent_config['agents'])} agents."
+        )
+
+    @pytest.mark.parametrize("domain", VALID_DOMAINS)
+    def test_real_tasks_have_valid_tools(self, domain, real_macs_data):
+        """All real tasks should have valid tool specifications."""
+        tasks = load_tasks(domain, data_dir=real_macs_data)
+
+        assert len(tasks) > 0, f"No tasks loaded for {domain}"
+
+        for task in tasks:
+            tools = task.environment_data.get("tools", [])
+
+            assert len(tools) > 0, (
+                f"Task {task.id} in {domain} should have tools. "
+                "This indicates data quality issue. "
+                f"Found {len(tools)} tools."
+            )
+
+            # Validate tool structure
+            for tool_group in tools:
+                assert "tool_name" in tool_group, f"Tool group in task {task.id} missing 'tool_name'"
+                assert "actions" in tool_group, f"Tool group in task {task.id} missing 'actions'"
+                assert len(tool_group["actions"]) > 0, f"Tool group {tool_group['tool_name']} has no actions"
+
+    @pytest.mark.parametrize("domain", VALID_DOMAINS)
+    def test_real_tasks_have_valid_assertions(self, domain, real_macs_data):
+        """All real tasks should have evaluation assertions."""
+        tasks = load_tasks(domain, data_dir=real_macs_data)
+
+        assert len(tasks) > 0, f"No tasks loaded for {domain}"
+
+        for task in tasks:
+            assertions = task.evaluation_data.get("assertions", [])
+
+            assert len(assertions) > 0, (
+                f"Task {task.id} in {domain} should have assertions. "
+                "This indicates evaluation data issue. "
+                f"Found {len(assertions)} assertions."
+            )
+
+            # Validate assertion format (should be strings with prefixes)
+            for assertion in assertions:
+                assert isinstance(assertion, str), f"Assertion should be string, got {type(assertion)}"
+                assert len(assertion) > 0, "Assertion should not be empty"
+
+    @pytest.mark.parametrize("domain", VALID_DOMAINS)
+    def test_real_tasks_have_scenarios(self, domain, real_macs_data):
+        """Real tasks should have scenario metadata for user simulation."""
+        tasks = load_tasks(domain, data_dir=real_macs_data)
+
+        assert len(tasks) > 0, f"No tasks loaded for {domain}"
+
+        # Check a sample of tasks (not all may have scenarios, but most should)
+        tasks_with_scenarios = 0
+        for task in tasks[:min(10, len(tasks))]:
+            if task.metadata and "scenario" in task.metadata:
+                scenario = task.metadata["scenario"]
+                if scenario and len(scenario.strip()) > 0:
+                    tasks_with_scenarios += 1
+
+        # At least some tasks should have scenarios
+        assert tasks_with_scenarios > 0, (
+            f"Real MACS {domain} tasks should have scenario metadata. "
+            f"Checked {min(10, len(tasks))} tasks, found {tasks_with_scenarios} with scenarios. "
+            "This may indicate data quality issue."
+        )
