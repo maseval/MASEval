@@ -867,6 +867,7 @@ class TestRetailModifyItemsSuccess:
 class TestRetailModifyPaymentSuccess:
     """Tests for successful payment modification."""
 
+    @pytest.mark.xfail(reason="v0.2.0 upstream data has no users with multiple payment methods")
     def test_modify_pending_order_payment_success(self, retail_toolkit):
         """Successfully modify payment method of a pending order."""
         # Find a pending order with a single payment

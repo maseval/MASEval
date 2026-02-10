@@ -586,6 +586,7 @@ class TestAirlineUpdateFlightsNewFlight:
 class TestAirlineBaggageEdgeCases:
     """Edge case tests for baggage updates."""
 
+    @pytest.mark.xfail(reason="v0.2.0 upstream data has no reservations with nonfree baggages")
     def test_update_baggages_reduce_count(self, airline_toolkit):
         """Updating to fewer baggages doesn't charge extra."""
         reservation = None
