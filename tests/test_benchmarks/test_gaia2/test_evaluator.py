@@ -110,12 +110,14 @@ class TestGaia2EvaluatorCall:
 
     def test_returns_gsr_from_judge(self, sample_gaia2_task):
         """Test evaluator returns GSR from ARE judge on single-turn scenario."""
+        from types import SimpleNamespace
+
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
         # Create scenario mock with an explicit judge (single-turn: nb_turns=1)
         mock_scenario = MagicMock()
         mock_judge = MagicMock()
-        mock_judge.state.nb_turns = 1
+        mock_judge.state = SimpleNamespace(nb_turns=1, turn_idx=-1)
         mock_result = MagicMock()
         mock_result.success = True
         mock_result.rationale = None
@@ -142,12 +144,14 @@ class TestGaia2EvaluatorCall:
 
     def test_returns_zero_gsr_on_failure(self, sample_gaia2_task):
         """Test evaluator returns 0.0 GSR when judge fails."""
+        from types import SimpleNamespace
+
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
         # Create scenario mock with an explicit judge (single-turn)
         mock_scenario = MagicMock()
         mock_judge = MagicMock()
-        mock_judge.state.nb_turns = 1
+        mock_judge.state = SimpleNamespace(nb_turns=1, turn_idx=-1)
         mock_result = MagicMock()
         mock_result.success = False
         mock_result.rationale = "Failed"
@@ -177,22 +181,30 @@ class TestGaia2EvaluatorCall:
         the is_last_turn check in validate() passes.
         ARE simulation/validation/base.py:104
         """
+        from types import SimpleNamespace
+
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
-        mock_scenario = MagicMock()
-        mock_judge = MagicMock()
-        mock_judge.state.nb_turns = 3  # 3 turns: intermediate calls for turns 0, 1
-
-        # Intermediate judge calls succeed
+        # Simulate judge state: turn_idx starts at -1 (no trigger conditions fired)
+        state = SimpleNamespace(nb_turns=3, turn_idx=-1)
         intermediate_judgment = MagicMock()
         intermediate_judgment.success = True
-        mock_judge.return_value = intermediate_judgment
 
-        # Final validate succeeds
+        mock_judge = MagicMock()
+        mock_judge.state = state
+
+        def judge_call(env):
+            state.turn_idx += 1
+            return intermediate_judgment
+
+        mock_judge.side_effect = judge_call
+
         mock_validate_result = MagicMock()
         mock_validate_result.success = True
         mock_validate_result.rationale = None
         mock_judge.validate.return_value = mock_validate_result
+
+        mock_scenario = MagicMock()
         mock_scenario.judge = mock_judge
 
         mock_env = MagicMock()
@@ -218,23 +230,30 @@ class TestGaia2EvaluatorCall:
         validate() call returns failure via the last_turn_success check.
         ARE simulation/validation/base.py:96-100
         """
+        from types import SimpleNamespace
+
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
-        mock_scenario = MagicMock()
-        mock_judge = MagicMock()
-        mock_judge.state.nb_turns = 3  # 3 turns: intermediate calls for turns 0, 1
-
-        # First intermediate turn fails
+        state = SimpleNamespace(nb_turns=3, turn_idx=-1)
         failed_judgment = MagicMock()
         failed_judgment.success = False
         failed_judgment.failure = "Turn 0 events did not match"
-        mock_judge.return_value = failed_judgment
 
-        # validate() returns failure (last_turn_success is False)
+        mock_judge = MagicMock()
+        mock_judge.state = state
+
+        def judge_call(env):
+            state.turn_idx += 1
+            return failed_judgment
+
+        mock_judge.side_effect = judge_call
+
         mock_validate_result = MagicMock()
         mock_validate_result.success = False
         mock_validate_result.rationale = "Last turn was already rejected"
         mock_judge.validate.return_value = mock_validate_result
+
+        mock_scenario = MagicMock()
         mock_scenario.judge = mock_judge
 
         mock_env = MagicMock()
@@ -258,20 +277,29 @@ class TestGaia2EvaluatorCall:
         This is the most common multi-turn case (adaptability scenarios).
         nb_turns=2: one intermediate judge(env) call, then validate(env).
         """
+        from types import SimpleNamespace
+
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
-        mock_scenario = MagicMock()
-        mock_judge = MagicMock()
-        mock_judge.state.nb_turns = 2
-
+        state = SimpleNamespace(nb_turns=2, turn_idx=-1)
         intermediate_judgment = MagicMock()
         intermediate_judgment.success = True
-        mock_judge.return_value = intermediate_judgment
+
+        mock_judge = MagicMock()
+        mock_judge.state = state
+
+        def judge_call(env):
+            state.turn_idx += 1
+            return intermediate_judgment
+
+        mock_judge.side_effect = judge_call
 
         mock_validate_result = MagicMock()
         mock_validate_result.success = True
         mock_validate_result.rationale = None
         mock_judge.validate.return_value = mock_validate_result
+
+        mock_scenario = MagicMock()
         mock_scenario.judge = mock_judge
 
         mock_env = MagicMock()
@@ -284,6 +312,44 @@ class TestGaia2EvaluatorCall:
 
         # One intermediate call + one validate
         assert mock_judge.call_count == 1
+        mock_judge.validate.assert_called_once_with(mock_are_env)
+        assert result["gsr"] == 1.0
+
+    def test_skips_intermediate_turns_if_already_judged(self, sample_gaia2_task):
+        """Test evaluator skips judge(env) calls if trigger conditions already fired.
+
+        In online mode (default), ARE's ConditionCheckEvent trigger conditions
+        call judge(env) during the simulation, advancing turn_idx. The evaluator
+        checks turn_idx before calling judge(env) to avoid double-counting.
+        """
+        from types import SimpleNamespace
+
+        from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
+
+        # turn_idx already at nb_turns-2 (trigger conditions fired for all intermediate turns)
+        state = SimpleNamespace(nb_turns=3, turn_idx=1)
+
+        mock_judge = MagicMock()
+        mock_judge.state = state
+
+        mock_validate_result = MagicMock()
+        mock_validate_result.success = True
+        mock_validate_result.rationale = None
+        mock_judge.validate.return_value = mock_validate_result
+
+        mock_scenario = MagicMock()
+        mock_scenario.judge = mock_judge
+
+        mock_env = MagicMock()
+        mock_are_env = MagicMock()
+        mock_env.get_are_environment.return_value = mock_are_env
+        mock_env.get_scenario.return_value = mock_scenario
+
+        evaluator = Gaia2Evaluator(task=sample_gaia2_task, environment=mock_env)
+        result = evaluator({}, None)
+
+        # No intermediate judge calls needed (already advanced)
+        mock_judge.assert_not_called()
         mock_judge.validate.assert_called_once_with(mock_are_env)
         assert result["gsr"] == 1.0
 

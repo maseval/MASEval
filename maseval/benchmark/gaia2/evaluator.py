@@ -148,16 +148,23 @@ class Gaia2Evaluator(Evaluator):
                 judge = JudgeFactory()(judge_config)
                 judge.initialize_state(scenario)
 
-            # Run judge for intermediate turns before final validation.
-            # ARE's intended flow: judge(env) for turns 0..N-2, then
-            # judge.validate(env) for the final turn N-1. validate() checks
-            # (turn_idx + 1) == (nb_turns - 1) to confirm it's on the last
-            # turn, so prior judge(env) calls are required to advance turn_idx.
-            # Without this, turn_idx stays at -1 and multi-turn scenarios
-            # (nb_turns > 1) always fail the is_last_turn check.
+            # Ensure intermediate turns are judged before final validation.
+            #
+            # ARE's validate() checks (turn_idx + 1) == (nb_turns - 1) to
+            # confirm it's on the last turn before running final validation.
             # ARE simulation/validation/base.py:104
+            #
+            # MASEval uses a fixed run-then-evaluate cycle with no hook to
+            # call the judge between turns. ARE's online-mode trigger
+            # conditions run in the background event loop and MAY have
+            # already advanced turn_idx, but MASEval does not control this.
+            # We check turn_idx and only judge turns that haven't been
+            # processed yet — this is idempotent regardless of whether
+            # trigger conditions fired.
             nb_turns = judge.state.nb_turns
-            for turn in range(nb_turns - 1):
+            last_intermediate_turn = nb_turns - 2  # turns 0..N-2 are intermediate
+            while judge.state.turn_idx < last_intermediate_turn:
+                turn = judge.state.turn_idx + 1
                 judgment = judge(are_env)
                 if not judgment.success:
                     logger.info("Intermediate turn %d/%d failed: %s", turn, nb_turns - 1, judgment.failure)
