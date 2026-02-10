@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added data integrity tests for Tau2 and MACS benchmarks (`-m "live and slow"`) that validate download pipelines, file structures, JSON schemas, and database content (PR: #PR_NUMBER_PLACEHOLDER)
 - Added HTTP-level API contract tests for model adapters (OpenAI, Anthropic, Google GenAI, LiteLLM) using `respx` to mock real SDK clients, validating the full adapter → SDK → HTTP → ChatResponse chain without API keys (PR: #PR_NUMBER_PLACEHOLDER)
 - Added live API tests (`-m credentialed`) for OpenAI, Anthropic, Google GenAI, and LiteLLM that validate real API round-trips with minimal token usage, testing both text completions and tool calling (PR: #PR_NUMBER_PLACEHOLDER)
+- Added CI jobs for slow tests (data downloads, single Python version with benchmark data caching) and credentialed tests (live API validation behind GitHub Environment approval) (PR: #PR_NUMBER_PLACEHOLDER)
 
 ### Fixed
 
