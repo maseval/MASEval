@@ -516,6 +516,12 @@ class Evaluator:
     def run(self, temperature: Optional[float] = None):
         if temperature is None:
             temperature = EVAL_TEMPERATURE  # From source:L45
+
+# also good:
+class Evaluator:
+    # default temperature from source:L45
+    def run(self, temperature: Optional[float] = 0.7):
+        ...
 ```
 
 **Rule:** Only copy defaults that exist in the source. If the original doesn't provide a default, neither should you. Always document the source file and line number.
