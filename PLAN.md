@@ -5,7 +5,7 @@
 MASEval benchmarks are insufficiently tested because:
 1. **LLM API calls** - Tests requiring real API calls are either skipped or mocked entirely
 2. **Data downloads** - Benchmark data comes from external sources (GitHub, HuggingFace) and downloads are not validated
-3. **Slow operations** - No mechanism to separate fast unit tests from slow integration tests
+3. **Slow operations** - No mechanism to separate fast unit tests from slow/live/credentialed tests
 4. **Conditional skips** - Many Tau2 tests skip when database fixtures lack data (45+ skipped tests)
 
 The result: bugs in real integrations go undetected until runtime.
@@ -54,35 +54,77 @@ if not users:
 
 ## Proposed Testing Strategy
 
-### New Test Tiers
+### Composable Marker Design
 
-| Tier | Marker | Speed | Dependencies | When to Run |
-|------|--------|-------|--------------|-------------|
-| 1. Unit | `core` (existing) | <100ms/test | None (mocked) | Every commit |
-| 2. Integration | `integration` (new) | 1-30s/test | API keys | Daily scheduled |
-| 3. Slow | `slow` (new) | 30s-5min/test | Data downloads | Weekly scheduled |
-| 4. Smoke | `smoke` (new) | 5-30min total | Full pipeline | Before releases |
+Instead of hierarchical tiers, new markers represent **orthogonal properties** that can be combined on any test. A single test can carry multiple markers describing its requirements.
 
-### New Markers to Add
+#### New Markers
+
+| Marker | Meaning | Why excluded from default |
+|--------|---------|--------------------------|
+| `live` | Needs network access (downloads, external APIs) | May fail without network / adds latency |
+| `credentialed` | Needs API keys, costs money per call | No keys in CI by default |
+| `slow` | Takes >30 seconds | Too slow for every commit |
+| `smoke` | Full end-to-end pipeline validation | Pre-release only |
+
+These compose with existing markers (`core`, `interface`, `contract`, `benchmark`, framework-specific):
+
+```python
+@pytest.mark.benchmark
+@pytest.mark.live
+@pytest.mark.slow
+def test_download_gaia2_dataset():
+    """Needs network, takes a while."""
+    ...
+
+@pytest.mark.interface
+@pytest.mark.live
+@pytest.mark.credentialed
+def test_openai_tool_calling():
+    """Needs network + API key, but fast."""
+    ...
+
+@pytest.mark.smoke
+@pytest.mark.credentialed
+def test_full_benchmark_run():
+    """End-to-end pre-release validation."""
+    ...
+```
+
+#### Marker Implication: `credentialed` implies `live`
+
+Since you can't call a paid API without network, `credentialed` logically implies `live`. To enforce this automatically, add a hook to `conftest.py`:
+
+```python
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if item.get_closest_marker("credentialed") and not item.get_closest_marker("live"):
+            item.add_marker(pytest.mark.live)
+```
+
+This ensures `-m "not live"` always gives a fully offline run.
+
+#### New Markers in `pyproject.toml`
 
 ```toml
 # In pyproject.toml [tool.pytest.ini_options]
 markers = [
-    # ... existing markers ...
+    # ... existing markers (core, interface, contract, benchmark, etc.) ...
+    "live: Tests requiring network access (downloads, external APIs)",
+    "credentialed: Tests requiring API keys (implies live, costs money)",
     "slow: Tests taking >30 seconds (data downloads, large datasets)",
-    "integration: Tests requiring real API keys",
-    "smoke: Full end-to-end tests before releases",
+    "smoke: Full end-to-end pipeline validation (pre-release only)",
 ]
 ```
 
-### Default Exclusion
+#### Default Exclusion
 
-Update `addopts` to exclude slow tests by default:
+Update `addopts` to exclude expensive tests by default:
 ```toml
-addopts = "-ra -q -m 'not slow and not integration and not smoke'"
+addopts = "-ra -q -m 'not (slow or credentialed or smoke)'"
 ```
 
-This ensures `pytest` runs fast by default while `pytest -m integration` explicitly runs integration tests.
+Note: CLI `-m` **replaces** `addopts` rather than composing with it, so `pytest -m credentialed` runs all credentialed tests including slow/smoke ones. This is generally the desired behavior when explicitly selecting a marker.
 
 ---
 
@@ -90,37 +132,28 @@ This ensures `pytest` runs fast by default while `pytest -m integration` explici
 
 ### Phase 1: Marker Infrastructure
 
-1. Add new markers (`slow`, `integration`, `smoke`) to `pyproject.toml`
-2. Update `addopts` to exclude slow/integration/smoke by default
-3. Create `tests/markers.py` with skip decorators for missing API keys:
+1. Add new markers (`live`, `credentialed`, `slow`, `smoke`) to `pyproject.toml`
+2. Update `addopts` to exclude `slow`, `credentialed`, and `smoke` by default
+3. Add `pytest_collection_modifyitems` hook to `conftest.py` to enforce `credentialed` → `live` implication
+4. Create `tests/markers.py` with skip decorators for missing API keys:
    - `requires_openai` - skips if `OPENAI_API_KEY` not set
    - `requires_anthropic` - skips if `ANTHROPIC_API_KEY` not set
    - `requires_google` - skips if `GOOGLE_API_KEY` not set
 
-### Phase 2: Real LLM API Tests
+### Phase 2: Data Loading Validation
 
-Create minimal integration tests that validate API contracts:
-
-1. **One test per provider** (OpenAI, Anthropic, Google, HuggingFace, LiteLLM)
-2. **Minimal token usage** - Use cheapest models, simple prompts like "Say 'test'"
-3. **Validate response structure** - Check that `ChatResponse` fields are populated correctly
-4. **Test tool calling format** - Ensure tool call JSON structure matches expectations
-
-**Cost estimate**: <$1/month for daily integration tests using cheapest models.
-
-### Phase 3: Data Loading Validation
-
-1. **Mark data download tests as `@pytest.mark.slow`**
-2. **Add integrity checks** after downloads:
+1. **Mark data download tests as `@pytest.mark.live` and `@pytest.mark.slow`** — they need network and take time
+2. **Add dataset caching in CI** using `actions/cache` on the data directory to avoid re-downloading every run
+3. **Add integrity checks** after downloads:
    - Verify expected files exist
    - Validate JSON schemas
    - Check database tables have minimum required data
-3. **Fix Tau2 conditional skips**:
+4. **Fix Tau2 conditional skips**:
    - Option A: Seed test databases with guaranteed fixture data
    - Option B: Convert skips to `xfail` with clear reasons
    - Option C: Create separate "requires data" marker
 
-### Phase 4: HTTP Mocking for CI
+### Phase 3: HTTP Mocking for CI
 
 For CI environments without API keys, use HTTP-level mocking:
 
@@ -128,22 +161,37 @@ For CI environments without API keys, use HTTP-level mocking:
 2. **Create response fixtures** that match real API response schemas
 3. **Run mocked tests on every PR**, real API tests on schedule
 
+This defines the expected API contract via mocks first (TDD-style), then Phase 4 validates those contracts against real APIs.
+
+### Phase 4: Real LLM API Tests
+
+Create minimal tests marked `@pytest.mark.credentialed` that validate API contracts:
+
+1. **One test per provider** (OpenAI, Anthropic, Google, HuggingFace, LiteLLM)
+2. **Minimal token usage** - Use cheapest models, simple prompts like "Say 'test'"
+3. **Validate response structure** - Check that `ChatResponse` fields are populated correctly
+4. **Test tool calling format** - Ensure tool call JSON structure matches expectations
+5. **Mark appropriately** - Each test gets `credentialed` plus relevant existing markers (e.g. `interface` for framework-specific tests)
+
+**Cost estimate**: <$1/month for daily credentialed tests using cheapest models.
+
 This provides two levels of confidence:
-- Mocked tests catch code-level regressions (fast, every PR)
-- Real API tests catch API contract changes (daily, with keys)
+- Mocked tests (Phase 3) catch code-level regressions (fast, every PR)
+- Real API tests (Phase 4) catch API contract changes (daily, with keys)
 
 ### Phase 5: CI/CD Updates
 
-Update GitHub Actions workflow:
+Update GitHub Actions workflow with composable marker filter expressions:
 
-| Job | Trigger | Tests Run |
-|-----|---------|-----------|
-| test-unit | Every push/PR | `core` and `benchmark` (excluding slow/integration) |
-| test-integration | Daily schedule | `integration` marker (with API secrets) |
-| test-slow | Weekly schedule | `slow` marker |
-| test-smoke | Manual dispatch | `smoke` marker (pre-release validation) |
+| Job | Trigger | Filter Expression | Description |
+|-----|---------|-------------------|-------------|
+| test-fast | Every push/PR | `-m "not (slow or credentialed or smoke)"` | Fast offline tests |
+| test-credentialed | Daily schedule | `-m "credentialed and not smoke"` | Real API tests (with secrets) |
+| test-slow | Weekly schedule | `-m "slow and not credentialed"` | Data download + integrity (with cache) |
+| test-smoke | Manual dispatch | `-m smoke` | Full end-to-end pre-release |
 
 Store API keys as GitHub Secrets, only available to scheduled/manual runs.
+Add `actions/cache` for dataset directories in the `test-slow` job.
 
 ---
 
@@ -165,36 +213,38 @@ Store API keys as GitHub Secrets, only available to scheduled/manual runs.
 **Root cause**: No mechanism to test real APIs without breaking fast CI.
 
 **Solution**:
-- Keep mocked tests for fast CI (`core`, `benchmark` markers)
-- Add `integration` marker for real API tests
-- Run integration tests on schedule with API keys from secrets
+- Keep mocked tests for fast CI (`core`, `interface`, `contract`, `benchmark` markers)
+- Add `credentialed` marker for real API tests
+- Run credentialed tests on schedule with API keys from secrets
 
 ### Issue: Data Downloads Not Validated
 
 **Root cause**: Session fixtures download but don't verify completeness.
 
 **Solution**:
-- Add post-download validation in slow tests
-- Check file existence, JSON validity, minimum record counts
+- Mark download tests with `live` + `slow`
+- Add post-download validation: file existence, JSON validity, minimum record counts
+- Cache datasets in CI with `actions/cache` so repeat runs skip the download
 - Fail loudly if data is corrupt or incomplete
 
 ---
 
 ## Execution Order
 
-1. **Week 1**: Add markers to pyproject.toml, update addopts
-2. **Week 2**: Create integration tests for each LLM provider
-3. **Week 3**: Add data integrity tests, fix Tau2 skips
-4. **Week 4**: Add HTTP mocking with `responses` library
-5. **Week 5**: Update CI workflow with scheduled jobs
+1. **Week 1**: Add composable markers (`live`, `credentialed`, `slow`, `smoke`) to pyproject.toml, update addopts, add implication hook
+2. **Week 2**: Add data integrity tests (`live` + `slow`), fix Tau2 skips
+3. **Week 3**: Add HTTP mocking with `responses` library (define API contracts via mocks)
+4. **Week 4**: Create credentialed tests for each LLM provider (validate mocks against real APIs)
+5. **Week 5**: Update CI workflow with filter expressions, add dataset caching
 
 ---
 
 ## Success Criteria
 
-- [ ] `pytest` (default) completes in <5 minutes
-- [ ] `pytest -m integration` validates all LLM provider APIs
-- [ ] `pytest -m slow` validates all data downloads
+- [ ] `pytest` (default) completes in <5 minutes with `-m "not (slow or credentialed or smoke)"`
+- [ ] `pytest -m credentialed` validates all LLM provider APIs
+- [ ] `pytest -m "live and slow"` validates all data downloads
+- [ ] `pytest -m "not live"` gives a fully offline run
 - [ ] Tau2 skipped tests reduced from 45+ to <5
-- [ ] CI runs integration tests daily, slow tests weekly
+- [ ] CI runs credentialed tests daily, slow tests weekly
 - [ ] Pre-release smoke tests validate full pipeline
