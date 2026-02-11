@@ -136,20 +136,17 @@ class TestMultiAgentBenchEvaluator:
 
         assert score == 5.0
 
-    def test_parse_score_no_json_returns_none(self, research_evaluator):
-        """_parse_score should return None when no valid JSON found."""
+    def test_parse_score_no_json_raises(self, research_evaluator):
+        """_parse_score should raise when no valid JSON found."""
         response = "The rating is 4 out of 5"
-        score = research_evaluator._parse_score(response)
+        with pytest.raises(ValueError, match="No JSON object found"):
+            research_evaluator._parse_score(response)
 
-        # No regex fallback - returns None for non-JSON responses
-        assert score is None
-
-    def test_parse_score_default(self, research_evaluator):
-        """_parse_score should return None when parsing fails."""
-        response = "No score here"
-        score = research_evaluator._parse_score(response)
-
-        assert score is None
+    def test_parse_score_no_rating_key_raises(self, research_evaluator):
+        """_parse_score should raise when JSON has no rating key."""
+        response = '{"score": 4}'
+        with pytest.raises(ValueError, match="Expected"):
+            research_evaluator._parse_score(response)
 
     def test_parse_research_ratings_valid(self, research_evaluator):
         """_parse_research_ratings should parse valid ratings."""
@@ -161,13 +158,9 @@ class TestMultiAgentBenchEvaluator:
         assert ratings["feasibility"] == 5
 
     def test_parse_research_ratings_invalid(self, research_evaluator):
-        """_parse_research_ratings should return None for invalid."""
-        response = "Invalid response"
-        ratings = research_evaluator._parse_research_ratings(response)
-
-        assert ratings["innovation"] is None
-        assert ratings["safety"] is None
-        assert ratings["feasibility"] is None
+        """_parse_research_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            research_evaluator._parse_research_ratings("Invalid response")
 
     def test_determine_completion_research_positive(self, research_evaluator):
         """_determine_completion should return True for positive research scores."""
@@ -329,12 +322,9 @@ class TestCodingEvaluation:
         assert coding_evaluator._determine_completion(metrics) is False
 
     def test_parse_coding_ratings_invalid(self, coding_evaluator):
-        """_parse_coding_ratings should return None for invalid response."""
-        ratings = coding_evaluator._parse_coding_ratings("Invalid JSON")
-        assert ratings["instruction_following"] is None
-        assert ratings["executability"] is None
-        assert ratings["consistency"] is None
-        assert ratings["quality"] is None
+        """_parse_coding_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            coding_evaluator._parse_coding_ratings("Invalid JSON")
 
 
 class TestDatabaseEvaluation:
@@ -460,10 +450,9 @@ class TestWerewolfEvaluation:
         assert "game_outcome" in result["metrics"]["task_evaluation"]
 
     def test_parse_werewolf_ratings_invalid(self, werewolf_evaluator):
-        """_parse_werewolf_ratings should return None for invalid response."""
-        ratings = werewolf_evaluator._parse_werewolf_ratings("Invalid JSON")
-        assert ratings["game_outcome"] is None
-        assert ratings["collaboration"] is None
+        """_parse_werewolf_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            werewolf_evaluator._parse_werewolf_ratings("Invalid JSON")
 
 
 class TestMinecraftEvaluation:
@@ -531,15 +520,12 @@ class TestMinecraftEvaluation:
         assert "structural_completeness" in result["metrics"]["task_evaluation"]
 
     def test_parse_minecraft_ratings_invalid(self, minecraft_evaluator):
-        """_parse_minecraft_ratings should return None for invalid response."""
-        ratings = minecraft_evaluator._parse_minecraft_ratings("Invalid JSON")
-        assert ratings["structural_completeness"] is None
-        assert ratings["blueprint_accuracy"] is None
-        assert ratings["coordination"] is None
-        assert ratings["efficiency"] is None
+        """_parse_minecraft_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            minecraft_evaluator._parse_minecraft_ratings("Invalid JSON")
 
     def test_evaluate_minecraft_on_error(self):
-        """_evaluate_minecraft should return default values on error."""
+        """_evaluate_minecraft should propagate LLM errors."""
         from unittest.mock import MagicMock
 
         mock_adapter = MagicMock()
@@ -550,9 +536,8 @@ class TestMinecraftEvaluation:
             model_adapter=mock_adapter,
         )
 
-        result = evaluator._evaluate_minecraft("Task", "Result")
-        assert result["structural_completeness"] is None
-        assert result["efficiency"] is None
+        with pytest.raises(RuntimeError, match="Model failed"):
+            evaluator._evaluate_minecraft("Task", "Result")
 
 
 class TestUnknownDomainEvaluation:
@@ -611,7 +596,7 @@ class TestCommunicationEvaluation:
         assert score == 4.0
 
     def test_evaluate_communication_on_error(self):
-        """_evaluate_communication should return None on error."""
+        """_evaluate_communication should propagate LLM errors."""
         from unittest.mock import MagicMock
 
         # Create mock that raises exception on generate
@@ -623,8 +608,8 @@ class TestCommunicationEvaluation:
             model_adapter=mock_adapter,
         )
 
-        score = evaluator._evaluate_communication("Task", "Comms")
-        assert score is None
+        with pytest.raises(RuntimeError, match="Model failed"):
+            evaluator._evaluate_communication("Task", "Comms")
 
     def test_call_with_communications(self, evaluator_with_comm_response):
         """__call__ should evaluate communications when present."""
@@ -663,25 +648,21 @@ class TestExceptionHandling:
         )
 
     def test_evaluate_research_on_error(self, failing_evaluator):
-        """_evaluate_research should return default values on error."""
-        result = failing_evaluator._evaluate_research("Task", "Result")
-        assert result["innovation"] is None
-        assert result["safety"] is None
-        assert result["feasibility"] is None
+        """_evaluate_research should propagate LLM errors."""
+        with pytest.raises(RuntimeError, match="Model failed"):
+            failing_evaluator._evaluate_research("Task", "Result")
 
     def test_evaluate_bargaining_on_error(self, failing_evaluator):
-        """_evaluate_bargaining should return default values on error."""
+        """_evaluate_bargaining should propagate LLM errors."""
         failing_evaluator.domain = "bargaining"
-        result = failing_evaluator._evaluate_bargaining("Task", "Result")
-        assert result["buyer"]["effectiveness_of_strategies"] is None
-        assert result["seller"]["effectiveness_of_strategies"] is None
+        with pytest.raises(RuntimeError, match="Model failed"):
+            failing_evaluator._evaluate_bargaining("Task", "Result")
 
     def test_evaluate_coding_on_error(self, failing_evaluator):
-        """_evaluate_coding should return default values on error."""
+        """_evaluate_coding should propagate LLM errors."""
         failing_evaluator.domain = "coding"
-        result = failing_evaluator._evaluate_coding("Task", "Result")
-        assert result["instruction_following"] is None
-        assert result["executability"] is None
+        with pytest.raises(RuntimeError, match="Model failed"):
+            failing_evaluator._evaluate_coding("Task", "Result")
 
 
 class TestParsingEdgeCases:
@@ -697,11 +678,10 @@ class TestParsingEdgeCases:
         )
 
     def test_parse_score_out_of_range(self, evaluator):
-        """_parse_score should reject scores outside 1-5 range."""
+        """_parse_score should raise for scores outside 1-5 range."""
         response = '{"rating": 10}'
-        score = evaluator._parse_score(response)
-        # Should return None since score is out of range
-        assert score is None
+        with pytest.raises(ValueError, match="out of valid range"):
+            evaluator._parse_score(response)
 
     def test_parse_score_with_just_code_block(self, evaluator):
         """_parse_score should handle code block without json marker."""
@@ -715,17 +695,16 @@ class TestParsingEdgeCases:
         score = evaluator._parse_score(response)
         assert score == 5.0
 
-    def test_parse_bargaining_ratings_partial(self, evaluator):
-        """_parse_bargaining_ratings should handle partial ratings."""
+    def test_parse_bargaining_ratings_missing_keys(self, evaluator):
+        """_parse_bargaining_ratings should raise when required keys are missing."""
         response = '{"effectiveness_of_strategies": 4}'  # Missing other fields
-        ratings = evaluator._parse_bargaining_ratings(response)
-        assert ratings["effectiveness_of_strategies"] == 4
-        assert ratings["progress_and_outcome"] is None
+        with pytest.raises(KeyError):
+            evaluator._parse_bargaining_ratings(response)
 
     def test_parse_bargaining_ratings_invalid(self, evaluator):
-        """_parse_bargaining_ratings should return None for invalid."""
-        ratings = evaluator._parse_bargaining_ratings("Invalid")
-        assert ratings["effectiveness_of_strategies"] is None
+        """_parse_bargaining_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            evaluator._parse_bargaining_ratings("Invalid")
 
 
 class TestFormatFinalAnswerEdgeCases:
