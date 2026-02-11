@@ -72,7 +72,11 @@ uv run pytest -m "not live" -v
 View coverage by feature area (auto-discovers benchmarks/interfaces):
 
 ```bash
+# Full coverage (default + slow + live, excludes credentialed and smoke)
 uv run python scripts/coverage_by_feature.py
+
+# Fast-only (skip slow and live tests)
+uv run python scripts/coverage_by_feature.py --exclude slow,live
 ```
 
 Manual coverage for specific modules:
