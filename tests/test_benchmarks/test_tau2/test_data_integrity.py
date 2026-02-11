@@ -11,6 +11,7 @@ Run with::
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -32,6 +33,8 @@ pytestmark = [pytest.mark.live, pytest.mark.slow, pytest.mark.benchmark]
 
 class TestTau2FileIntegrity:
     """Validate that downloaded files exist and are parseable."""
+
+    _data_dir: Path
 
     @pytest.fixture(scope="class", autouse=True)
     def _download_data(self, tmp_path_factory):

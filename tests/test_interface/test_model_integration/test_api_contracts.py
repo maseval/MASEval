@@ -259,6 +259,7 @@ class TestOpenAIApiContracts:
         assert tc["function"]["name"] == "get_weather"
         assert json.loads(tc["function"]["arguments"]) == {"city": "Paris"}
 
+        assert response.usage is not None
         assert response.usage["input_tokens"] == 82
         assert response.usage["output_tokens"] == 18
 
@@ -354,6 +355,7 @@ class TestAnthropicApiContracts:
         assert tc["function"]["name"] == "get_weather"
         assert json.loads(tc["function"]["arguments"]) == {"city": "Paris"}
 
+        assert response.usage is not None
         assert response.usage["input_tokens"] == 82
         assert response.usage["output_tokens"] == 18
 
@@ -456,6 +458,7 @@ class TestGoogleGenAIApiContracts:
         assert tc["function"]["name"] == "get_weather"
         assert json.loads(tc["function"]["arguments"]) == {"city": "Paris"}
 
+        assert response.usage is not None
         assert response.usage["input_tokens"] == 82
         assert response.usage["output_tokens"] == 18
 
@@ -574,5 +577,6 @@ class TestLiteLLMApiContracts:
         assert tc["function"]["name"] == "get_weather"
         assert json.loads(tc["function"]["arguments"]) == {"city": "Paris"}
 
+        assert response.usage is not None
         assert response.usage["input_tokens"] == 82
         assert response.usage["output_tokens"] == 18

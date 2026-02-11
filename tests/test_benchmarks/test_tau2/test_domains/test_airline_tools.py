@@ -361,10 +361,7 @@ class TestAirlineUpdateFlights:
         )
 
         payment_id = list(user.payment_methods.keys())[0]
-        current_flights = [
-            {"flight_number": f.flight_number, "date": f.date}
-            for f in reservation.flights
-        ]
+        current_flights = [{"flight_number": f.flight_number, "date": f.date} for f in reservation.flights]
 
         result = airline_toolkit.use_tool(
             "update_reservation_flights",
@@ -740,8 +737,7 @@ class TestAirlineBookingSuccess:
                 break
 
         assert payment_id is not None, (
-            f"User {user_id} should have credit card payment method. "
-            "This indicates upstream data issue or data_integrity test gap."
+            f"User {user_id} should have credit card payment method. This indicates upstream data issue or data_integrity test gap."
         )
 
         # Calculate total price: 1 passenger * ticket price + 0 baggage fee + no insurance
@@ -1010,9 +1006,7 @@ class TestAirlineOneStopFlightSearch:
         flight = list(airline_toolkit.db.flights.values())[0]
         dates = list(flight.dates.keys())
         assert len(dates) > 0, (
-            "Flight should have dates. "
-            "This indicates upstream data issue or data_integrity test gap. "
-            f"Found {len(flight.dates)} dates."
+            f"Flight should have dates. This indicates upstream data issue or data_integrity test gap. Found {len(flight.dates)} dates."
         )
 
         # Search for flights from this origin on this date

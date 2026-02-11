@@ -369,9 +369,7 @@ class TestRetailUserLookup:
         # Get first user's email
         users = list(retail_toolkit.db.users.values())
         assert len(users) > 0, (
-            "Real retail database should have users. "
-            "This indicates upstream data issue or data_integrity test gap. "
-            f"Found {len(users)} users."
+            f"Real retail database should have users. This indicates upstream data issue or data_integrity test gap. Found {len(users)} users."
         )
 
         user = users[0]
@@ -388,9 +386,7 @@ class TestRetailUserLookup:
         """Find user by name and zip."""
         users = list(retail_toolkit.db.users.values())
         assert len(users) > 0, (
-            "Real retail database should have users. "
-            "This indicates upstream data issue or data_integrity test gap. "
-            f"Found {len(users)} users."
+            f"Real retail database should have users. This indicates upstream data issue or data_integrity test gap. Found {len(users)} users."
         )
 
         user = users[0]

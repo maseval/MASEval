@@ -217,6 +217,7 @@ class TestMACSBenchmarkWithRealData:
         seed_gen = DefaultSeedGenerator(global_seed=None).for_task(str(task.id)).for_repetition(0)
 
         from maseval.benchmark.macs import MACSEnvironment, MACSUser
+
         env = benchmark.setup_environment(agent_config, task, seed_gen)
         user = benchmark.setup_user(agent_config, env, task, seed_gen)
         agents_list, agents_dict = benchmark.setup_agents(agent_config, env, task, user, seed_gen)
@@ -380,15 +381,12 @@ class TestMACSRealDataIntegrity:
         tasks = load_tasks(domain, data_dir=real_macs_data)
 
         assert len(tasks) > 0, (
-            f"Real MACS {domain} domain should have tasks. "
-            "This indicates download issue or upstream data problem. "
-            f"Found {len(tasks)} tasks."
+            f"Real MACS {domain} domain should have tasks. This indicates download issue or upstream data problem. Found {len(tasks)} tasks."
         )
 
         # MACS domains should have at least a few tasks
         assert len(tasks) >= 3, (
-            f"Real MACS {domain} domain should have at least 3 tasks. "
-            f"Found {len(tasks)} tasks. This may indicate incomplete download."
+            f"Real MACS {domain} domain should have at least 3 tasks. Found {len(tasks)} tasks. This may indicate incomplete download."
         )
 
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
@@ -397,18 +395,13 @@ class TestMACSRealDataIntegrity:
         agent_config = load_agent_config(domain, data_dir=real_macs_data)
 
         assert agent_config is not None, (
-            f"Real MACS {domain} domain should have agent config. "
-            "This indicates download issue or data structure problem."
+            f"Real MACS {domain} domain should have agent config. This indicates download issue or data structure problem."
         )
 
-        assert "agents" in agent_config, (
-            f"Agent config for {domain} should have 'agents' key. "
-            f"Found keys: {list(agent_config.keys())}"
-        )
+        assert "agents" in agent_config, f"Agent config for {domain} should have 'agents' key. Found keys: {list(agent_config.keys())}"
 
         assert len(agent_config["agents"]) > 0, (
-            f"Agent config for {domain} should have at least one agent. "
-            f"Found {len(agent_config['agents'])} agents."
+            f"Agent config for {domain} should have at least one agent. Found {len(agent_config['agents'])} agents."
         )
 
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
@@ -421,11 +414,7 @@ class TestMACSRealDataIntegrity:
         for task in tasks:
             tools = task.environment_data.get("tools", [])
 
-            assert len(tools) > 0, (
-                f"Task {task.id} in {domain} should have tools. "
-                "This indicates data quality issue. "
-                f"Found {len(tools)} tools."
-            )
+            assert len(tools) > 0, f"Task {task.id} in {domain} should have tools. This indicates data quality issue. Found {len(tools)} tools."
 
             # Validate tool structure
             for tool_group in tools:
@@ -444,9 +433,7 @@ class TestMACSRealDataIntegrity:
             assertions = task.evaluation_data.get("assertions", [])
 
             assert len(assertions) > 0, (
-                f"Task {task.id} in {domain} should have assertions. "
-                "This indicates evaluation data issue. "
-                f"Found {len(assertions)} assertions."
+                f"Task {task.id} in {domain} should have assertions. This indicates evaluation data issue. Found {len(assertions)} assertions."
             )
 
             # Validate assertion format (should be strings with prefixes)
@@ -463,7 +450,7 @@ class TestMACSRealDataIntegrity:
 
         # Check a sample of tasks (not all may have scenarios, but most should)
         tasks_with_scenarios = 0
-        for task in tasks[:min(10, len(tasks))]:
+        for task in tasks[: min(10, len(tasks))]:
             if task.metadata and "scenario" in task.metadata:
                 scenario = task.metadata["scenario"]
                 if scenario and len(scenario.strip()) > 0:
