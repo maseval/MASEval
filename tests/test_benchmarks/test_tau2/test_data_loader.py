@@ -51,6 +51,7 @@ class TestConstants:
 class TestLoadDomainConfig:
     """Tests for load_domain_config function."""
 
+    @pytest.mark.live
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
     def test_loads_domain_config(self, domain, ensure_tau2_data):
         """Loads domain configuration successfully."""
@@ -76,6 +77,7 @@ class TestLoadDomainConfig:
 class TestLoadTasks:
     """Tests for load_tasks function."""
 
+    @pytest.mark.live
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
     def test_loads_domain_tasks(self, domain, ensure_tau2_data):
         """Loads domain tasks with limit."""
@@ -84,6 +86,7 @@ class TestLoadTasks:
         assert len(tasks) == 5
         assert tasks[0].query is not None
 
+    @pytest.mark.live
     def test_limit_parameter(self, ensure_tau2_data):
         """Limit parameter restricts number of tasks."""
         tasks_3 = load_tasks("retail", limit=3, data_dir=ensure_tau2_data)
@@ -109,6 +112,7 @@ class TestLoadTasks:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestConfigureModelIds:
     """Tests for configure_model_ids function."""
 
@@ -148,6 +152,7 @@ class TestConfigureModelIds:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestEnsureDataExists:
     """Tests for ensure_data_exists function."""
 
@@ -175,6 +180,7 @@ class TestEnsureDataExists:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestTaskContent:
     """Tests for task content structure."""
 
@@ -214,6 +220,7 @@ class TestTaskContent:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestTaskSplits:
     """Tests for task split loading."""
 
@@ -254,6 +261,7 @@ class TestConfigureModelIdsEdgeCases:
 
         assert len(tasks) == 0
 
+    @pytest.mark.live
     def test_cannot_overwrite_existing_model_id(self, ensure_tau2_data):
         """Cannot overwrite existing model_id - raises error."""
         tasks = load_tasks("retail", limit=2, data_dir=ensure_tau2_data)
@@ -273,6 +281,7 @@ class TestConfigureModelIdsEdgeCases:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestTaskMetadata:
     """Tests for task metadata."""
 
@@ -308,6 +317,7 @@ class TestTaskMetadata:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestDomainTasks:
     """Tests for domain-specific task loading."""
 
@@ -331,6 +341,7 @@ class TestDomainTasks:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestTaskFiltering:
     """Tests for task filtering functionality."""
 
@@ -367,6 +378,7 @@ class TestTaskFiltering:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestPolicyLoading:
     """Tests for policy loading in domain config."""
 
@@ -386,6 +398,7 @@ class TestPolicyLoading:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestDatabasePaths:
     """Tests for database path handling."""
 
@@ -412,6 +425,7 @@ class TestDatabasePaths:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestTaskIdHandling:
     """Tests for task ID handling."""
 

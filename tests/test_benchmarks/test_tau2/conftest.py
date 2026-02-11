@@ -9,8 +9,6 @@ Tau2 tests can use fixtures from both levels - pytest handles this automatically
 """
 
 import pytest
-from tempfile import TemporaryDirectory
-from pathlib import Path
 
 from maseval import Task
 
@@ -20,40 +18,22 @@ from maseval import Task
 # =============================================================================
 
 
-@pytest.fixture(scope="session", autouse=True)
-def ensure_tau2_data(tmp_path_factory):
-    """Download Tau2 domain data once per test session to temporary directory.
+@pytest.fixture(scope="session")
+def ensure_tau2_data():
+    """Download Tau2 domain data to the package's default data directory.
 
-    This fixture runs once per test session and downloads domain data files
-    (db.json, tasks.json, policy.md) to a temporary directory. This ensures:
-    - The download function is tested with real network calls every pytest run
-    - Tests catch upstream data changes that could break production users
-    - All tests in the session reuse the same downloaded data for efficiency
+    Downloads data files (db.json, tasks.json, policy.md) if not already present.
+    Uses ensure_data_exists() which caches: skips download when files exist.
 
-    The temporary directory is deleted after the pytest session ends.
+    Tests that need real data should depend on this fixture and be marked @pytest.mark.live.
+    Tests that don't need data (structural, mock-based) should NOT depend on this fixture.
     """
-    from maseval.benchmark.tau2.data_loader import ensure_data_exists
+    from maseval.benchmark.tau2.data_loader import ensure_data_exists, DEFAULT_DATA_DIR
 
-    # Create temporary directory for this test session
-    data_dir = tmp_path_factory.mktemp("tau2_data")
-
-    # Download data once for all tests in this session
     for domain in ["retail", "airline", "telecom"]:
-        ensure_data_exists(data_dir=data_dir, domain=domain)
+        ensure_data_exists(domain=domain, verbose=0)
 
-    return data_dir
-
-
-# =============================================================================
-# Temporary Directory Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def temp_data_dir():
-    """Create a temporary directory for test data."""
-    with TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
+    return DEFAULT_DATA_DIR
 
 
 # =============================================================================
@@ -67,7 +47,7 @@ def retail_db(ensure_tau2_data):
     from maseval.benchmark.tau2.data_loader import load_domain_config
     from maseval.benchmark.tau2.domains.retail import RetailDB
 
-    config = load_domain_config("retail", ensure_tau2_data)
+    config = load_domain_config("retail")
     return RetailDB.load(config["db_path"])
 
 
@@ -77,7 +57,7 @@ def airline_db(ensure_tau2_data):
     from maseval.benchmark.tau2.data_loader import load_domain_config
     from maseval.benchmark.tau2.domains.airline import AirlineDB
 
-    config = load_domain_config("airline", ensure_tau2_data)
+    config = load_domain_config("airline")
     return AirlineDB.load(config["db_path"])
 
 
@@ -87,7 +67,7 @@ def telecom_db(ensure_tau2_data):
     from maseval.benchmark.tau2.data_loader import load_domain_config
     from maseval.benchmark.tau2.domains.telecom import TelecomDB
 
-    config = load_domain_config("telecom", ensure_tau2_data)
+    config = load_domain_config("telecom")
     return TelecomDB.load(config["db_path"])
 
 
@@ -135,7 +115,7 @@ def telecom_user_toolkit(telecom_db):
 
 
 @pytest.fixture
-def retail_environment():
+def retail_environment(ensure_tau2_data):
     """Create a retail environment."""
     from maseval.benchmark.tau2 import Tau2Environment
 
@@ -143,7 +123,7 @@ def retail_environment():
 
 
 @pytest.fixture
-def airline_environment():
+def airline_environment(ensure_tau2_data):
     """Create an airline environment."""
     from maseval.benchmark.tau2 import Tau2Environment
 
@@ -151,7 +131,7 @@ def airline_environment():
 
 
 @pytest.fixture
-def telecom_environment():
+def telecom_environment(ensure_tau2_data):
     """Create a telecom environment."""
     from maseval.benchmark.tau2 import Tau2Environment
 

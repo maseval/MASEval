@@ -4,6 +4,8 @@ import pytest
 
 from maseval.benchmark.tau2.domains.base import ToolType
 
+pytestmark = [pytest.mark.live]
+
 
 # =============================================================================
 # Toolkit Basic Tests

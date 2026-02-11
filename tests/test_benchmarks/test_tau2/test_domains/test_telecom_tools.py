@@ -5,6 +5,8 @@ import pytest
 from maseval.benchmark.tau2.domains.base import ToolType
 from maseval.benchmark.tau2.domains.telecom.models import LineStatus
 
+pytestmark = [pytest.mark.live]
+
 
 # =============================================================================
 # Toolkit Basic Tests
