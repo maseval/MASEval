@@ -226,7 +226,7 @@ def concrete_multiagentbench_benchmark():
             if model_factory is None:
                 self._model_factory = lambda model_name: DummyModelAdapter(
                     model_id=f"test-model-{model_name}",
-                    responses=['{"rating": 4}'],
+                    responses=['{"innovation": 4, "safety": 4, "feasibility": 4}'],
                 )
             elif callable(model_factory):
                 self._model_factory = model_factory
