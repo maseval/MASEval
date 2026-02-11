@@ -3,6 +3,8 @@
 import pytest
 from maseval.benchmark.tau2.domains.telecom.user_models import SimStatus, NetworkStatus, NetworkModePreference
 
+pytestmark = [pytest.mark.live]
+
 
 # =============================================================================
 # Toolkit Basic Tests

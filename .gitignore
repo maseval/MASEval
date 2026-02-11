@@ -1,3 +1,6 @@
+# Subdirectories can have their own .gitignores.
+# E.g. check `maseval/benchmar/.../.gitignore
+
 # Custom
 .idea/
 .DS_Store

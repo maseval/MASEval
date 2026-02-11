@@ -453,6 +453,7 @@ class TestMarbleMultiAgentBenchBenchmark:
         with pytest.raises(ImportError, match="MARBLE is not available"):
             benchmark.setup_agents({}, env, sample_research_task, None, seed_gen)
 
+    @pytest.mark.xfail(reason="MARBLE is vendored and always available; test assumes it is not installed")
     def test_create_marble_env_raises_import_error(
         self,
         marble_benchmark_class,

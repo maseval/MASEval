@@ -1,77 +1,142 @@
-# Testing Strategy for Optional Dependencies
+# Testing Strategy
 
 ## Overview
 
-Tests are organized into two categories:
+Tests are organized by **what they test** and **what they need to run**:
 
-- **Core tests**: Run without optional dependencies
-- **Interface tests**: Run with all optional dependencies installed
+- **What they test**: `core`, `interface`, `contract`, `benchmark`, plus framework-specific markers (`smolagents`, `langgraph`, `llamaindex`, `gaia2`, `camel`)
+- **What they need**: `live` (network), `credentialed` (API keys), `slow` (>30s), `smoke` (full pipeline)
+
+These markers compose freely. A test can be both `benchmark` and `slow`, or `interface` and `credentialed`.
 
 ## Running Tests Locally
 
-### Core tests only (minimal environment)
-
 ```bash
-# In your .venv
-pytest -m core -v
+# Default — fast tests only (excludes slow, credentialed, smoke)
+uv run pytest -v
+
+# Core tests only (no optional dependencies needed)
+uv run pytest -m core -v
+
+# Specific markers
+uv run pytest -m benchmark -v
+uv run pytest -m smolagents -v
+uv run pytest -m contract -v
+
+# Data download + integrity validation (needs network, takes time)
+uv run pytest -m "live and slow" -v
+
+# Live API tests (needs API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY)
+uv run pytest -m credentialed -v
+
+# Fully offline run (no network at all)
+uv run pytest -m "not live" -v
 ```
 
-### All tests (requires optional dependencies)
-
-```bash
-# In your .venv with all deps installed
-pytest -v
-```
-
-### Specific integration tests
-
-```bash
-pytest -m smolagents -v
-pytest -m interface -v
-pytest -m contract -v  # Run cross-implementation contract tests
-```
+**Note:** The default `addopts` in `pyproject.toml` excludes `slow`, `credentialed`, and `smoke`. When you pass `-m` explicitly, it replaces the default filter.
 
 ## Test Markers
 
 Defined in `pyproject.toml`:
 
-- `core`: Tests requiring no optional dependencies
-- `interface`: Tests requiring optional dependencies
-- `contract`: Cross-implementation contract tests that validate framework-agnostic abstraction
-- `smolagents`: Tests specifically for smolagents integration
-- `langgraph`: Tests specifically for langgraph integration
-- `crewai`: Tests specifically for crewai integration
+| Marker                                                    | Purpose                                   |
+| --------------------------------------------------------- | ----------------------------------------- |
+| `core`                                                    | No optional dependencies needed           |
+| `interface`                                               | Requires optional dependencies            |
+| `contract`                                                | Cross-implementation behavioral contracts |
+| `benchmark`                                               | Benchmark-specific tests                  |
+| `smolagents`, `langgraph`, `llamaindex`, `gaia2`, `camel` | Framework-specific                        |
+| `live`                                                    | Requires network access                   |
+| `credentialed`                                            | Requires API keys (implies `live`)        |
+| `slow`                                                    | Takes >30 seconds                         |
+| `smoke`                                                   | Full end-to-end pipeline validation       |
 
-## GitHub Actions Workflow
+**Marker implication:** `credentialed` automatically implies `live` via a hook in `conftest.py`. This ensures `-m "not live"` always gives a fully offline run.
 
-Two jobs run in sequence:
+## CI Pipeline
 
-### 1. `test-core` (Python 3.10, 3.11, 3.12)
+Six jobs in `.github/workflows/test.yml`:
 
-- Installs only core package
-- Runs `pytest -m core`
-- Must pass before interface tests run
+| Job               | Python    | What it runs                      | Gate                   |
+| ----------------- | --------- | --------------------------------- | ---------------------- |
+| test-core         | 3.10–3.14 | `-m core`                         | —                      |
+| test-benchmark    | 3.10–3.14 | `-m benchmark`                    | —                      |
+| test-all          | 3.10–3.14 | `pytest -v` (default filter)      | After core + benchmark |
+| test-slow         | 3.12      | `-m "slow and not credentialed"`  | —                      |
+| test-credentialed | 3.12      | `-m "credentialed and not smoke"` | Maintainer approval    |
+| coverage          | 3.12      | Default suite (fast) with coverage report | —              |
 
-### 2. `test-all` (Python 3.10, 3.11, 3.12)
+Contributors don't need API keys — the default suite and slow tests run without them.
 
-- Depends on `test-core` passing
-- Installs all optional dependencies
-- Runs all tests including interface tests
-
-## Test Files
+## Test Organization
 
 ```
 tests/
-├── test_core/
-│   └── test_benchmark.py          # Core functionality (marked with @pytest.mark.core)
-└── test_interface/
-    ├── test_optional_imports.py   # Import behavior without deps (marked core)
-    └── test_smolagents_integration.py  # Smolagents integration (marked smolagents)
+├── conftest.py                 # Shared fixtures, marker implication hook
+├── markers.py                  # Skip decorators for missing API keys
+├── test_core/                  # Unit tests (no optional deps, marked core)
+├── test_interface/             # Integration tests (marked interface + framework)
+│   ├── test_agent_integration/ # Framework-specific agent adapters
+│   └── test_model_integration/ # Provider-specific model adapters + API contracts
+├── test_contract/              # Cross-implementation contract tests (marked contract)
+└── test_benchmarks/            # Benchmark tests (marked benchmark)
+    ├── test_tau2/              # Tau2 benchmark + data integrity
+    ├── test_macs/              # MACS benchmark + data integrity
+    └── test_gaia2/             # GAIA2 benchmark
 ```
 
-## Implementation Details
+### `test_core/` — Unit tests
 
-### Test Markers Usage
+Bottom-up tests for core classes in isolation. No optional dependencies.
+
+### `test_interface/` — Integration tests
+
+Tests for framework-specific adapters. Includes HTTP-mocked API contract tests (run by default) and live API tests (marked `credentialed`).
+
+### `test_contract/` — Contract tests
+
+Top-down tests validating that all implementations of the same abstraction behave identically. These are the most critical tests for MASEval's framework-agnostic promise.
+
+### `test_benchmarks/` — Benchmark tests
+
+Benchmark tests follow a **two-tier pattern**:
+
+**Tier 1: Structural tests (offline, `benchmark` marker only)**
+
+Tests that work without downloaded data or network access:
+- Import protection: `maseval` runs without benchmark optional dependencies
+- Graceful errors: descriptive error when benchmark code is accessed without deps
+- Interface checks: class methods exist, types correct, invalid inputs rejected
+- Mock-based tests: benchmark pipeline tested with `DummyModelAdapter` and synthetic fixtures
+
+**Tier 2: Real data tests (`benchmark` + `live` markers)**
+
+Tests that download and use actual benchmark data:
+- Environment/tool tests: create real environments, execute tools on real databases
+- Data loading pipeline: `load_tasks`, `load_domain_config`, etc.
+- Data integrity validation (also marked `slow`): schema checks, minimum record counts, field structure
+
+#### Data download pattern
+
+Benchmarks use `ensure_data_exists()` to download data to the **package's default data directory** (not temp dirs). This function caches — it skips download if files already exist. A session-scoped pytest fixture (e.g., `ensure_tau2_data`, `ensure_macs_templates`) triggers the download once per test session.
+
+Tests that need real data should:
+1. Depend on the download fixture (`ensure_tau2_data`, `ensure_macs_templates`, etc.)
+2. Be marked `@pytest.mark.live`
+3. Use simple constructors — e.g., `Tau2Environment({"domain": "retail"})` — since data is already in the default location
+
+Tests that don't need data (structural, mock-based) should NOT depend on the download fixture and should NOT be marked `live`.
+
+#### How to decide: mock or real data?
+
+This is a judgment call. As a guideline:
+- If the test validates **structure, types, or error handling** → Tier 1 (offline)
+- If the test operates on **real database records, files, or network resources** → Tier 2 (`live`)
+- Don't force synthetic fixtures where they add complexity without value. If something needs real data, test it with real data.
+
+Data integrity tests (verifying downloaded data is complete and well-formed) are also marked `slow` since they trigger downloads.
+
+## Patterns
 
 ```python
 # Mark entire file
@@ -81,48 +146,23 @@ pytestmark = pytest.mark.core
 @pytest.mark.interface
 def test_something():
     pass
-```
 
-### Skipping Tests Without Dependencies
+# Compose markers
+@pytest.mark.benchmark
+@pytest.mark.live
+@pytest.mark.slow
+def test_download_data():
+    pass
 
-```python
-# At module level - skip entire file if package not available
+# Skip if optional dependency missing
 pytest.importorskip("smolagents")
+
+# Skip if API key missing
+requires_openai = pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
+)
 ```
 
-## Test Organization
+## Notes
 
-Tests are organized into three directories following a **bottom-up and top-down strategy**:
-
-### `test_core/`
-
-**Bottom-up unit tests** for core classes in isolation (single implementation). These test individual components without optional dependencies.
-
-Examples:
-
-- `test_model_adapter.py` - Base `ModelAdapter` class behavior
-- `test_agent_adapter.py` - Base `AgentAdapter` class behavior
-- `test_benchmark_lifecycle.py` - Core benchmark orchestration
-
-### `test_interface/`
-
-**Bottom-up integration tests** for framework-specific adapters (single framework at a time). These test integration with external frameworks like smolagents, langgraph, OpenAI, Google GenAI, etc.
-
-Examples:
-
-- `test_agent_integration/` - Framework-specific agent adapters
-- `test_model_integration/` - Provider-specific model adapters (OpenAI, Google, HuggingFace, LiteLLM)
-
-### `test_contract/`
-
-**Top-down contract tests** validate that different implementations of the same abstraction honor identical behavioral contracts. These are the **most critical tests** for MASEval's framework-agnostic promise.
-
-Contract tests use parametrized tests to verify that all implementations (e.g., different framework adapters) behave identically for key operations:
-
-- `test_agent_adapter_contract.py` - All `AgentAdapter` implementations return same message format, trigger callbacks uniformly
-- `test_model_adapter_contract.py` - All `ModelAdapter` implementations log calls identically, produce same trace/config structure (65+ parameterized tests)
-- `test_collection_contract.py` - All components (Agent, Model, Environment, User) follow same tracing/config contracts
-
-**Why Contract Tests Matter:** MASEval's core value proposition is framework-agnostic abstraction. Users should be able to swap between agent frameworks (smolagents, langgraph, custom) or model providers (OpenAI, Google, HuggingFace) without changing benchmark code. Contract tests validate this promise.
-
-**Test Strategy:** Contract tests create all implementations with mock clients, run identical operations, and assert results match exactly (same fields, types, behavior).
+- Credentialed tests require maintainer approval via GitHub Environment. See `EXTENDEDTESTINGSTRATEGYPLAN.md` for details.

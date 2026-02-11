@@ -15,8 +15,9 @@ from maseval.benchmark.tau2.data_loader import VALID_DOMAINS
 class TestEnvironmentCreation:
     """Tests for Tau2Environment creation."""
 
+    @pytest.mark.live
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
-    def test_creates_environment(self, domain):
+    def test_creates_environment(self, domain, ensure_tau2_data):
         """Creates environment successfully for each domain."""
         env = Tau2Environment({"domain": domain})
 
@@ -45,6 +46,7 @@ DOMAIN_TOOL_COUNTS = {
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestEnvironmentTools:
     """Tests for environment tool creation."""
 
@@ -56,7 +58,7 @@ class TestEnvironmentTools:
             ("telecom", 13),
         ],
     )
-    def test_domain_has_correct_tool_count(self, domain, expected_count):
+    def test_domain_has_correct_tool_count(self, domain, expected_count, ensure_tau2_data):
         """Each domain has the expected number of tools."""
         env = Tau2Environment({"domain": domain})
         tools = env.create_tools()
@@ -78,6 +80,7 @@ class TestEnvironmentTools:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestDatabaseState:
     """Tests for database state management."""
 
@@ -134,6 +137,7 @@ class TestDatabaseState:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestToolExecution:
     """Tests for tool execution via environment."""
 
@@ -174,6 +178,7 @@ class TestToolExecution:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestToolkitStatistics:
     """Tests for toolkit statistics."""
 
@@ -185,7 +190,7 @@ class TestToolkitStatistics:
             ("telecom", 13, 6, 6),
         ],
     )
-    def test_toolkit_stats(self, domain, num_tools, num_read, num_write):
+    def test_toolkit_stats(self, domain, num_tools, num_read, num_write, ensure_tau2_data):
         """Toolkit has expected statistics for each domain."""
         env = Tau2Environment({"domain": domain})
         stats = env.toolkit.get_statistics()
@@ -201,6 +206,7 @@ class TestToolkitStatistics:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestDatabaseStatistics:
     """Tests for database statistics."""
 
@@ -235,6 +241,7 @@ class TestDatabaseStatistics:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestTraceGathering:
     """Tests for environment trace gathering."""
 
@@ -270,11 +277,12 @@ class TestTraceGathering:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestUserTools:
     """Tests for user tool creation."""
 
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
-    def test_create_user_tools(self, domain):
+    def test_create_user_tools(self, domain, ensure_tau2_data):
         """Each domain can create user tools."""
         env = Tau2Environment({"domain": domain})
         user_tools = env.create_user_tools()
@@ -289,6 +297,7 @@ class TestUserTools:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestToolCallTracing:
     """Tests for tool call tracing."""
 
@@ -331,6 +340,7 @@ class TestToolCallTracing:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestEnvironmentReset:
     """Tests for environment reset functionality."""
 
@@ -369,6 +379,7 @@ class TestEnvironmentReset:
 
 
 @pytest.mark.benchmark
+@pytest.mark.live
 class TestToolDescriptions:
     """Tests for tool descriptions."""
 
@@ -380,7 +391,7 @@ class TestToolDescriptions:
             ("telecom", 13),
         ],
     )
-    def test_tool_descriptions(self, domain, expected_count):
+    def test_tool_descriptions(self, domain, expected_count, ensure_tau2_data):
         """Each domain has descriptions for all tools."""
         env = Tau2Environment({"domain": domain})
         descriptions = env.toolkit.get_tool_descriptions()

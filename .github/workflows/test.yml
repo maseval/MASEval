@@ -72,6 +72,55 @@ jobs:
         run: |
           uv run pytest -v
 
+  test-slow:
+    name: Slow Tests (Data Downloads + Integrity)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv sync --all-extras --group dev
+      - name: Cache benchmark data
+        uses: actions/cache@v4
+        with:
+          path: |
+            maseval/benchmark/tau2/data/
+            maseval/benchmark/macs/data/
+            maseval/benchmark/macs/prompt_templates/
+          key: benchmark-data-${{ hashFiles('maseval/benchmark/tau2/data_loader.py', 'maseval/benchmark/macs/data_loader.py') }}
+      - name: Run slow tests
+        run: |
+          uv run pytest -m "slow and not credentialed" -v
+
+  # test-credentialed:
+  #   name: Credentialed Tests (Live API)
+  #   runs-on: ubuntu-latest
+  #   environment: credentialed-tests
+
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - name: Set up Python 3.12
+  #       uses: actions/setup-python@v4
+  #       with:
+  #         python-version: "3.12"
+  #     - name: Install dependencies
+  #       run: |
+  #         pip install uv
+  #         uv sync --all-extras --group dev
+  #     - name: Run credentialed tests
+  #       env:
+  #         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  #         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  #         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+  #       run: |
+  #         uv run pytest -m "credentialed and not smoke" -v
+
   coverage:
     name: Coverage Report
     runs-on: ubuntu-latest

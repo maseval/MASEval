@@ -9,8 +9,6 @@ Tau2 tests can use fixtures from both levels - pytest handles this automatically
 """
 
 import pytest
-from tempfile import TemporaryDirectory
-from pathlib import Path
 
 from maseval import Task
 
@@ -20,29 +18,22 @@ from maseval import Task
 # =============================================================================
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def ensure_tau2_data():
-    """Download Tau2 domain data before running any benchmark tests.
+    """Download Tau2 domain data to the package's default data directory.
 
-    This fixture runs once per test session and ensures that the domain
-    data files (db.json, tasks.json, policy.md) exist locally.
+    Downloads data files (db.json, tasks.json, policy.md) if not already present.
+    Uses ensure_data_exists() which caches: skips download when files exist.
+
+    Tests that need real data should depend on this fixture and be marked @pytest.mark.live.
+    Tests that don't need data (structural, mock-based) should NOT depend on this fixture.
     """
-    from maseval.benchmark.tau2.data_loader import ensure_data_exists
+    from maseval.benchmark.tau2.data_loader import ensure_data_exists, DEFAULT_DATA_DIR
 
     for domain in ["retail", "airline", "telecom"]:
-        ensure_data_exists(domain=domain)
+        ensure_data_exists(domain=domain, verbose=0)
 
-
-# =============================================================================
-# Temporary Directory Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def temp_data_dir():
-    """Create a temporary directory for test data."""
-    with TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
+    return DEFAULT_DATA_DIR
 
 
 # =============================================================================
@@ -51,32 +42,32 @@ def temp_data_dir():
 
 
 @pytest.fixture
-def retail_db():
+def retail_db(ensure_tau2_data):
     """Load the retail domain database."""
-    from maseval.benchmark.tau2.data_loader import load_domain_config, DEFAULT_DATA_DIR
+    from maseval.benchmark.tau2.data_loader import load_domain_config
     from maseval.benchmark.tau2.domains.retail import RetailDB
 
-    config = load_domain_config("retail", DEFAULT_DATA_DIR)
+    config = load_domain_config("retail")
     return RetailDB.load(config["db_path"])
 
 
 @pytest.fixture
-def airline_db():
+def airline_db(ensure_tau2_data):
     """Load the airline domain database."""
-    from maseval.benchmark.tau2.data_loader import load_domain_config, DEFAULT_DATA_DIR
+    from maseval.benchmark.tau2.data_loader import load_domain_config
     from maseval.benchmark.tau2.domains.airline import AirlineDB
 
-    config = load_domain_config("airline", DEFAULT_DATA_DIR)
+    config = load_domain_config("airline")
     return AirlineDB.load(config["db_path"])
 
 
 @pytest.fixture
-def telecom_db():
+def telecom_db(ensure_tau2_data):
     """Load the telecom domain database."""
-    from maseval.benchmark.tau2.data_loader import load_domain_config, DEFAULT_DATA_DIR
+    from maseval.benchmark.tau2.data_loader import load_domain_config
     from maseval.benchmark.tau2.domains.telecom import TelecomDB
 
-    config = load_domain_config("telecom", DEFAULT_DATA_DIR)
+    config = load_domain_config("telecom")
     return TelecomDB.load(config["db_path"])
 
 
@@ -124,7 +115,7 @@ def telecom_user_toolkit(telecom_db):
 
 
 @pytest.fixture
-def retail_environment():
+def retail_environment(ensure_tau2_data):
     """Create a retail environment."""
     from maseval.benchmark.tau2 import Tau2Environment
 
@@ -132,7 +123,7 @@ def retail_environment():
 
 
 @pytest.fixture
-def airline_environment():
+def airline_environment(ensure_tau2_data):
     """Create an airline environment."""
     from maseval.benchmark.tau2 import Tau2Environment
 
@@ -140,7 +131,7 @@ def airline_environment():
 
 
 @pytest.fixture
-def telecom_environment():
+def telecom_environment(ensure_tau2_data):
     """Create a telecom environment."""
     from maseval.benchmark.tau2 import Tau2Environment
 

@@ -82,6 +82,7 @@ dev = [
     "ruff>=0.14.0",
     "ty>=0.0.5",
     "pre-commit>=4.0.0",
+    "respx>=0.22.0",
 ]
 
 # Documentation building - for contributors only
@@ -112,9 +113,13 @@ markers = [
     "llamaindex: Tests that specifically require llama-index-core",
     "gaia2: Tests that specifically require ARE (Agent Research Environments)",
     "camel: Tests that specifically require camel-ai",
+    "live: Tests requiring network access (downloads, external APIs)",
+    "credentialed: Tests requiring API keys (implies live, costs money)",
+    "slow: Tests taking >30 seconds (data downloads, large datasets)",
+    "smoke: Full end-to-end pipeline validation (pre-release only)",
 ]
 minversion = "6.0"
-addopts = "-ra -q"
+addopts = "-ra -q -m 'not (slow or credentialed or smoke)'"
 testpaths = ["tests"]
 
 [tool.coverage.run]

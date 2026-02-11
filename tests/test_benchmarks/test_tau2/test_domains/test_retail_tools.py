@@ -4,6 +4,8 @@ import pytest
 
 from maseval.benchmark.tau2.domains.base import ToolType
 
+pytestmark = [pytest.mark.live]
+
 
 # =============================================================================
 # Toolkit Basic Tests
@@ -52,8 +54,11 @@ class TestRetailReadTools:
     def test_get_user_details(self, retail_toolkit):
         """get_user_details returns user information."""
         users = list(retail_toolkit.db.users.keys())
-        if not users:
-            pytest.skip("No users in test database")
+        assert len(users) > 0, (
+            "Real retail database should have users. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.users)} users."
+        )
 
         user_id = users[0]
         result = retail_toolkit.use_tool("get_user_details", user_id=user_id)
@@ -69,8 +74,11 @@ class TestRetailReadTools:
     def test_get_order_details(self, retail_toolkit):
         """get_order_details returns order information."""
         orders = list(retail_toolkit.db.orders.keys())
-        if not orders:
-            pytest.skip("No orders in test database")
+        assert len(orders) > 0, (
+            "Real retail database should have orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} orders."
+        )
 
         order_id = orders[0]
         result = retail_toolkit.use_tool("get_order_details", order_id=order_id)
@@ -92,8 +100,11 @@ class TestRetailReadTools:
     def test_get_product_details(self, retail_toolkit):
         """get_product_details returns product information."""
         products = list(retail_toolkit.db.products.keys())
-        if not products:
-            pytest.skip("No products in test database")
+        assert len(products) > 0, (
+            "Real retail database should have products. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.products)} products."
+        )
 
         product_id = products[0]
         result = retail_toolkit.use_tool("get_product_details", product_id=product_id)
@@ -197,15 +208,14 @@ class TestRetailCancelOrder:
     def test_cancel_pending_order(self, retail_toolkit):
         """Successfully cancel a pending order."""
         # Find a pending order
-        pending_order_id = None
-        for order_id, order in retail_toolkit.db.orders.items():
-            if order.status == "pending":
-                pending_order_id = order_id
-                break
+        pending_orders = {oid: o for oid, o in retail_toolkit.db.orders.items() if o.status == "pending"}
+        assert len(pending_orders) > 0, (
+            "Real retail database should have pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders, 0 pending."
+        )
 
-        if not pending_order_id:
-            pytest.skip("No pending orders in test database")
-
+        pending_order_id = next(iter(pending_orders))
         result = retail_toolkit.use_tool(
             "cancel_pending_order",
             order_id=pending_order_id,
@@ -219,15 +229,14 @@ class TestRetailCancelOrder:
     def test_cancel_non_pending_order_fails(self, retail_toolkit):
         """Cannot cancel a non-pending order."""
         # Find a non-pending order
-        non_pending_order_id = None
-        for order_id, order in retail_toolkit.db.orders.items():
-            if order.status != "pending":
-                non_pending_order_id = order_id
-                break
+        non_pending_orders = {oid: o for oid, o in retail_toolkit.db.orders.items() if o.status != "pending"}
+        assert len(non_pending_orders) > 0, (
+            "Real retail database should have non-pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders, 0 non-pending."
+        )
 
-        if not non_pending_order_id:
-            pytest.skip("No non-pending orders in test database")
-
+        non_pending_order_id = next(iter(non_pending_orders))
         with pytest.raises(ValueError, match="Non-pending"):
             retail_toolkit.use_tool(
                 "cancel_pending_order",
@@ -237,15 +246,14 @@ class TestRetailCancelOrder:
 
     def test_cancel_with_invalid_reason(self, retail_toolkit):
         """Cancel with invalid reason fails."""
-        pending_order_id = None
-        for order_id, order in retail_toolkit.db.orders.items():
-            if order.status == "pending":
-                pending_order_id = order_id
-                break
+        pending_orders = {oid: o for oid, o in retail_toolkit.db.orders.items() if o.status == "pending"}
+        assert len(pending_orders) > 0, (
+            "Real retail database should have pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders, 0 pending."
+        )
 
-        if not pending_order_id:
-            pytest.skip("No pending orders in test database")
-
+        pending_order_id = next(iter(pending_orders))
         with pytest.raises(ValueError, match="Invalid reason"):
             retail_toolkit.use_tool(
                 "cancel_pending_order",
@@ -265,15 +273,14 @@ class TestRetailModifyOrder:
 
     def test_modify_pending_order_address(self, retail_toolkit):
         """Successfully modify address of a pending order."""
-        pending_order_id = None
-        for order_id, order in retail_toolkit.db.orders.items():
-            if order.status == "pending":
-                pending_order_id = order_id
-                break
+        pending_orders = {oid: o for oid, o in retail_toolkit.db.orders.items() if o.status == "pending"}
+        assert len(pending_orders) > 0, (
+            "Real retail database should have pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders, 0 pending."
+        )
 
-        if not pending_order_id:
-            pytest.skip("No pending orders in test database")
-
+        pending_order_id = next(iter(pending_orders))
         result = retail_toolkit.use_tool(
             "modify_pending_order_address",
             order_id=pending_order_id,
@@ -298,8 +305,11 @@ class TestRetailModifyOrder:
                 non_pending_order_id = order_id
                 break
 
-        if not non_pending_order_id:
-            pytest.skip("No non-pending orders in test database")
+        assert non_pending_order_id is not None, (
+            "Real retail database should have non-pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         with pytest.raises(ValueError, match="Non-pending"):
             retail_toolkit.use_tool(
@@ -360,8 +370,9 @@ class TestRetailUserLookup:
         """Find user by email."""
         # Get first user's email
         users = list(retail_toolkit.db.users.values())
-        if not users:
-            pytest.skip("No users in test database")
+        assert len(users) > 0, (
+            f"Real retail database should have users. This indicates upstream data issue or data_integrity test gap. Found {len(users)} users."
+        )
 
         user = users[0]
         result = retail_toolkit.use_tool("find_user_id_by_email", email=user.email)
@@ -376,8 +387,9 @@ class TestRetailUserLookup:
     def test_find_user_by_name_zip(self, retail_toolkit):
         """Find user by name and zip."""
         users = list(retail_toolkit.db.users.values())
-        if not users:
-            pytest.skip("No users in test database")
+        assert len(users) > 0, (
+            f"Real retail database should have users. This indicates upstream data issue or data_integrity test gap. Found {len(users)} users."
+        )
 
         user = users[0]
         result = retail_toolkit.use_tool(
@@ -412,8 +424,11 @@ class TestRetailModifyUserAddress:
     def test_modify_user_address(self, retail_toolkit):
         """Successfully modify user's default address."""
         user_ids = list(retail_toolkit.db.users.keys())
-        if not user_ids:
-            pytest.skip("No users in database")
+        assert len(user_ids) > 0, (
+            "Real retail database should have users. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(user_ids)} users."
+        )
 
         result = retail_toolkit.use_tool(
             "modify_user_address",
@@ -462,12 +477,18 @@ class TestRetailModifyItems:
                 pending_order = order
                 break
 
-        if not pending_order:
-            pytest.skip("No pending orders with items")
+        assert pending_order is not None, (
+            "Real retail database should have pending orders with items. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         user = retail_toolkit.db.users.get(pending_order.user_id)  # type: ignore[union-attr]
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         payment_id = list(user.payment_methods.keys())[0]
 
@@ -489,12 +510,18 @@ class TestRetailModifyItems:
                 non_pending_order = order
                 break
 
-        if not non_pending_order:
-            pytest.skip("No suitable non-pending orders")
+        assert non_pending_order is not None, (
+            "Real retail database should have suitable non-pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         user = retail_toolkit.db.users.get(non_pending_order.user_id)  # type: ignore[union-attr]
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         payment_id = list(user.payment_methods.keys())[0]
         item_id = non_pending_order.items[0].item_id  # type: ignore[union-attr]
@@ -526,8 +553,11 @@ class TestRetailModifyPayment:
                 pending_order = order
                 break
 
-        if not pending_order:
-            pytest.skip("No suitable pending orders")
+        assert pending_order is not None, (
+            "Real retail database should have suitable pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         with pytest.raises(ValueError, match="not found"):
             retail_toolkit.use_tool(
@@ -544,12 +574,18 @@ class TestRetailModifyPayment:
                 non_pending_order = order
                 break
 
-        if not non_pending_order:
-            pytest.skip("No non-pending orders")
+        assert non_pending_order is not None, (
+            "Real retail database should have non-pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         user = retail_toolkit.db.users.get(non_pending_order.user_id)  # type: ignore[union-attr]
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         payment_id = list(user.payment_methods.keys())[0]
 
@@ -578,12 +614,18 @@ class TestRetailExchangeItems:
                 non_delivered_order = order
                 break
 
-        if not non_delivered_order:
-            pytest.skip("No non-delivered orders with items")
+        assert non_delivered_order is not None, (
+            "Real retail database should have non-delivered orders with items. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         user = retail_toolkit.db.users.get(non_delivered_order.user_id)  # type: ignore[union-attr]
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         payment_id = list(user.payment_methods.keys())[0]
         item_id = non_delivered_order.items[0].item_id  # type: ignore[union-attr]
@@ -605,12 +647,18 @@ class TestRetailExchangeItems:
                 delivered_order = order
                 break
 
-        if not delivered_order:
-            pytest.skip("No delivered orders with items")
+        assert delivered_order is not None, (
+            "Real retail database should have delivered orders with items. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         user = retail_toolkit.db.users.get(delivered_order.user_id)  # type: ignore[union-attr]
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         payment_id = list(user.payment_methods.keys())[0]
         item_id = delivered_order.items[0].item_id  # type: ignore[union-attr]
@@ -642,12 +690,18 @@ class TestRetailReturnItems:
                 non_delivered_order = order
                 break
 
-        if not non_delivered_order:
-            pytest.skip("No non-delivered orders with items")
+        assert non_delivered_order is not None, (
+            "Real retail database should have non-delivered orders with items. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         user = retail_toolkit.db.users.get(non_delivered_order.user_id)  # type: ignore[union-attr]
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         payment_id = list(user.payment_methods.keys())[0]
         item_id = non_delivered_order.items[0].item_id  # type: ignore[union-attr]
@@ -668,12 +722,18 @@ class TestRetailReturnItems:
                 delivered_order = order
                 break
 
-        if not delivered_order:
-            pytest.skip("No delivered orders with items")
+        assert delivered_order is not None, (
+            "Real retail database should have delivered orders with items. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         user = retail_toolkit.db.users.get(delivered_order.user_id)  # type: ignore[union-attr]
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         # Use original payment method
         if delivered_order.payment_history:  # type: ignore[union-attr]
@@ -712,13 +772,19 @@ class TestRetailModifyItemsSuccess:
                 pending_order = order
                 break
 
-        if not pending_order:
-            pytest.skip("No pending orders with items")
+        assert pending_order is not None, (
+            "Real retail database should have pending orders with items. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         assert pending_order is not None  # type narrowing after skip
         user = retail_toolkit.db.users.get(pending_order.user_id)
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         assert user is not None  # type narrowing after skip
         payment_id = list(user.payment_methods.keys())[0]
@@ -726,8 +792,11 @@ class TestRetailModifyItemsSuccess:
 
         # Find a different variant of the same product
         product = retail_toolkit.db.products.get(item.product_id)
-        if not product or len(product.variants) < 2:
-            pytest.skip("Product needs multiple variants for item modification test")
+        assert product is not None and len(product.variants) >= 2, (
+            f"Product {item.product_id} should have multiple variants for testing. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found product with {len(product.variants) if product else 0} variants."
+        )
 
         # Find a different item_id for the same product
         new_item_id = None
@@ -736,8 +805,10 @@ class TestRetailModifyItemsSuccess:
                 new_item_id = variant_id
                 break
 
-        if not new_item_id:
-            pytest.skip("No alternative variant available")
+        assert new_item_id is not None, (
+            f"Product {item.product_id} should have alternative variants available. "
+            "This indicates upstream data issue or data_integrity test gap."
+        )
 
         result = retail_toolkit.use_tool(
             "modify_pending_order_items",
@@ -757,13 +828,19 @@ class TestRetailModifyItemsSuccess:
                 pending_order = order
                 break
 
-        if not pending_order:
-            pytest.skip("No pending orders with items")
+        assert pending_order is not None, (
+            "Real retail database should have pending orders with items. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         assert pending_order is not None  # type narrowing after skip
         user = retail_toolkit.db.users.get(pending_order.user_id)
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         assert user is not None  # type narrowing after skip
         payment_id = list(user.payment_methods.keys())[0]
@@ -788,6 +865,7 @@ class TestRetailModifyItemsSuccess:
 class TestRetailModifyPaymentSuccess:
     """Tests for successful payment modification."""
 
+    @pytest.mark.xfail(reason="v0.2.0 upstream data has no users with multiple payment methods")
     def test_modify_pending_order_payment_success(self, retail_toolkit):
         """Successfully modify payment method of a pending order."""
         # Find a pending order with a single payment
@@ -797,15 +875,19 @@ class TestRetailModifyPaymentSuccess:
                 pending_order = order
                 break
 
-        if not pending_order:
-            pytest.skip("No suitable pending orders")
+        assert pending_order is not None, (
+            "Real retail database should have suitable pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
-        assert pending_order is not None  # type narrowing after skip
+        assert pending_order is not None  # type narrowing
         user = retail_toolkit.db.users.get(pending_order.user_id)
-        if not user or len(user.payment_methods) < 2:
-            pytest.skip("User needs at least 2 payment methods")
-
-        assert user is not None  # type narrowing after skip
+        assert user is not None and len(user.payment_methods) >= 2, (
+            "User should have at least 2 payment methods for testing. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(user.payment_methods) if user else 0} payment methods."
+        )
         # Find a different payment method
         current_payment_id = pending_order.payment_history[0].payment_method_id
         new_payment_id = None
@@ -814,8 +896,11 @@ class TestRetailModifyPaymentSuccess:
                 new_payment_id = pm_id
                 break
 
-        if not new_payment_id:
-            pytest.skip("No alternative payment method available")
+        assert new_payment_id is not None, (
+            f"User should have alternative payment methods available. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(user.payment_methods)} payment methods."
+        )
 
         result = retail_toolkit.use_tool(
             "modify_pending_order_payment",
@@ -835,8 +920,11 @@ class TestRetailModifyPaymentSuccess:
                 pending_order = order
                 break
 
-        if not pending_order:
-            pytest.skip("No suitable pending orders")
+        assert pending_order is not None, (
+            "Real retail database should have suitable pending orders. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         assert pending_order is not None  # type narrowing after skip
         current_payment_id = pending_order.payment_history[0].payment_method_id
@@ -867,13 +955,19 @@ class TestRetailExchangeSuccess:
                 delivered_order = order
                 break
 
-        if not delivered_order:
-            pytest.skip("No delivered orders with items")
+        assert delivered_order is not None, (
+            "Real retail database should have delivered orders with items. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(retail_toolkit.db.orders)} total orders."
+        )
 
         assert delivered_order is not None  # type narrowing after skip
         user = retail_toolkit.db.users.get(delivered_order.user_id)
-        if not user or not user.payment_methods:
-            pytest.skip("Order user has no payment methods")
+        assert user is not None and user.payment_methods, (
+            "Order user should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"User: {user}, Payment methods: {len(user.payment_methods) if user else 0}"
+        )
 
         assert user is not None  # type narrowing after skip
         payment_id = list(user.payment_methods.keys())[0]
@@ -881,8 +975,11 @@ class TestRetailExchangeSuccess:
 
         # Find a different variant of the same product
         product = retail_toolkit.db.products.get(item.product_id)
-        if not product or len(product.variants) < 2:
-            pytest.skip("Product needs multiple variants for exchange test")
+        assert product is not None and len(product.variants) >= 2, (
+            f"Product should have multiple variants for exchange testing. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found product with {len(product.variants) if product else 0} variants."
+        )
 
         # Find a different item_id for the same product
         new_item_id = None
@@ -891,8 +988,10 @@ class TestRetailExchangeSuccess:
                 new_item_id = variant_id
                 break
 
-        if not new_item_id:
-            pytest.skip("No alternative variant available")
+        assert new_item_id is not None, (
+            f"Product {item.product_id} should have alternative variants available. "
+            "This indicates upstream data issue or data_integrity test gap."
+        )
 
         result = retail_toolkit.use_tool(
             "exchange_delivered_order_items",

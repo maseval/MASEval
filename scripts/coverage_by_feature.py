@@ -4,15 +4,29 @@
 Automatically discovers benchmarks and integrations from the codebase structure.
 Provides a high-level view of coverage by logical component rather than by file.
 
-Usage:
+By default, runs all tests except ``credentialed`` and ``smoke`` (i.e. includes
+``slow`` and ``live`` tests that don't need API keys).  Use ``--exclude`` to
+skip additional markers.
+
+Usage::
+
+    # Full coverage (default + slow + live)
     uv run python scripts/coverage_by_feature.py
+
+    # Fast-only (skip slow and live tests)
+    uv run python scripts/coverage_by_feature.py --exclude slow,live
 """
 
+import argparse
 import json
 import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Set
+
+
+# Markers that are always excluded (need API keys or are pre-release only)
+ALWAYS_EXCLUDED = ["credentialed", "smoke"]
 
 
 def discover_benchmarks(maseval_dir: Path) -> List[str]:
@@ -66,14 +80,30 @@ def discover_integrations(maseval_dir: Path) -> Dict[str, Dict[str, List[str]]]:
     return integrations
 
 
-def run_coverage() -> bool:
-    """Run pytest with coverage collection."""
-    print("Running tests with coverage...")
-    result = subprocess.run(
-        ["pytest", "--cov=maseval", "--cov-report=json", "--quiet"],
-        capture_output=True,
-        text=True,
-    )
+def build_marker_expression(exclude: List[str]) -> str:
+    """Build a pytest marker expression from the list of markers to exclude."""
+    all_excluded = ALWAYS_EXCLUDED + [m for m in exclude if m not in ALWAYS_EXCLUDED]
+    return "not (" + " or ".join(all_excluded) + ")"
+
+
+def run_coverage(marker_expr: str) -> bool:
+    """Run pytest with coverage collection.
+
+    Args:
+        marker_expr: Pytest marker expression (passed via -m).
+    """
+    cmd = [
+        "pytest",
+        "--override-ini=addopts=",
+        "-m",
+        marker_expr,
+        "--cov=maseval",
+        "--cov-report=json",
+        "--quiet",
+    ]
+
+    print(f"Running tests with coverage  (-m '{marker_expr}') ...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print("\nTests failed:")
         print(result.stdout)
@@ -133,13 +163,32 @@ def format_coverage(label: str, stats: Dict[str, float], indent: int = 0) -> str
     return f"{indent_str}{label:<30} {color}{percent:6.2f}%{reset}  ({stats['covered']}/{stats['total']} lines)"
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Generate test coverage report organized by feature area.",
+    )
+    parser.add_argument(
+        "--exclude",
+        type=str,
+        default="",
+        help="Comma-separated markers to exclude (e.g. 'slow,live'). 'credentialed' and 'smoke' are always excluded.",
+    )
+    return parser.parse_args()
+
+
 def main():
     """Generate coverage report by feature area."""
+    args = parse_args()
     repo_root = Path(__file__).parent.parent
     maseval_dir = repo_root / "maseval"
 
+    # Build marker expression
+    extra_excludes = [m.strip() for m in args.exclude.split(",") if m.strip()]
+    marker_expr = build_marker_expression(extra_excludes)
+
     # Run coverage
-    if not run_coverage():
+    if not run_coverage(marker_expr):
         print("\nTests failed. Coverage report may be incomplete.")
 
     print("\n" + "=" * 80)
