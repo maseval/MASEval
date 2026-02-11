@@ -22,6 +22,29 @@ from maseval import AgentAdapter, Task, MessageHistory
 
 
 # =============================================================================
+# Session-Scoped Setup
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def ensure_marble_data():
+    """Ensure MARBLE data is available, downloading if necessary.
+
+    Uses ensure_marble_exists() which caches: skips clone when marble/ already exists.
+
+    Tests that need real MARBLE data should depend on this fixture and be marked
+    @pytest.mark.live.
+    Tests that don't need data (structural, mock-based) should NOT depend on this fixture.
+
+    Returns:
+        Path to the MARBLE directory
+    """
+    from maseval.benchmark.multiagentbench.data_loader import ensure_marble_exists
+
+    return ensure_marble_exists(auto_download=True)
+
+
+# =============================================================================
 # Sample Task Data
 # =============================================================================
 

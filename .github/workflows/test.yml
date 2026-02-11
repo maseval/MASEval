@@ -93,7 +93,9 @@ jobs:
             maseval/benchmark/tau2/data/
             maseval/benchmark/macs/data/
             maseval/benchmark/macs/prompt_templates/
-          key: benchmark-data-${{ hashFiles('maseval/benchmark/tau2/data_loader.py', 'maseval/benchmark/macs/data_loader.py') }}
+            maseval/benchmark/multiagentbench/marble/
+            ~/.cache/huggingface/
+          key: benchmark-data-${{ hashFiles('maseval/benchmark/tau2/data_loader.py', 'maseval/benchmark/macs/data_loader.py', 'maseval/benchmark/multiagentbench/data_loader.py', 'maseval/benchmark/gaia2/data_loader.py') }}
       - name: Run slow tests
         run: |
           uv run pytest -m "slow and not credentialed" -v

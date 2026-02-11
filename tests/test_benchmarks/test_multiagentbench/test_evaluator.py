@@ -2,6 +2,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.benchmark
+
 from conftest import DummyModelAdapter
 from maseval.benchmark.multiagentbench.evaluator import (
     MultiAgentBenchEvaluator,

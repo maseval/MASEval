@@ -3,6 +3,8 @@
 import sys
 
 import pytest
+
+pytestmark = pytest.mark.benchmark
 from unittest.mock import MagicMock, patch
 
 from maseval import Task

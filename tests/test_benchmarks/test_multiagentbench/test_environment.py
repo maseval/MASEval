@@ -6,6 +6,8 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.benchmark
+
 from maseval.benchmark.multiagentbench.environment import (
     MultiAgentBenchEnvironment,
     INFRASTRUCTURE_DOMAINS,

@@ -27,6 +27,33 @@ from maseval.core.seeding import SeedGenerator
 
 
 # =============================================================================
+# Session-Scoped Setup
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def ensure_gaia2_data():
+    """Download GAIA2 validation data to the HuggingFace cache.
+
+    Downloads and parses the full validation split once per test session.
+    Uses HuggingFace's built-in caching: skips download when data is already cached.
+
+    Tests that need real data should depend on this fixture and be marked @pytest.mark.live.
+    Tests that don't need data (structural, mock-based) should NOT depend on this fixture.
+
+    Returns:
+        List of Task objects from the validation split
+    """
+    pytest.importorskip("datasets", reason="HuggingFace datasets library required")
+    pytest.importorskip("are", reason="ARE (meta-agents-research-environments) required")
+
+    from maseval.benchmark.gaia2.data_loader import load_tasks
+
+    tasks = load_tasks(split="validation")
+    return list(tasks)
+
+
+# =============================================================================
 # Mock ARE Components
 # =============================================================================
 

@@ -52,10 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Composable pytest markers (`live`, `credentialed`, `slow`, `smoke`) for fine-grained test selection; default runs exclude slow, credentialed, and smoke tests (PR: #29)
 - Marker implication hook: `credentialed` implies `live`, so `-m "not live"` always gives a fully offline run (PR: #29)
 - Skip decorators (`requires_openai`, `requires_anthropic`, `requires_google`) for tests needing API keys (PR: #29)
-- Data integrity tests for Tau2 and MACS benchmarks validating download pipelines, file structures, and database content (PR: #29)
+- Data integrity tests for Tau2, MACS, GAIA2, and MultiAgentBench benchmarks validating download pipelines, file structures, and data content (PR: #29)
 - HTTP-level API contract tests for model adapters (OpenAI, Anthropic, Google GenAI, LiteLLM) using `respx` mocks — no API keys needed (PR: #29)
 - Live API round-trip tests for all model adapters (`-m credentialed`) (PR: #29)
-- CI jobs for slow tests (with benchmark data caching) and credentialed tests (behind GitHub Environment approval) (PR: #29)
+- Real-data integration tests for GAIA2 (ARE environments, tools, evaluator pipeline) and MultiAgentBench (MARBLE data loading, environments, evaluation, pipeline smoke tests) (PR: #PR_NUMBER_PLACEHOLDER)
+- CI jobs for slow tests (with benchmark data caching for Tau2, MACS, GAIA2, and MultiAgentBench) and credentialed tests (behind GitHub Environment approval) (PR: #29)
 - Added `respx` dev dependency for HTTP-level mocking (PR: #29)
 
 ### Changed
