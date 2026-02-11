@@ -172,8 +172,7 @@ def parse_args() -> argparse.Namespace:
         "--exclude",
         type=str,
         default="",
-        help="Comma-separated markers to exclude (e.g. 'slow,live'). "
-        "'credentialed' and 'smoke' are always excluded.",
+        help="Comma-separated markers to exclude (e.g. 'slow,live'). 'credentialed' and 'smoke' are always excluded.",
     )
     return parser.parse_args()
 
