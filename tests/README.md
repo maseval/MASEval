@@ -64,7 +64,7 @@ Six jobs in `.github/workflows/test.yml`:
 | test-all          | 3.10–3.14 | `pytest -v` (default filter)      | After core + benchmark |
 | test-slow         | 3.12      | `-m "slow and not credentialed"`  | —                      |
 | test-credentialed | 3.12      | `-m "credentialed and not smoke"` | Maintainer approval    |
-| coverage          | 3.12      | Full suite with coverage report   | —                      |
+| coverage          | 3.12      | Default suite (fast) with coverage report | —              |
 
 Contributors don't need API keys — the default suite and slow tests run without them.
 
@@ -127,3 +127,6 @@ requires_openai = pytest.mark.skipif(
     not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
 )
 ```
+
+## Notes:
+- Credentialed tests are coming later. They are in th `test.yaml` file already but commented out.

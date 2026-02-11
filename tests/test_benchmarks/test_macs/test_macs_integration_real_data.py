@@ -14,6 +14,7 @@ import pytest
 from maseval.benchmark.macs import MACSEnvironment, MACSEvaluator
 from maseval.benchmark.macs.data_loader import (
     VALID_DOMAINS,
+    configure_model_ids,
     download_original_data,
     download_prompt_templates,
     restructure_data,
@@ -60,7 +61,7 @@ class TestMACSRealDataWithEnvironment:
 
         # Test that each task creates a valid environment
         for task in tasks:
-            env = MACSEnvironment(task.environment_data, macs_model_factory)
+            env = MACSEnvironment({"environment_data": task.environment_data}, macs_model_factory)
 
             # Validate environment was created successfully
             assert env.tools is not None
@@ -82,7 +83,7 @@ class TestMACSRealDataWithEnvironment:
         task = tasks[0]
 
         # Create environment
-        env = MACSEnvironment(task.environment_data, macs_model_factory)
+        env = MACSEnvironment({"environment_data": task.environment_data}, macs_model_factory)
 
         # Validate that agent config works with environment
         assert "agents" in agent_config
@@ -199,6 +200,12 @@ class TestMACSBenchmarkWithRealData:
         # Load real data
         tasks = load_tasks(domain, data_dir=real_macs_data, limit=1)
         agent_config = load_agent_config(domain, data_dir=real_macs_data)
+        configure_model_ids(
+            tasks,
+            tool_model_id="test-model",
+            user_model_id="test-model",
+            evaluator_model_id="test-model",
+        )
 
         assert len(tasks) > 0, f"No tasks loaded for domain {domain}"
         task = tasks[0]
@@ -265,6 +272,12 @@ class TestMACSBenchmarkWithRealData:
         # Load real data
         tasks = load_tasks(domain, data_dir=real_macs_data, limit=1)
         agent_config = load_agent_config(domain, data_dir=real_macs_data)
+        configure_model_ids(
+            tasks,
+            tool_model_id="test-model",
+            user_model_id="test-model",
+            evaluator_model_id="test-model",
+        )
 
         assert len(tasks) > 0, f"No tasks loaded for domain {domain}"
 
@@ -304,6 +317,12 @@ class TestMACSBenchmarkWithRealData:
         # Load multiple tasks
         tasks = load_tasks(domain, data_dir=real_macs_data, limit=3)
         agent_config = load_agent_config(domain, data_dir=real_macs_data)
+        configure_model_ids(
+            tasks,
+            tool_model_id="test-model",
+            user_model_id="test-model",
+            evaluator_model_id="test-model",
+        )
 
         assert len(tasks) > 0, f"No tasks loaded for domain {domain}"
 
@@ -338,6 +357,12 @@ class TestMACSBenchmarkWithRealData:
         for domain in VALID_DOMAINS:
             tasks = load_tasks(domain, data_dir=real_macs_data, limit=1)
             if tasks:
+                configure_model_ids(
+                    tasks,
+                    tool_model_id="test-model",
+                    user_model_id="test-model",
+                    evaluator_model_id="test-model",
+                )
                 all_tasks.extend(tasks)
                 # Store first domain's config (they should all work with same agent structure)
                 if not domain_configs:
