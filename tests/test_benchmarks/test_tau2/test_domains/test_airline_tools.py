@@ -8,6 +8,8 @@ import pytest
 
 from maseval.benchmark.tau2.domains.base import ToolType
 
+pytestmark = [pytest.mark.live]
+
 
 # =============================================================================
 # Toolkit Infrastructure Tests
@@ -176,13 +178,19 @@ class TestAirlineFlightRead:
     def test_get_flight_status(self, airline_toolkit):
         """Returns flight status for valid flight/date."""
         flights = list(airline_toolkit.db.flights.keys())
-        if not flights:
-            pytest.skip("No flights in database")
+        assert len(flights) > 0, (
+            "Real airline database should have flights. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.flights)} flights."
+        )
 
         flight = airline_toolkit.db.flights[flights[0]]
         dates = list(flight.dates.keys())
-        if not dates:
-            pytest.skip("Flight has no dates")
+        assert len(dates) > 0, (
+            f"Flight {flights[0]} should have dates. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(flight.dates)} dates."
+        )
 
         status = airline_toolkit.use_tool("get_flight_status", flight_number=flights[0], date=dates[0])
         assert isinstance(status, str)
@@ -236,11 +244,14 @@ class TestAirlineCancelReservation:
                 active_reservation = res
                 break
 
-        if not active_reservation:
-            pytest.skip("No active reservations to cancel")
+        assert active_reservation is not None, (
+            "Real airline database should have active (non-cancelled) reservations. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.reservations)} total reservations, all cancelled."
+        )
 
-        original_payment_count = len(active_reservation.payment_history)  # type: ignore[union-attr]
-        result = airline_toolkit.use_tool("cancel_reservation", reservation_id=active_reservation.reservation_id)  # type: ignore[union-attr]
+        original_payment_count = len(active_reservation.payment_history)
+        result = airline_toolkit.use_tool("cancel_reservation", reservation_id=active_reservation.reservation_id)
 
         assert result.status == "cancelled"
         assert len(result.payment_history) > original_payment_count  # Refund added
@@ -263,8 +274,11 @@ class TestAirlineSendCertificate:
     def test_send_certificate_success(self, airline_toolkit):
         """Sends certificate to valid user."""
         user_ids = list(airline_toolkit.db.users.keys())
-        if not user_ids:
-            pytest.skip("No users in database")
+        assert len(user_ids) > 0, (
+            "Real airline database should have users. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.users)} users."
+        )
 
         user_id = user_ids[0]
         result = airline_toolkit.use_tool("send_certificate", user_id=user_id, amount=100)
@@ -299,16 +313,19 @@ class TestAirlineUpdateBaggages:
                     reservation = res
                     break
 
-        if not reservation or not user:
-            pytest.skip("No suitable reservation for baggage update")
+        assert reservation is not None and user is not None, (
+            "Real airline database should have reservations with users that have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.reservations)} reservations."
+        )
 
-        payment_id = list(user.payment_methods.keys())[0]  # type: ignore[union-attr]
-        new_total = reservation.total_baggages + 1  # type: ignore[union-attr]
-        new_nonfree = reservation.nonfree_baggages + 1  # type: ignore[union-attr]
+        payment_id = list(user.payment_methods.keys())[0]
+        new_total = reservation.total_baggages + 1
+        new_nonfree = reservation.nonfree_baggages + 1
 
         result = airline_toolkit.use_tool(
             "update_reservation_baggages",
-            reservation_id=reservation.reservation_id,  # type: ignore[union-attr]
+            reservation_id=reservation.reservation_id,
             total_baggages=new_total,
             nonfree_baggages=new_nonfree,
             payment_id=payment_id,
@@ -339,19 +356,19 @@ class TestAirlineUpdateFlights:
                     reservation = res
                     break
 
-        if not reservation or not user:
-            pytest.skip("No suitable reservation for flight update")
+        assert reservation is not None and user is not None, (
+            "Real airline database should have reservations with flights and users with payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.reservations)} reservations."
+        )
 
-        payment_id = list(user.payment_methods.keys())[0]  # type: ignore[union-attr]
-        current_flights = [
-            {"flight_number": f.flight_number, "date": f.date}
-            for f in reservation.flights  # type: ignore[union-attr]
-        ]
+        payment_id = list(user.payment_methods.keys())[0]
+        current_flights = [{"flight_number": f.flight_number, "date": f.date} for f in reservation.flights]
 
         result = airline_toolkit.use_tool(
             "update_reservation_flights",
-            reservation_id=reservation.reservation_id,  # type: ignore[union-attr]
-            cabin=reservation.cabin,  # type: ignore[union-attr]
+            reservation_id=reservation.reservation_id,
+            cabin=reservation.cabin,
             flights=current_flights,
             payment_id=payment_id,
         )
@@ -377,12 +394,15 @@ class TestAirlineUpdatePassengers:
                 reservation = res
                 break
 
-        if not reservation:
-            pytest.skip("No reservation with passengers")
+        assert reservation is not None, (
+            "Real airline database should have reservations with passengers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.reservations)} reservations."
+        )
 
         # Create updated passenger list (same count, different names)
         updated_passengers = []
-        for p in reservation.passengers:  # type: ignore[union-attr]
+        for p in reservation.passengers:
             updated_passengers.append(
                 {
                     "first_name": p.first_name,
@@ -393,7 +413,7 @@ class TestAirlineUpdatePassengers:
 
         result = airline_toolkit.use_tool(
             "update_reservation_passengers",
-            reservation_id=reservation.reservation_id,  # type: ignore[union-attr]
+            reservation_id=reservation.reservation_id,
             passengers=updated_passengers,
         )
 
@@ -408,17 +428,20 @@ class TestAirlineUpdatePassengers:
                 reservation = res
                 break
 
-        if not reservation:
-            pytest.skip("No reservation with passengers")
+        assert reservation is not None, (
+            "Real airline database should have reservations with passengers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.reservations)} reservations."
+        )
 
         # Try to update with different number of passengers
         wrong_count_passengers = [{"first_name": "Test", "last_name": "User", "dob": "1990-01-01"}]
 
-        if len(reservation.passengers) != 1:  # type: ignore[union-attr]
+        if len(reservation.passengers) != 1:
             with pytest.raises(ValueError, match="does not match"):
                 airline_toolkit.use_tool(
                     "update_reservation_passengers",
-                    reservation_id=reservation.reservation_id,  # type: ignore[union-attr]
+                    reservation_id=reservation.reservation_id,
                     passengers=wrong_count_passengers,
                 )
 
@@ -435,14 +458,20 @@ class TestAirlineBookReservation:
     def test_book_reservation_validation(self, airline_toolkit):
         """Booking validates required fields."""
         user_ids = list(airline_toolkit.db.users.keys())
-        if not user_ids:
-            pytest.skip("No users in database")
+        assert len(user_ids) > 0, (
+            "Real airline database should have users. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.users)} users."
+        )
 
         user_id = user_ids[0]
         user = airline_toolkit.db.users[user_id]
 
-        if not user.payment_methods:
-            pytest.skip("User has no payment methods")
+        assert len(user.payment_methods) > 0, (
+            f"User {user_id} should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(user.payment_methods)} payment methods."
+        )
 
         # Try booking with invalid payment method
         with pytest.raises(ValueError):
@@ -479,8 +508,11 @@ class TestAirlineHelperMethods:
     def test_get_flight_instance_invalid_date(self, airline_toolkit):
         """_get_flight_instance raises for invalid date."""
         flights = list(airline_toolkit.db.flights.keys())
-        if not flights:
-            pytest.skip("No flights in database")
+        assert len(flights) > 0, (
+            "Real airline database should have flights. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.flights)} flights."
+        )
 
         with pytest.raises(ValueError, match="not found"):
             airline_toolkit._get_flight_instance(flights[0], "1900-01-01")
@@ -517,10 +549,11 @@ class TestAirlineUpdateFlightsNewFlight:
                     reservation = res
                     break
 
-        if not reservation or not user:
-            pytest.skip("No suitable reservation for flight update")
-
-        assert reservation is not None and user is not None  # type narrowing after skip
+        assert reservation is not None and user is not None, (
+            "Real airline database should have non-cancelled reservations with flights and users with payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.reservations)} reservations."
+        )
         payment_id = list(user.payment_methods.keys())[0]
         current_flights = [{"flight_number": f.flight_number, "date": f.date} for f in reservation.flights]
         original_cabin = reservation.cabin
@@ -552,6 +585,7 @@ class TestAirlineUpdateFlightsNewFlight:
 class TestAirlineBaggageEdgeCases:
     """Edge case tests for baggage updates."""
 
+    @pytest.mark.xfail(reason="v0.2.0 upstream data has no reservations with nonfree baggages")
     def test_update_baggages_reduce_count(self, airline_toolkit):
         """Updating to fewer baggages doesn't charge extra."""
         reservation = None
@@ -563,10 +597,11 @@ class TestAirlineBaggageEdgeCases:
                     reservation = res
                     break
 
-        if not reservation or not user:
-            pytest.skip("No suitable reservation with nonfree baggages")
-
-        assert reservation is not None and user is not None  # type narrowing after skip
+        assert reservation is not None and user is not None, (
+            "Real airline database should have reservations with nonfree baggages and users with payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.reservations)} reservations."
+        )
         payment_id = list(user.payment_methods.keys())[0]
         original_history_len = len(reservation.payment_history)
 
@@ -618,14 +653,20 @@ class TestAirlineBookingSuccess:
     def test_book_reservation_invalid_flight(self, airline_toolkit):
         """Booking fails with invalid flight number."""
         user_ids = list(airline_toolkit.db.users.keys())
-        if not user_ids:
-            pytest.skip("No users in database")
+        assert len(user_ids) > 0, (
+            "Real airline database should have users. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.users)} users."
+        )
 
         user_id = user_ids[0]
         user = airline_toolkit.db.users[user_id]
 
-        if not user.payment_methods:
-            pytest.skip("User has no payment methods")
+        assert len(user.payment_methods) > 0, (
+            f"User {user_id} should have payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(user.payment_methods)} payment methods."
+        )
 
         payment_id = list(user.payment_methods.keys())[0]
 
@@ -661,10 +702,11 @@ class TestAirlineBookingSuccess:
             if user:
                 break
 
-        if not user:
-            pytest.skip("No user with credit card payment method")
-
-        assert user is not None  # type narrowing after skip
+        assert user is not None, (
+            "Real airline database should have users with credit card payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.users)} users."
+        )
         # Find an available flight with seats and price
         available_flight = None
         flight_date = None
@@ -680,10 +722,11 @@ class TestAirlineBookingSuccess:
             if available_flight:
                 break
 
-        if not available_flight:
-            pytest.skip("No available flights with seats")
-
-        assert available_flight is not None  # type narrowing after skip
+        assert available_flight is not None, (
+            "Real airline database should have available flights with seats. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.flights)} flights."
+        )
         # Get the flight price
         flight_date_data = available_flight.dates[flight_date]
         price = flight_date_data.prices[cabin]
@@ -695,8 +738,9 @@ class TestAirlineBookingSuccess:
                 payment_id = pm_id
                 break
 
-        if not payment_id:
-            pytest.skip("User has no credit card")
+        assert payment_id is not None, (
+            f"User {user_id} should have credit card payment method. This indicates upstream data issue or data_integrity test gap."
+        )
 
         # Calculate total price: 1 passenger * ticket price + 0 baggage fee + no insurance
         total_price = price
@@ -738,10 +782,11 @@ class TestAirlineBookingSuccess:
             if user:
                 break
 
-        if not user:
-            pytest.skip("No user with credit card payment method")
-
-        assert user is not None  # type narrowing after skip
+        assert user is not None, (
+            "Real airline database should have users with credit card payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.users)} users."
+        )
         # Find an available flight
         available_flight = None
         flight_date = None
@@ -757,10 +802,11 @@ class TestAirlineBookingSuccess:
             if available_flight:
                 break
 
-        if not available_flight:
-            pytest.skip("No available flights with seats")
-
-        assert available_flight is not None  # type narrowing after skip
+        assert available_flight is not None, (
+            "Real airline database should have available flights with seats. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.flights)} flights."
+        )
         flight_date_data = available_flight.dates[flight_date]
         price = flight_date_data.prices[cabin]
 
@@ -806,10 +852,11 @@ class TestAirlineBookingSuccess:
             if user:
                 break
 
-        if not user:
-            pytest.skip("No user with credit card payment method")
-
-        assert user is not None  # type narrowing after skip
+        assert user is not None, (
+            "Real airline database should have users with credit card payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.users)} users."
+        )
         available_flight = None
         flight_date = None
         cabin = "economy"
@@ -824,10 +871,11 @@ class TestAirlineBookingSuccess:
             if available_flight:
                 break
 
-        if not available_flight:
-            pytest.skip("No available flights with seats")
-
-        assert available_flight is not None  # type narrowing after skip
+        assert available_flight is not None, (
+            "Real airline database should have available flights with seats. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.flights)} flights."
+        )
         flight_date_data = available_flight.dates[flight_date]
         price = flight_date_data.prices[cabin]
 
@@ -875,10 +923,11 @@ class TestAirlineBookingSuccess:
             if user:
                 break
 
-        if not user:
-            pytest.skip("No user with credit card payment method")
-
-        assert user is not None  # type narrowing after skip
+        assert user is not None, (
+            "Real airline database should have users with credit card payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.users)} users."
+        )
         available_flight = None
         flight_date = None
         cabin = "economy"
@@ -893,10 +942,11 @@ class TestAirlineBookingSuccess:
             if available_flight:
                 break
 
-        if not available_flight:
-            pytest.skip("No available flights with seats")
-
-        assert available_flight is not None  # type narrowing after skip
+        assert available_flight is not None, (
+            "Real airline database should have available flights with seats. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.flights)} flights."
+        )
         payment_id = None
         for pm_id, pm in user.payment_methods.items():
             if pm.source == "credit_card":
@@ -948,14 +998,18 @@ class TestAirlineOneStopFlightSearch:
     def test_search_direct_flight_internal(self, airline_toolkit):
         """_search_direct_flight returns matching flights."""
         # Find actual flights in the database
-        if not airline_toolkit.db.flights:
-            pytest.skip("No flights in database")
+        assert len(airline_toolkit.db.flights) > 0, (
+            "Real airline database should have flights. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.flights)} flights."
+        )
 
         # Get first flight's origin and a date it operates on
         flight = list(airline_toolkit.db.flights.values())[0]
         dates = list(flight.dates.keys())
-        if not dates:
-            pytest.skip("Flight has no dates")
+        assert len(dates) > 0, (
+            f"Flight should have dates. This indicates upstream data issue or data_integrity test gap. Found {len(flight.dates)} dates."
+        )
 
         # Search for flights from this origin on this date
         result = airline_toolkit._search_direct_flight(
@@ -991,10 +1045,11 @@ class TestAirlineUpdateReservationFlights:
                     user = u
                     break
 
-        if not reservation or not user:
-            pytest.skip("No suitable reservation for flight update")
-
-        assert reservation is not None and user is not None  # type narrowing after skip
+        assert reservation is not None and user is not None, (
+            "Real airline database should have non-cancelled reservations with flights and users with payment methods. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.reservations)} reservations."
+        )
         # Find a different available flight with the same route
         current_flight = reservation.flights[0]
         new_flight = None
@@ -1015,10 +1070,11 @@ class TestAirlineUpdateReservationFlights:
                 if new_flight:
                     break
 
-        if not new_flight:
-            pytest.skip("No alternative flight found for same route")
-
-        assert new_flight is not None  # type narrowing after skip
+        assert new_flight is not None, (
+            f"Real airline database should have alternative flights for route {current_flight.origin} to {current_flight.destination}. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.flights)} flights."
+        )
         payment_id = list(user.payment_methods.keys())[0]
 
         result = airline_toolkit.use_tool(
@@ -1046,8 +1102,11 @@ class TestAirlinePaymentMethods:
     def test_send_certificate_adds_to_user(self, airline_toolkit):
         """send_certificate adds certificate to user payment methods."""
         user_ids = list(airline_toolkit.db.users.keys())
-        if not user_ids:
-            pytest.skip("No users in database")
+        assert len(user_ids) > 0, (
+            "Real airline database should have users. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.users)} users."
+        )
 
         user_id = user_ids[0]
         original_count = len(airline_toolkit.db.users[user_id].payment_methods)
@@ -1080,10 +1139,11 @@ class TestAirlinePaymentMethods:
             if user:
                 break
 
-        if not user:
-            pytest.skip("No user with sufficient gift card balance")
-
-        assert user is not None and gift_card_id is not None  # type narrowing after skip
+        assert user is not None and gift_card_id is not None, (
+            "Real airline database should have users with gift cards with sufficient balance. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.users)} users."
+        )
         # Find a cheap flight
         available_flight = None
         flight_date = None
@@ -1102,10 +1162,11 @@ class TestAirlinePaymentMethods:
             if available_flight:
                 break
 
-        if not available_flight:
-            pytest.skip("No flight cheap enough for gift card")
-
-        assert available_flight is not None  # type narrowing after skip
+        assert available_flight is not None, (
+            "Real airline database should have flights cheap enough for gift card payment. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(airline_toolkit.db.flights)} flights."
+        )
         flight_date_data = available_flight.dates[flight_date]
         price = flight_date_data.prices[cabin]
         original_balance = user.payment_methods[gift_card_id].amount

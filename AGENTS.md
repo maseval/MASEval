@@ -38,13 +38,16 @@ uv run ruff check . --fix
 
 ## Testing Instructions
 
-- Tests use pytest markers: `core`, `interface`, `smolagents`, `langgraph`, `contract`
+- Tests use composable pytest markers — see `tests/README.md` for full details
+- **What it tests**: `core`, `interface`, `contract`, `benchmark`, `smolagents`, `langgraph`, `llamaindex`, `gaia2`, `camel`
+- **What it needs**: `live` (network), `credentialed` (API keys), `slow` (>30s), `smoke` (full pipeline)
+- Default `pytest` excludes `slow`, `credentialed`, and `smoke` via `addopts`
 - All tests must pass before PR merge
 - Add/update tests for code changes
-- Fix type errors and lint issues until suite is green
+- **Benchmark tests** follow a two-tier pattern (offline structural + live real-data). See `tests/README.md` for the recommended pattern when adding or modifying benchmark tests.
 
 ```bash
-# Run all tests
+# Default — fast tests only
 uv run pytest -v
 
 # Core tests only (minimal dependencies)
@@ -53,6 +56,15 @@ uv run pytest -m core -v
 # Specific integration tests
 uv run pytest -m smolagents -v
 uv run pytest -m interface -v
+
+# Data download validation (needs network)
+uv run pytest -m "live and slow" -v
+
+# Live API tests (needs OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY)
+uv run pytest -m credentialed -v
+
+# Fully offline
+uv run pytest -m "not live" -v
 ```
 
 ## Coverage
@@ -60,7 +72,11 @@ uv run pytest -m interface -v
 View coverage by feature area (auto-discovers benchmarks/interfaces):
 
 ```bash
+# Full coverage (default + slow + live, excludes credentialed and smoke)
 uv run python scripts/coverage_by_feature.py
+
+# Fast-only (skip slow and live tests)
+uv run python scripts/coverage_by_feature.py --exclude slow,live
 ```
 
 Manual coverage for specific modules:

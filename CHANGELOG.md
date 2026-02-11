@@ -47,6 +47,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `camel_role_playing_execution_loop()` for benchmarks using CAMEL's RolePlaying semantics (PR: #22)
   - Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
 
+**Testing**
+
+- Composable pytest markers (`live`, `credentialed`, `slow`, `smoke`) for fine-grained test selection; default runs exclude slow, credentialed, and smoke tests (PR: #29)
+- Marker implication hook: `credentialed` implies `live`, so `-m "not live"` always gives a fully offline run (PR: #29)
+- Skip decorators (`requires_openai`, `requires_anthropic`, `requires_google`) for tests needing API keys (PR: #29)
+- Data integrity tests for Tau2 and MACS benchmarks validating download pipelines, file structures, and database content (PR: #29)
+- HTTP-level API contract tests for model adapters (OpenAI, Anthropic, Google GenAI, LiteLLM) using `respx` mocks — no API keys needed (PR: #29)
+- Live API round-trip tests for all model adapters (`-m credentialed`) (PR: #29)
+- CI jobs for slow tests (with benchmark data caching) and credentialed tests (behind GitHub Environment approval) (PR: #29)
+- Added `respx` dev dependency for HTTP-level mocking (PR: #29)
+
 ### Changed
 
 **Benchmarks**
@@ -76,11 +87,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `LangGraphUser` → `LangGraphLLMUser`
   - `LlamaIndexUser` → `LlamaIndexLLMUser`
 
+**Testing**
+
+- Coverage script (`scripts/coverage_by_feature.py`) now accepts `--exclude` flag to skip additional markers; always excludes `credentialed` and `smoke` by default (PR: #29)
+
 ### Fixed
 
 **Benchmarks**
 
 - GAIA2: Fixed multi-turn scenario evaluation always failing due to missing intermediate judge calls. The evaluator now calls `judge(env)` for each intermediate turn before `judge.validate(env)`, matching ARE's intended evaluation flow. Single-turn scenarios were unaffected. (PR: #PR_NUMBER_PLACEHOLDER)
+- Fixed incorrect return type annotations on `DB.load()` and `DB.copy_deep()` in Tau2 benchmark — now use `Self` instead of `"DB"`, so subclass methods return the correct type (PR: #29)
 
 ### Removed
 

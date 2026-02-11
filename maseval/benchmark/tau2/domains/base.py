@@ -16,6 +16,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, Generic, Optional, TypeVar, Union
 
+from typing_extensions import Self
+
 from pydantic import BaseModel, ConfigDict
 
 from maseval.benchmark.tau2.utils import get_pydantic_hash, load_file, update_pydantic_model_with_dict
@@ -37,7 +39,7 @@ class DB(BaseModel):
     model_config = ConfigDict(extra="forbid")  # Reject unknown fields
 
     @classmethod
-    def load(cls, path: Union[str, Path]) -> "DB":
+    def load(cls, path: Union[str, Path]) -> Self:
         """Load the database from a structured file (JSON, TOML, YAML).
 
         Args:
@@ -73,7 +75,7 @@ class DB(BaseModel):
         """
         return {}
 
-    def copy_deep(self) -> "DB":
+    def copy_deep(self) -> Self:
         """Create a deep copy of the database.
 
         Returns:

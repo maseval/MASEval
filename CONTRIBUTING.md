@@ -211,11 +211,14 @@ When you open a Pull Request, a series of automated checks will run using **GitH
 The pipeline automatically performs the following tasks:
 
 - **Linting and Formatting**: Verifies that your code adheres to our style guide using `ruff`.
-- **Testing**: Runs the entire test suite across different Python versions and operating systems. This includes tests for both the core package and the optional integrations.
+- **Testing** (tiered):
+  - *Fast tests* (every PR, Python 3.10–3.14): core, benchmark, and all default-suite tests. No API keys needed.
+  - *Slow tests* (every PR, Python 3.12): data download and integrity validation.
+  - *Credentialed tests* (every PR, Python 3.12): live API tests. Requires maintainer approval to run — secrets are only exposed after approval.
 - **Type Checking**: Validates type annotations using `ty`.
 - **Documentation**: Ensures documentation builds without errors using `mkdocs`.
 
-**All checks must pass** before your Pull Request can be merged. You can view the progress and logs of these checks directly on your Pull Request page in GitHub.
+**All checks must pass** before your Pull Request can be merged. Contributors don't need API keys — the default and slow test suites run without them. See `tests/README.md` for how markers work and for the recommended benchmark testing pattern (offline structural tests vs. real-data tests).
 
 > **Note:** You don't need to run all these checks locally - CI will catch issues. However, running `uv run ruff format && uv run ruff check` before pushing can save you time.
 

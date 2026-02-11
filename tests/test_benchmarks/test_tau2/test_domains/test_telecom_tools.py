@@ -5,6 +5,8 @@ import pytest
 from maseval.benchmark.tau2.domains.base import ToolType
 from maseval.benchmark.tau2.domains.telecom.models import LineStatus
 
+pytestmark = [pytest.mark.live]
+
 
 # =============================================================================
 # Toolkit Basic Tests
@@ -53,8 +55,11 @@ class TestTelecomCustomerLookup:
     def test_get_customer_by_id(self, telecom_toolkit):
         """get_customer_by_id returns customer information."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
         result = telecom_toolkit.use_tool("get_customer_by_id", customer_id=customer.customer_id)
@@ -70,8 +75,11 @@ class TestTelecomCustomerLookup:
     def test_get_customer_by_phone(self, telecom_toolkit):
         """get_customer_by_phone returns customer information."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
         result = telecom_toolkit.use_tool("get_customer_by_phone", phone_number=customer.phone_number)
@@ -87,8 +95,11 @@ class TestTelecomCustomerLookup:
     def test_get_customer_by_name(self, telecom_toolkit):
         """get_customer_by_name returns matching customers."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
         result = telecom_toolkit.use_tool(
@@ -115,12 +126,18 @@ class TestTelecomBillingRead:
     def test_get_bills_for_customer(self, telecom_toolkit):
         """get_bills_for_customer returns bills."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.bill_ids:
-            pytest.skip("Customer has no bills")
+        assert len(customer.bill_ids) > 0, (
+            f"Customer {customer.customer_id} should have bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.bill_ids)} bills."
+        )
 
         result = telecom_toolkit.use_tool("get_bills_for_customer", customer_id=customer.customer_id)
 
@@ -130,12 +147,18 @@ class TestTelecomBillingRead:
     def test_get_data_usage(self, telecom_toolkit):
         """get_data_usage returns usage information."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         result = telecom_toolkit.use_tool(
             "get_data_usage",
@@ -160,8 +183,11 @@ class TestTelecomDetailsById:
     def test_get_details_by_customer_id(self, telecom_toolkit):
         """get_details_by_id returns customer for C-prefixed ID."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
         result = telecom_toolkit.use_tool("get_details_by_id", id=customer.customer_id)
@@ -172,8 +198,11 @@ class TestTelecomDetailsById:
     def test_get_details_by_line_id(self, telecom_toolkit):
         """get_details_by_id returns line for L-prefixed ID."""
         lines = telecom_toolkit.db.lines
-        if not lines:
-            pytest.skip("No lines in test database")
+        assert len(lines) > 0, (
+            "Real telecom database should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.lines)} lines."
+        )
 
         line = lines[0]
         result = telecom_toolkit.use_tool("get_details_by_id", id=line.line_id)
@@ -264,13 +293,16 @@ class TestTelecomLineManagement:
             if active_line:
                 break
 
-        if not active_line:
-            pytest.skip("No active lines in test database")
+        assert active_line is not None, (
+            "Real telecom database should have active lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Checked {len(telecom_toolkit.db.customers)} customers."
+        )
 
         result = telecom_toolkit.use_tool(
             "suspend_line",
             customer_id=customer_id,
-            line_id=active_line.line_id,  # type: ignore[union-attr]
+            line_id=active_line.line_id,
             reason="Customer requested suspension",
         )
 
@@ -292,14 +324,17 @@ class TestTelecomLineManagement:
             if suspended_line:
                 break
 
-        if not suspended_line:
-            pytest.skip("No suspended lines in test database")
+        assert suspended_line is not None, (
+            "Real telecom database should have suspended lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Checked {len(telecom_toolkit.db.customers)} customers."
+        )
 
         with pytest.raises(ValueError, match="must be active"):
             telecom_toolkit.use_tool(
                 "suspend_line",
                 customer_id=customer_id,
-                line_id=suspended_line.line_id,  # type: ignore[union-attr]
+                line_id=suspended_line.line_id,
                 reason="Test",
             )
 
@@ -318,13 +353,16 @@ class TestTelecomLineManagement:
             if suspended_line:
                 break
 
-        if not suspended_line:
-            pytest.skip("No suspended lines in test database")
+        assert suspended_line is not None, (
+            "Real telecom database should have suspended lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Checked {len(telecom_toolkit.db.customers)} customers."
+        )
 
         result = telecom_toolkit.use_tool(
             "resume_line",
             customer_id=customer_id,
-            line_id=suspended_line.line_id,  # type: ignore[union-attr]
+            line_id=suspended_line.line_id,
         )
 
         assert result is not None
@@ -343,12 +381,18 @@ class TestTelecomRoaming:
     def test_enable_roaming(self, telecom_toolkit):
         """Enable roaming on a line."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         line_id = customer.line_ids[0]
         line = telecom_toolkit._get_line_by_id(line_id)
@@ -373,12 +417,18 @@ class TestTelecomRoaming:
     def test_disable_roaming(self, telecom_toolkit):
         """Disable roaming on a line."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         line_id = customer.line_ids[0]
         line = telecom_toolkit._get_line_by_id(line_id)
@@ -413,12 +463,18 @@ class TestTelecomDataRefueling:
     def test_refuel_data(self, telecom_toolkit):
         """Successfully refuel data for a line."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         line_id = customer.line_ids[0]
         line = telecom_toolkit._get_line_by_id(line_id)
@@ -438,12 +494,18 @@ class TestTelecomDataRefueling:
     def test_refuel_data_invalid_amount(self, telecom_toolkit):
         """Refuel with invalid amount fails."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in test database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         with pytest.raises(ValueError, match="positive"):
             telecom_toolkit.use_tool(
@@ -515,8 +577,11 @@ class TestTelecomBillDetails:
     def test_get_bill_by_id(self, telecom_toolkit):
         """Get bill by ID returns bill details."""
         bills = telecom_toolkit.db.bills
-        if not bills:
-            pytest.skip("No bills in database")
+        assert len(bills) > 0, (
+            "Real telecom database should have bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.bills)} bills."
+        )
 
         bill = bills[0]
         result = telecom_toolkit.use_tool("get_details_by_id", id=bill.bill_id)
@@ -527,8 +592,11 @@ class TestTelecomBillDetails:
     def test_get_plan_by_id(self, telecom_toolkit):
         """Get plan by ID returns plan details."""
         plans = telecom_toolkit.db.plans
-        if not plans:
-            pytest.skip("No plans in database")
+        assert len(plans) > 0, (
+            "Real telecom database should have plans. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.plans)} plans."
+        )
 
         plan = plans[0]
         result = telecom_toolkit.use_tool("get_details_by_id", id=plan.plan_id)
@@ -549,12 +617,18 @@ class TestTelecomPlanChanges:
     def test_change_plan_validation(self, telecom_toolkit):
         """Plan change validates plan exists."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         with pytest.raises(ValueError):
             telecom_toolkit.use_tool(
@@ -577,8 +651,11 @@ class TestTelecomPayment:
     def test_process_payment_validation(self, telecom_toolkit):
         """Payment processing validates bill exists."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
 
@@ -614,8 +691,11 @@ class TestTelecomLineActivation:
             if active_line:
                 break
 
-        if not active_line:
-            pytest.skip("No active lines in database")
+        assert active_line is not None, (
+            "Real telecom database should have active lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Checked {len(telecom_toolkit.db.customers)} customers."
+        )
 
         with pytest.raises(ValueError, match="suspended"):
             telecom_toolkit.use_tool(
@@ -661,8 +741,11 @@ class TestTelecomPaymentRequest:
         from maseval.benchmark.tau2.domains.telecom.models import BillStatus
 
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         # Find a customer with an issued bill (not yet awaiting payment)
         customer = None
@@ -677,10 +760,13 @@ class TestTelecomPaymentRequest:
             if target_bill:
                 break
 
-        if not target_bill:
-            pytest.skip("No issued bills in database")
+        assert target_bill is not None, (
+            "Real telecom database should have issued bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.bills)} bills."
+        )
 
-        assert customer is not None and target_bill is not None  # type narrowing after skip
+        assert customer is not None  # type narrowing
         result = telecom_toolkit.use_tool(
             "send_payment_request",
             customer_id=customer.customer_id,
@@ -693,8 +779,11 @@ class TestTelecomPaymentRequest:
     def test_send_payment_request_bill_not_found(self, telecom_toolkit):
         """send_payment_request fails for bill not belonging to customer."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
 
@@ -710,8 +799,11 @@ class TestTelecomPaymentRequest:
         from maseval.benchmark.tau2.domains.telecom.models import BillStatus
 
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         # Find a customer with multiple bills
         customer = None
@@ -720,10 +812,11 @@ class TestTelecomPaymentRequest:
                 customer = c
                 break
 
-        if not customer:
-            pytest.skip("No customer with multiple bills")
-
-        assert customer is not None  # type narrowing after skip
+        assert customer is not None, (
+            "Real telecom database should have customers with multiple bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
         # Set first bill to awaiting payment
         first_bill = telecom_toolkit._get_bill_by_id(customer.bill_ids[0])
         original_status = first_bill.status
@@ -753,8 +846,11 @@ class TestTelecomHelperMethods:
     def test_get_line_by_phone(self, telecom_toolkit):
         """_get_line_by_phone returns line for valid phone."""
         lines = telecom_toolkit.db.lines
-        if not lines:
-            pytest.skip("No lines in database")
+        assert len(lines) > 0, (
+            "Real telecom database should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.lines)} lines."
+        )
 
         line = lines[0]
         result = telecom_toolkit._get_line_by_phone(line.phone_number)
@@ -769,8 +865,11 @@ class TestTelecomHelperMethods:
     def test_get_device_by_id(self, telecom_toolkit):
         """_get_device_by_id returns device for valid ID."""
         devices = telecom_toolkit.db.devices
-        if not devices:
-            pytest.skip("No devices in database")
+        assert len(devices) > 0, (
+            "Real telecom database should have devices. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.devices)} devices."
+        )
 
         device = devices[0]
         result = telecom_toolkit._get_device_by_id(device.device_id)
@@ -785,8 +884,11 @@ class TestTelecomHelperMethods:
     def test_get_details_by_device_id(self, telecom_toolkit):
         """get_details_by_id returns device for D-prefixed ID."""
         devices = telecom_toolkit.db.devices
-        if not devices:
-            pytest.skip("No devices in database")
+        assert len(devices) > 0, (
+            "Real telecom database should have devices. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.devices)} devices."
+        )
 
         device = devices[0]
         result = telecom_toolkit.use_tool("get_details_by_id", id=device.device_id)
@@ -796,14 +898,20 @@ class TestTelecomHelperMethods:
     def test_get_target_line_invalid_line(self, telecom_toolkit):
         """_get_target_line raises when line doesn't belong to customer."""
         customers = telecom_toolkit.db.customers
-        if len(customers) < 2:
-            pytest.skip("Need at least 2 customers")
+        assert len(customers) >= 2, (
+            "Real telecom database should have at least 2 customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customers)} customers."
+        )
 
         customer1 = customers[0]
         customer2 = customers[1]
 
-        if not customer2.line_ids:
-            pytest.skip("Second customer has no lines")
+        assert len(customer2.line_ids) > 0, (
+            f"Customer {customer2.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer2.line_ids)} lines."
+        )
 
         # Try to get customer2's line using customer1's ID
         with pytest.raises(ValueError, match="not found"):
@@ -822,8 +930,11 @@ class TestTelecomHelperMethods:
         from maseval.benchmark.tau2.domains.telecom.models import BillStatus
 
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         # Find customer without awaiting payment bills
         customer = None
@@ -838,8 +949,11 @@ class TestTelecomHelperMethods:
                 customer = c
                 break
 
-        if not customer:
-            pytest.skip("All customers have awaiting payment bills")
+        assert customer is not None, (
+            "Real telecom database should have customers without awaiting payment bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         result = telecom_toolkit._get_bills_awaiting_payment(customer)
         assert result == []
@@ -857,12 +971,18 @@ class TestTelecomAssertions:
     def test_assert_data_refueling_amount_correct(self, telecom_toolkit):
         """assert_data_refueling_amount returns True for matching amount."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         line = telecom_toolkit._get_line_by_id(customer.line_ids[0])
         actual_amount = line.data_refueling_gb
@@ -878,12 +998,18 @@ class TestTelecomAssertions:
     def test_assert_data_refueling_amount_incorrect(self, telecom_toolkit):
         """assert_data_refueling_amount returns False for wrong amount."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         result = telecom_toolkit.assert_data_refueling_amount(
             customer.customer_id,
@@ -896,12 +1022,18 @@ class TestTelecomAssertions:
     def test_assert_line_status_correct(self, telecom_toolkit):
         """assert_line_status returns True for matching status."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         line = telecom_toolkit._get_line_by_id(customer.line_ids[0])
 
@@ -916,12 +1048,18 @@ class TestTelecomAssertions:
     def test_assert_line_status_with_enum(self, telecom_toolkit):
         """assert_line_status works with enum value."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         line = telecom_toolkit._get_line_by_id(customer.line_ids[0])
 
@@ -936,12 +1074,18 @@ class TestTelecomAssertions:
     def test_assert_line_status_incorrect(self, telecom_toolkit):
         """assert_line_status returns False for wrong status."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         result = telecom_toolkit.assert_line_status(
             customer.customer_id,
@@ -956,8 +1100,11 @@ class TestTelecomAssertions:
         from maseval.benchmark.tau2.domains.telecom.models import BillStatus
 
         bills = telecom_toolkit.db.bills
-        if not bills:
-            pytest.skip("No bills in database")
+        assert len(bills) > 0, (
+            "Real telecom database should have bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.bills)} bills."
+        )
 
         # Find a paid bill
         paid_bill = None
@@ -966,10 +1113,11 @@ class TestTelecomAssertions:
                 paid_bill = bill
                 break
 
-        if not paid_bill:
-            pytest.skip("No paid bills in database")
-
-        assert paid_bill is not None  # type narrowing after skip
+        assert paid_bill is not None, (
+            "Real telecom database should have paid bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(bills)} bills."
+        )
         result = telecom_toolkit.assert_no_overdue_bill(paid_bill.bill_id)
         assert result is True
 
@@ -983,8 +1131,11 @@ class TestTelecomAssertions:
         from maseval.benchmark.tau2.domains.telecom.models import BillStatus
 
         bills = telecom_toolkit.db.bills
-        if not bills:
-            pytest.skip("No bills in database")
+        assert len(bills) > 0, (
+            "Real telecom database should have bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.bills)} bills."
+        )
 
         # Find or create an overdue bill
         overdue_bill = None
@@ -993,10 +1144,11 @@ class TestTelecomAssertions:
                 overdue_bill = bill
                 break
 
-        if not overdue_bill:
-            pytest.skip("No overdue bills in database")
-
-        assert overdue_bill is not None  # type narrowing after skip
+        assert overdue_bill is not None, (
+            "Real telecom database should have overdue bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(bills)} bills."
+        )
         result = telecom_toolkit.assert_no_overdue_bill(overdue_bill.bill_id)
         assert result is False
 
@@ -1013,12 +1165,18 @@ class TestTelecomDataModification:
     def test_set_data_usage(self, telecom_toolkit):
         """set_data_usage modifies line data usage."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         line_id = customer.line_ids[0]
         new_usage = 15.5
@@ -1038,8 +1196,11 @@ class TestTelecomDataModification:
         from maseval.benchmark.tau2.domains.telecom.models import BillStatus
 
         bills = telecom_toolkit.db.bills
-        if not bills:
-            pytest.skip("No bills in database")
+        assert len(bills) > 0, (
+            "Real telecom database should have bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.bills)} bills."
+        )
 
         # Find an issued bill (or any non-paid bill)
         target_bill = None
@@ -1048,10 +1209,11 @@ class TestTelecomDataModification:
                 target_bill = bill
                 break
 
-        if not target_bill:
-            pytest.skip("No issued bills in database")
-
-        assert target_bill is not None  # type narrowing after skip
+        assert target_bill is not None, (
+            "Real telecom database should have issued bills. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.bills)} bills."
+        )
         original_status = target_bill.status
         try:
             result = telecom_toolkit._set_bill_to_paid(target_bill.bill_id)
@@ -1121,12 +1283,18 @@ class TestTelecomRoamingEdgeCases:
     def test_enable_roaming_already_enabled(self, telecom_toolkit):
         """enable_roaming returns appropriate message when already enabled."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         line_id = customer.line_ids[0]
         line = telecom_toolkit._get_line_by_id(line_id)
@@ -1145,12 +1313,18 @@ class TestTelecomRoamingEdgeCases:
     def test_disable_roaming_already_disabled(self, telecom_toolkit):
         """disable_roaming returns appropriate message when already disabled."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         customer = customers[0]
-        if not customer.line_ids:
-            pytest.skip("Customer has no lines")
+        assert len(customer.line_ids) > 0, (
+            f"Customer {customer.customer_id} should have lines. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(customer.line_ids)} lines."
+        )
 
         line_id = customer.line_ids[0]
         line = telecom_toolkit._get_line_by_id(line_id)
@@ -1179,8 +1353,11 @@ class TestTelecomCustomerLookupEdgeCases:
     def test_get_customer_by_phone_via_line(self, telecom_toolkit):
         """get_customer_by_phone finds customer via line phone number."""
         customers = telecom_toolkit.db.customers
-        if not customers:
-            pytest.skip("No customers in database")
+        assert len(customers) > 0, (
+            "Real telecom database should have customers. "
+            "This indicates upstream data issue or data_integrity test gap. "
+            f"Found {len(telecom_toolkit.db.customers)} customers."
+        )
 
         # Find a customer with a line that has a different phone than primary
         for customer in customers:

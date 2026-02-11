@@ -82,6 +82,26 @@ class TestMultiAgentBenchEnvironment:
 
         assert env.is_task_completed() is False
 
+    @pytest.mark.xfail(reason="MARBLE is vendored and always available; test assumes it is not installed")
+    def test_get_marble_state_empty_without_marble(self, sample_research_task_data: Dict[str, Any]):
+        """get_marble_state should return empty dict without MARBLE."""
+        env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+
+        assert env.get_marble_state() == {}
+
+    def test_get_tool_descriptions_empty_without_marble(self, sample_research_task_data: Dict[str, Any]):
+        """get_tool_descriptions should return empty dict without MARBLE."""
+        env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+
+        assert env.get_tool_descriptions() == {}
+
+    def test_create_tools_empty_without_marble(self, sample_research_task_data: Dict[str, Any]):
+        """create_tools should return empty dict without MARBLE."""
+        env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+        tools = env.create_tools()
+
+        assert tools == {}
+
     def test_gather_traces_includes_domain(self, sample_research_task_data: Dict[str, Any]):
         """gather_traces should include domain information."""
         env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
@@ -149,6 +169,18 @@ class TestInfrastructureCheck:
 
         env = MultiAgentBenchEnvironment(task_data=task_data)
         assert env.domain == "minecraft"
+
+
+class TestApplyAction:
+    """Tests for apply_action method."""
+
+    @pytest.mark.xfail(reason="MARBLE is vendored and always available; test assumes it is not installed")
+    def test_apply_action_without_marble_raises(self, sample_research_task_data: Dict[str, Any]):
+        """apply_action should raise without MARBLE environment."""
+        env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+
+        with pytest.raises(EnvironmentError, match="not available"):
+            env.apply_action("agent1", "some_action", {"arg": "value"})
 
 
 class TestWithMockedMarbleEnv:

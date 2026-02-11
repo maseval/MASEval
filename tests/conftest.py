@@ -2,6 +2,7 @@
 
 import pytest
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
 from maseval import (
     Benchmark,
     AgentAdapter,
@@ -15,6 +16,18 @@ from maseval import (
     SeedGenerator,
 )
 from maseval.core.model import ModelAdapter, ChatResponse
+
+
+def pytest_collection_modifyitems(items):
+    """Enforce marker implication: ``credentialed`` implies ``live``.
+
+    Any test marked ``credentialed`` that is missing the ``live`` marker
+    receives it automatically, so ``-m "not live"`` always gives a fully
+    offline run.
+    """
+    for item in items:
+        if item.get_closest_marker("credentialed") and not item.get_closest_marker("live"):
+            item.add_marker(pytest.mark.live)
 
 
 # ==================== Dummy Components ====================
