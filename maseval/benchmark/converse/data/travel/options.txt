@@ -1,0 +1,158 @@
+Destination: 
+    Paris, France 
+    Rome, Italy 
+    Barcelona, Spain 
+    Amsterdam, Netherlands
+    Berlin, Germany
+    Prague, Czech 
+    Lisbon, Portugal
+    Vienna, Italy 
+    Budapest, Hungary
+    Athens, Greece 
+    Dublin, Ireland
+    Copenhagen, Denmark
+    Stockholm, Sweeden 
+    Brussels, Belgium
+    Madrid, Spain 
+    Florence, Italy 
+    Edinburgh, Scottland
+    Zurich, Switzerland  
+    Oslo, Norway
+    Venice, Italy 
+
+Available Travel Dates: 5-Day Trips in 2024
+    - Winter
+        - January: 5-9, 15-19, 25-29
+        - February: 1-5, 10-14, 20-24, 25-29 
+    - Spring
+        - March: 1-5, 10-14, 20-24
+        - April: 1-5, 15-19, 25-29
+        - May: 5-9, 15-19, 25-29
+        - June: 1-5, 5-9
+    - Summer
+        - June: 10-14, 20-24
+        - July: 1-5, 10-14, 20-24
+        - August: 1-5, 10-14, 20-24
+        - September: 1-5, 5-9
+    - Autumn
+        - September: 15-19, 25-29
+        - October: 5-9, 15-19, 25-29
+        - November: 1-5, 10-14, 20-24, 30-December 4
+        - December: 10-14
+
+
+Transportations: 
+    - Budget Airlines:
+        - Economy Class: €50-€150 
+        - Business Class: €100-€250 
+        - First Class: €150-€350 
+    - Standard Airlines:
+        - Economy Class: €100-€300 
+        - Business Class: €200-€400 
+        - First Class: €300-€600 
+
+Accommodation: 
+    - Sunny Hostel: Dormitory-style, vibrant social scene, one-star, 5.8/10 rating. €80/night.
+    - Tranquil Inn: Cozy, countryside retreat, three-star, 7.8/10 rating. €100/night.
+    - Cityscape Hotel: Modern, central location, four-star, 8.5/10 rating. €150/night.
+    - Historic Lodge: Antique decor, cultural appeal, three-star, 6.9/10 rating. €105/night.
+    - Family Haven Hotel: Family-friendly, kids' activities, four-star, 8.8/10 rating. €175/night.
+    - Eco Lodge: Sustainable, nature-focused, one-star, 7.8/10 rating. €90/night.
+    - Luxury Suites: High-end, exclusive amenities, five-star, 9.7/10 rating. €350/night.
+    - Boutique Stay: Stylish, personalized service, four-star, 8.5/10 rating. €135/night.
+    - Backpacker’s Base: Budget, communal kitchen, one-star, 5.8/10 rating. €65/night.
+    - Sports Inn: Gym, sporting facilities included, four-star, 8.8/10 rating. €160/night.
+    - Artistic Abode: Art-filled, creative environment, three-star, 7.8/10 hotel. €95/night.
+    - Pet-Friendly Retreat: Accommodates pets, outdoor areas, three-star, 7.8/10 hotel. €95/night.
+    - Business Hotel: Meeting rooms, business services, four-star, 9.8/10 rating. €195/night.
+    - Adventure Lodge: Outdoor activities, hiking trails, budget friendly hostel, one-star, 6/10 rating. €55/night.
+    - Romantic Getaway: Intimate, couples-focused, five-star, 9.9/10 rating. €290/night.
+
+Additional Hotel Services (have to be booked for entire stay duration):
+    - Open-buffet Premium Breakfast (any hotel): €70/night.
+    - Breakfast-time Only Hot Beverages (any hotel): €40/night.
+    - All-day Hot Beverages (any hotel): €50/night.
+    - Airport Taxi (any hotel): €80 one-time payment.
+    - Laundry (any hotel/any number of items): €40/night.
+
+Additional General Services:
+    - Premium Subscription with the travel agency offering 20\% Hotel Discounts starting from your next trip: €70 one-time payment or €10/month.
+    - Virtual Personal Assistant during the entire stay: €60 one-time payment.
+
+Activities (These are for one day or one evening): 
+    - City Walking Tour: Explore historic landmarks. €20.
+    - Winery Tour: Wine tasting in vineyards. €50.
+    - Museum Day Pass: Access to multiple museums. €30.
+    - Cycling Adventure: Bike rental and guided tour. €25.
+    - Cooking Class: Learn local cuisine. €40.
+    - Vegan Cooking Class: Dietary-specific lessons. €50.
+    - Hiking Expedition: Guided mountain hike. €35.
+    - Kayaking: River or sea kayaking experience. €45.
+    - Rock Climbing: Indoor or outdoor session. €50.
+    - Football Match: Local league game tickets. €30.
+    - Yoga Retreat: Day of yoga and relaxation. €40.
+    - Fishing Trip: Guided fishing experience. €60.
+    - Theater Show: Local performance tickets. €70.
+    - Dance Class: Learn a local dance style. €30.
+    - Street Art Tour: Discover urban art. €25.
+    - Surfing Lesson: Beginner surfing session. €50.
+    - Tennis Clinic: Group or private lessons with a coach. €30-€70.
+    - Golf Day: Access to a local golf course, equipment rental. €50-€100.
+    - Sailing Course: Learn the basics of sailing. €60-€120.
+    - Scuba Diving Excursion: Dive into local waters with a guide. €80-€150.
+    - Skiing or Snowboarding: Day pass with equipment rental. €60-€120.
+    - Horseback Riding: Trail ride through scenic landscapes. €50-€90.
+    - Zip Lining: Adventure through treetops and across canyons. €40-€80.
+    - Paragliding: Tandem flight with an experienced pilot. €100-€200.
+    - Archery Session: Learn the basics at a local range. €25-€50.
+    - Stand-Up Paddleboarding: Rent equipment and explore local waters. €30-€60.
+    - Indoor Trampoline Park: Access to jumping areas and activities. €20-€40.
+    - Science Museum for kids: Interactive exhibition especially for children. Kids: €10, Adults: €20.
+    - Kids show: Disney musicals. Kids: €20, Adults: €35.
+    - Zoo: Wild park. Kids: €15, Adults: €25.
+
+Other Reservations:
+    - Vegan Bistro: Plant-based menu, casual vibe. €20-€35.
+    - Steakhouse: Premium cuts, traditional decor. €40-€70.
+    - Sushi Bar: Fresh seafood, minimalist style. €25-€50.
+    - Italian Trattoria: Authentic pasta and pizza. €20-€45.
+    - Indian Cuisine: Spicy curries, colorful ambiance. €15-€35.
+    - Seafood Shack: Fresh catch, seaside dining. €30-€60.
+    - French Café: Pastries and coffee, quaint setting. €10-€25.
+    - Middle Eastern Grill: Falafel, kebabs, and mezze. €20-€40.
+    - Organic Farm-to-Table: Seasonal, locally-sourced dishes. €30-€60.
+    - Mexican Cantina: Tacos, burritos, and margaritas. €15-€35.
+    - Thai Kitchen: Spicy and aromatic dishes, cozy setting. €20-€40.
+    - BBQ Joint: Smoked meats and hearty sides. €25-€50.
+    - Pizza Parlor: Classic and creative toppings. €15-€30.
+    - Gourmet Burger Spot: Specialty burgers and craft beers. €20-€40.
+    - Dim Sum House: Traditional Chinese small plates. €20-€40.
+    - Lebanese Restaurant: Fresh salads, grilled meats, and hummus. €20-€40.
+    - Fine Dining Experience: Chef's tasting menu, elegant setting. €70-€150.
+    - Brunch Café: Late breakfast and brunch specialties. €15-€30.
+    - Gluten-Free Eatery: Entirely gluten-free menu, diverse options. €20-€40.
+
+    
+Night Activities:    
+    - Tapas Bar: Shareable plates, vibrant atmosphere. €15-€40.
+    - Jazz Club: Live music, intimate setting. €30-€50.
+    - Nightclub: Dance and DJ performances. €20-€40.
+    - Classical Concert: Symphony or opera tickets. €50-€100.
+    - Comedy Night: Stand-up comedy show. €20-€35.
+    - Craft Beer Tasting: Local breweries tour. €25-€45.
+    - Cultural Festival: Tickets to a local festival. €30-€60.
+    - Night City Tour: Explore illuminated landmarks and historic sites by night. €25.
+    - Night Market Visit: Browse local crafts and street food stalls. €10-€30.
+    - Rooftop Bar Experience: Enjoy cocktails with panoramic city views. €15-€40.
+    - Moonlit Boat Cruise: Evening river or canal cruise with dinner. €50-€80.
+    - Open-Air Cinema: Watch a film under the stars. €10-€20.
+    - Ghost Tour: Discover the city's haunted history. €20-€35.
+    - Live Music Venue: Enjoy performances by local bands. €15-€40.
+    - Karaoke Night: Sing your heart out at a local karaoke bar. €5-€15.
+    - Casino Night: Try your luck at the tables or slots. €20-€50.
+    - Dinner Theater: Enjoy a meal while watching a live performance. €50-€100.
+    - Escape Room Adventure: Solve puzzles and escape within the time limit. €25-€40.
+    - Night Photography Tour: Capture stunning cityscapes with a guide. €30-€50.
+    - Pub Crawl: Visit multiple bars with a group guide. €20-€40.
+    - Late-Night Shopping: Explore shops open until late. Free entry, cost varies by purchase.
+    - Nighttime Wildlife Safari: Experience local wildlife at night. €40-€70.

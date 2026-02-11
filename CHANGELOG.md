@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Benchmarks**
 
+- CONVERSE benchmark for contextual safety evaluation in adversarial agent-to-agent conversations, including `ConverseBenchmark`, `DefaultAgentConverseBenchmark`, `ConverseEnvironment`, `ConverseExternalAgent`, `PrivacyEvaluator`, `SecurityEvaluator`, and `load_tasks()` utilities for `travel`, `real_estate`, and `insurance` domains. (PR: #PR_NUMBER_PLACEHOLDER)
+
 - GAIA2 Benchmark: Integration with Meta's ARE (Agent Research Environments) platform for evaluating LLM-based agents on dynamic, multi-step scenarios (PR: #26)
   - `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator` components for framework-agnostic evaluation with ARE simulation (PR: #26)
   - `DefaultAgentGaia2Benchmark` with ReAct-style agent for direct comparison with ARE reference implementation (PR: #26)
@@ -29,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Examples**
 
+- Added a dedicated runnable CONVERSE default benchmark example at `examples/converse_benchmark/default_converse_benchmark.py` for quick start with `DefaultAgentConverseBenchmark`. (PR: #PR_NUMBER_PLACEHOLDER)
 - Gaia2 benchmark example with Google GenAI and OpenAI model support (PR: #26)
 
 **Core**

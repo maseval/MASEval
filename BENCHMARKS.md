@@ -53,13 +53,15 @@ Gaia2 is a benchmark for evaluating LLM-based agents on dynamic, multi-step scen
 
 ---
 
-## 4. [Name of Next Benchmark]
+## 5. CONVERSE
 
-(Description for the next benchmark...)
+CONVERSE evaluates contextual safety in agent-to-agent conversations. It focuses on adversarial interactions where an external service-provider agent attempts privacy extraction or unauthorized action induction over multiple turns.
 
 ### Source and License
 
-- **Original Repository:** [Link](Link)
-- **Data License:** Data License.
+- **Original Repository:** [https://github.com/amrgomaaelhady/ConVerse](https://github.com/amrgomaaelhady/ConVerse)
+- **Paper:** [ConVerse: Contextual Safety in Agent-to-Agent Conversations](https://arxiv.org/abs/2506.15753)
+- **Code License:** MIT (as provided by the upstream repository)
+- **Data License:** Refer to the upstream repository's dataset and license terms
 
 ---
