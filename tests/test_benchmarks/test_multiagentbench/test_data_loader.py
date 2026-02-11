@@ -9,8 +9,6 @@ from unittest.mock import MagicMock, patch
 import git
 import pytest
 
-pytestmark = pytest.mark.benchmark
-
 from maseval import Task
 from maseval.benchmark.multiagentbench.data_loader import (
     load_tasks,
@@ -25,6 +23,8 @@ from maseval.benchmark.multiagentbench.data_loader import (
     _load_werewolf_tasks,
     _parse_werewolf_config_basic,
 )
+
+pytestmark = pytest.mark.benchmark
 
 
 class TestValidDomains:

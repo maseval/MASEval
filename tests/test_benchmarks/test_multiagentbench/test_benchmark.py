@@ -3,8 +3,6 @@
 import sys
 
 import pytest
-
-pytestmark = pytest.mark.benchmark
 from unittest.mock import MagicMock, patch
 
 from maseval import Task
@@ -13,6 +11,8 @@ from maseval.benchmark.multiagentbench import (
     MultiAgentBenchEnvironment,
     MultiAgentBenchEvaluator,
 )
+
+pytestmark = pytest.mark.benchmark
 
 
 class TestMultiAgentBenchBenchmark:
@@ -466,7 +466,6 @@ class TestMarbleMultiAgentBenchBenchmark:
         finally:
             sys.modules.update(marble_modules)
 
-    @pytest.mark.xfail(reason="MARBLE is vendored and always available; test assumes it is not installed")
     def test_create_marble_env_raises_import_error(
         self,
         marble_benchmark_class,

@@ -1,14 +1,14 @@
 """Tests for MarbleAgentAdapter."""
 
 import pytest
-
-pytestmark = pytest.mark.benchmark
 from unittest.mock import MagicMock
 
 from maseval.benchmark.multiagentbench.adapters.marble_adapter import (
     MarbleAgentAdapter,
 )
 from maseval import AgentError
+
+pytestmark = pytest.mark.benchmark
 
 
 class TestMarbleAgentAdapter:
