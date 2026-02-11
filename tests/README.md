@@ -99,7 +99,42 @@ Top-down tests validating that all implementations of the same abstraction behav
 
 ### `test_benchmarks/` — Benchmark tests
 
-Benchmark implementations and data integrity validation. Data integrity tests are marked `live` + `slow`.
+Benchmark tests follow a **two-tier pattern**:
+
+**Tier 1: Structural tests (offline, `benchmark` marker only)**
+
+Tests that work without downloaded data or network access:
+- Import protection: `maseval` runs without benchmark optional dependencies
+- Graceful errors: descriptive error when benchmark code is accessed without deps
+- Interface checks: class methods exist, types correct, invalid inputs rejected
+- Mock-based tests: benchmark pipeline tested with `DummyModelAdapter` and synthetic fixtures
+
+**Tier 2: Real data tests (`benchmark` + `live` markers)**
+
+Tests that download and use actual benchmark data:
+- Environment/tool tests: create real environments, execute tools on real databases
+- Data loading pipeline: `load_tasks`, `load_domain_config`, etc.
+- Data integrity validation (also marked `slow`): schema checks, minimum record counts, field structure
+
+#### Data download pattern
+
+Benchmarks use `ensure_data_exists()` to download data to the **package's default data directory** (not temp dirs). This function caches — it skips download if files already exist. A session-scoped pytest fixture (e.g., `ensure_tau2_data`, `ensure_macs_templates`) triggers the download once per test session.
+
+Tests that need real data should:
+1. Depend on the download fixture (`ensure_tau2_data`, `ensure_macs_templates`, etc.)
+2. Be marked `@pytest.mark.live`
+3. Use simple constructors — e.g., `Tau2Environment({"domain": "retail"})` — since data is already in the default location
+
+Tests that don't need data (structural, mock-based) should NOT depend on the download fixture and should NOT be marked `live`.
+
+#### How to decide: mock or real data?
+
+This is a judgment call. As a guideline:
+- If the test validates **structure, types, or error handling** → Tier 1 (offline)
+- If the test operates on **real database records, files, or network resources** → Tier 2 (`live`)
+- Don't force synthetic fixtures where they add complexity without value. If something needs real data, test it with real data.
+
+Data integrity tests (verifying downloaded data is complete and well-formed) are also marked `slow` since they trigger downloads.
 
 ## Patterns
 
@@ -128,5 +163,6 @@ requires_openai = pytest.mark.skipif(
 )
 ```
 
-## Notes:
-- Credentialed tests are coming later. They are in th `test.yaml` file already but commented out.
+## Notes
+
+- Credentialed tests require maintainer approval via GitHub Environment. See `EXTENDEDTESTINGSTRATEGYPLAN.md` for details.

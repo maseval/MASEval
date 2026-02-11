@@ -44,6 +44,7 @@ uv run ruff check . --fix
 - Default `pytest` excludes `slow`, `credentialed`, and `smoke` via `addopts`
 - All tests must pass before PR merge
 - Add/update tests for code changes
+- **Benchmark tests** follow a two-tier pattern (offline structural + live real-data). See `tests/README.md` for the recommended pattern when adding or modifying benchmark tests.
 
 ```bash
 # Default — fast tests only
