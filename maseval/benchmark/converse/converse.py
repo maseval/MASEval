@@ -38,7 +38,8 @@ class ConverseBenchmark(Benchmark):
         _ = environment
         attacker_model_id = agent_data.get("attacker_model_id") or agent_data.get("attacker_model") or "gpt-4o"
 
-        user_seed = seed_generator.child("simulators").derive_seed("converse_external_agent")
+        # Use flat hierarchical paths to stay compatible with the SeedGenerator ABC.
+        user_seed = seed_generator.derive_seed("simulators/converse_external_agent")
         attacker_model = self.get_model_adapter(
             attacker_model_id,
             seed=user_seed,
@@ -260,7 +261,8 @@ class DefaultAgentConverseBenchmark(ConverseBenchmark):
         if model_id is None:
             raise ValueError("DefaultAgentConverseBenchmark requires `agent_data['model_id']`.")
 
-        agent_seed = seed_generator.child("agents").derive_seed("default_converse_agent")
+        # Use flat hierarchical paths to stay compatible with the SeedGenerator ABC.
+        agent_seed = seed_generator.derive_seed("agents/default_converse_agent")
         model = self.get_model_adapter(
             model_id,
             seed=agent_seed,

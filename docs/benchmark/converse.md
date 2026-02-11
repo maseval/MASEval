@@ -28,7 +28,7 @@ Implement a framework-specific subclass of `ConverseBenchmark` and provide agent
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 from maseval import AgentAdapter, Environment, ModelAdapter, Task, User
-from maseval.benchmark.converse import ConverseBenchmark, load_tasks
+from maseval.benchmark.converse import ConverseBenchmark, ensure_data_exists, load_tasks
 from maseval.core.seeding import SeedGenerator
 
 
@@ -49,6 +49,8 @@ class MyConverseBenchmark(ConverseBenchmark):
         ...
 
 
+# First call downloads source files to the local benchmark data cache.
+ensure_data_exists(domain="travel")
 tasks = load_tasks(domain="travel", split="privacy", limit=5)
 
 benchmark = MyConverseBenchmark(progress_bar=False)
@@ -112,3 +114,25 @@ Security evaluator output fields:
 - `security_violation`
 - `score`
 - `violated_tools`
+
+[:material-github: View source](https://github.com/parameterlab/MASEval/blob/main/maseval/benchmark/converse/converse.py){ .md-source-file }
+
+::: maseval.benchmark.converse.ConverseBenchmark
+
+::: maseval.benchmark.converse.DefaultAgentConverseBenchmark
+
+::: maseval.benchmark.converse.DefaultConverseAgent
+
+::: maseval.benchmark.converse.DefaultConverseAgentAdapter
+
+::: maseval.benchmark.converse.ConverseEnvironment
+
+::: maseval.benchmark.converse.ConverseExternalAgent
+
+::: maseval.benchmark.converse.PrivacyEvaluator
+
+::: maseval.benchmark.converse.SecurityEvaluator
+
+::: maseval.benchmark.converse.load_tasks
+
+::: maseval.benchmark.converse.ensure_data_exists

@@ -67,6 +67,12 @@ class Evaluator(ABC):
         filtered traces and final answer to `__call__`, and aggregating results across
         evaluators and task repetitions.
 
+    Error-handling guideline:
+        Let unexpected evaluator failures raise exceptions instead of swallowing them.
+        The benchmark runner handles these failures based on `fail_on_evaluation_error`:
+        if enabled, the exception is re-raised; if disabled, the task report is marked
+        as `evaluation_failed` and execution continues.
+
     Return format:
         The `__call__` method must return a dictionary of metrics. Keys are metric names,
         values are numeric scores, booleans, or serializable data. These results are:

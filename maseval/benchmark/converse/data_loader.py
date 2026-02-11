@@ -1,4 +1,8 @@
-"""Data loading utilities for the CONVERSE benchmark."""
+"""Data loading utilities for the CONVERSE benchmark.
+
+CONVERSE data files are fetched on demand from the upstream benchmark repository.
+Raw dataset files are not bundled in the package.
+"""
 
 import json
 from pathlib import Path
@@ -8,7 +12,9 @@ from urllib.request import urlopen
 
 from maseval import Task, TaskProtocol, TaskQueue
 
-REPO_BASE_URL = "https://raw.githubusercontent.com/amrgomaaelhady/ConVerse/main/resources"
+GITHUB_BASE = "https://raw.githubusercontent.com/amrgomaaelhady/ConVerse"
+DEFAULT_VERSION = "main"
+REPO_BASE_URL = f"{GITHUB_BASE}/{DEFAULT_VERSION}/resources"
 LOCAL_DATA_DIR = Path(__file__).parent / "data"
 DOMAIN_MAP: Dict[str, str] = {
     "travel": "travel_planning_usecase",
@@ -36,7 +42,18 @@ def ensure_data_exists(
     data_dir: Optional[Path] = None,
     force_download: bool = False,
 ) -> Path:
-    """Ensure local CONVERSE data exists for the selected domain."""
+    """Ensure local CONVERSE data exists for the selected domain.
+
+    Downloads benchmark files the first time they are needed.
+
+    Args:
+        domain: CONVERSE domain to load.
+        data_dir: Optional override for the local data cache directory.
+        force_download: Re-download files even if they already exist.
+
+    Returns:
+        Path to the local data root directory.
+    """
     if domain not in DOMAIN_MAP:
         raise ValueError(f"Invalid domain '{domain}'. Must be one of {sorted(DOMAIN_MAP)}")
 

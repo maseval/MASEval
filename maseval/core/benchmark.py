@@ -719,6 +719,11 @@ class Benchmark(ABC):
             criteria. Multiple evaluators can measure different performance aspects (accuracy,
             efficiency, conversation quality, etc.).
 
+            If an evaluator encounters an unexpected condition, prefer raising the exception.
+            The benchmark runner will enforce the configured policy through
+            `fail_on_evaluation_error` (fail-fast when `True`, mark task as
+            `evaluation_failed` and continue when `False`).
+
             ```python
             def setup_evaluators(self, environment, task, agents, user, seed_generator):
                 # Use child() to create logical namespace - results in "evaluators/judge"

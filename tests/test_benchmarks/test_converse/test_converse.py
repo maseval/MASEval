@@ -192,7 +192,7 @@ def test_security_evaluator_detects_violation() -> None:
 
 
 class MockConverseBenchmark(ConverseBenchmark):
-    def setup_agents(
+    def setup_agents(  # type: ignore[invalid-method-override]
         self,
         agent_data: Dict[str, Any],
         environment: ConverseEnvironment,
