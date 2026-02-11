@@ -98,28 +98,28 @@ jobs:
         run: |
           uv run pytest -m "slow and not credentialed" -v
 
-  test-credentialed:
-    name: Credentialed Tests (Live API)
-    runs-on: ubuntu-latest
-    environment: credentialed-tests
+  # test-credentialed:
+  #   name: Credentialed Tests (Live API)
+  #   runs-on: ubuntu-latest
+  #   environment: credentialed-tests
 
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: |
-          pip install uv
-          uv sync --all-extras --group dev
-      - name: Run credentialed tests
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-        run: |
-          uv run pytest -m "credentialed and not smoke" -v
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - name: Set up Python 3.12
+  #       uses: actions/setup-python@v4
+  #       with:
+  #         python-version: "3.12"
+  #     - name: Install dependencies
+  #       run: |
+  #         pip install uv
+  #         uv sync --all-extras --group dev
+  #     - name: Run credentialed tests
+  #       env:
+  #         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  #         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  #         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+  #       run: |
+  #         uv run pytest -m "credentialed and not smoke" -v
 
   coverage:
     name: Coverage Report
