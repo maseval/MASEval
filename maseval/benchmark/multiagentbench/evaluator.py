@@ -14,6 +14,11 @@ from maseval import Evaluator, ModelAdapter
 # Using None instead of -1 to avoid confusion with valid scores
 SCORE_NOT_EVALUATED: None = None
 
+# Default per-agent result truncation length (in characters) before LLM summarization.
+# Matches MARBLE's _summarize_results() in engine.py which truncates each formatted
+# result line to 1000 characters. Set to None to disable truncation and LLM summarization.
+DEFAULT_RESULT_TRUNCATION_LENGTH = 1000
+
 
 @dataclass
 class MultiAgentBenchMetrics:
@@ -70,6 +75,7 @@ class MultiAgentBenchEvaluator(Evaluator):
         model_adapter: ModelAdapter,
         metrics_config: Optional[Dict[str, Any]] = None,
         output_format: str = "",
+        result_truncation_length: Optional[int] = DEFAULT_RESULT_TRUNCATION_LENGTH,
     ):
         """Initialize the evaluator.
 
@@ -78,11 +84,19 @@ class MultiAgentBenchEvaluator(Evaluator):
             model_adapter: Model adapter for LLM evaluation
             metrics_config: Configuration for evaluation metrics
             output_format: Expected output format for task evaluation
+            result_truncation_length: Maximum characters per agent result before LLM
+                summarization. Matches MARBLE's ``_summarize_results()`` which truncates
+                each result to 1000 chars, then passes the truncated output through an
+                LLM summarization call (``planner.summarize_output()``). Set to ``None``
+                to disable both truncation and LLM summarization, passing raw agent
+                results directly to the evaluator (not recommended for domains with
+                large outputs like research).
         """
         self.domain = domain.lower()
         self.model_adapter = model_adapter
         self.metrics_config = metrics_config or {}
         self.output_format = output_format
+        self.result_truncation_length = result_truncation_length
         self._evaluation_prompts = self._load_evaluation_prompts()
 
     def _load_template(self, filename: str) -> str:
@@ -216,7 +230,17 @@ class MultiAgentBenchEvaluator(Evaluator):
 
         # Domain-specific evaluation
         task_desc = self._get_task_description(traces)
-        final_result = self._format_final_answer(final_answer)
+
+        # MARBLE-compatible result summarization: truncate per-agent results then
+        # pass through an LLM summarization call before domain evaluation. This
+        # prevents token explosions for domains with large outputs (e.g. research).
+        # See MARBLE's Engine._summarize_results() and EnginePlanner.summarize_output().
+        agent_results = self._extract_agent_results(final_answer)
+        if self.result_truncation_length is not None and agent_results:
+            truncated = self._summarize_results(agent_results)
+            final_result = self._summarize_output(truncated, task_desc, self.output_format)
+        else:
+            final_result = self._format_final_answer(final_answer)
 
         if self.domain == "research":
             metrics.task_evaluation = self._evaluate_research(task_desc, final_result)
@@ -249,6 +273,23 @@ class MultiAgentBenchEvaluator(Evaluator):
         state = env_traces.get("marble_state", {})
         return state.get("task_description", "")
 
+    def _extract_agent_results(self, final_answer: Any) -> List[Dict[str, Any]]:
+        """Extract the agent_results list from final_answer, if present.
+
+        Args:
+            final_answer: Final output from agents (dict, list, str, or None).
+
+        Returns:
+            List of agent result dicts, or empty list if not extractable.
+        """
+        if isinstance(final_answer, dict):
+            results = final_answer.get("agent_results", [])
+            if results and isinstance(results, list):
+                return results
+        elif isinstance(final_answer, list):
+            return [r for r in final_answer if isinstance(r, dict)]
+        return []
+
     def _format_final_answer(self, final_answer: Any) -> str:
         """Format final answer for evaluation."""
         if isinstance(final_answer, dict):
@@ -260,6 +301,57 @@ class MultiAgentBenchEvaluator(Evaluator):
         elif isinstance(final_answer, list):
             return "\n".join(f"[{r.get('agent_id', 'unknown')}]: {r.get('result', '')}" for r in final_answer if isinstance(r, dict))
         return str(final_answer) if final_answer else ""
+
+    def _summarize_results(self, agent_results: List[Dict[str, Any]]) -> str:
+        """Truncate and concatenate agent results for LLM summarization.
+
+        Matches MARBLE's ``Engine._summarize_results()`` (engine.py). Each agent's
+        result is formatted as ``"- {result}"`` and truncated to
+        ``self.result_truncation_length`` characters before concatenation.
+
+        Args:
+            agent_results: List of dicts with ``agent_id`` and ``result`` keys,
+                as returned in ``final_answer["agent_results"]``.
+
+        Returns:
+            Concatenated summary string with truncated per-agent results.
+        """
+        summary = "Agents' Results Summary:\n"
+        for entry in agent_results:
+            result_str = str(entry.get("result", ""))
+            line = f"- {result_str}"
+            assert self.result_truncation_length is not None
+            summary += f"{line[: self.result_truncation_length]}\n"
+        return summary
+
+    def _summarize_output(self, summary: str, task: str, output_format: str) -> str:
+        """Summarize truncated agent results via LLM call.
+
+        Matches MARBLE's ``EnginePlanner.summarize_output()`` (engine_planner.py).
+        Uses temperature=0.0 and max_tokens=2048 for deterministic, compact output.
+
+        Note:
+            The prompt text preserves MARBLE's original wording (including the
+            ``"thr"`` typo) to maintain reproduction fidelity with the reference
+            implementation.
+
+        Args:
+            summary: Truncated results string from ``_summarize_results()``.
+            task: Task description string.
+            output_format: Expected JSON output format specification.
+
+        Returns:
+            LLM-generated summary string.
+        """
+        prompt = (
+            f"Summarize the output of the agents for the task: {task}\n\n"
+            f"Now here is some result of thr agent: {summary}, please analyze it. "
+            f"Return the final output into a json following the format: {output_format}"
+        )
+        return self.model_adapter.generate(
+            prompt,
+            generation_params={"temperature": 0.0, "max_tokens": 2048},
+        )
 
     def _calculate_token_consumption(self, traces: Dict[str, Any]) -> int:
         """Calculate total token consumption."""

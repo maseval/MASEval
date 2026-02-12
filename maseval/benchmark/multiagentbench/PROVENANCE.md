@@ -63,6 +63,19 @@ SOFTWARE.
 3. **Environment constructor signature**: Some environments expect different constructor
    arguments. Check each environment's `__init__` signature before use.
 
+## Architectural Differences from MARBLE
+
+### Result summarization before evaluation
+
+In MARBLE, agent results are summarized in the engine's coordination loop
+(`Engine._summarize_results()` + `EnginePlanner.summarize_output()`) before
+reaching the evaluator. MASEval does not use MARBLE's engine loop, so this
+summarization logic has been moved into `MultiAgentBenchEvaluator` (see
+`_summarize_results()` and `_summarize_output()` in `evaluator.py`). The
+behaviour is identical: each agent result is truncated to 1000 characters, then
+an LLM call condenses the truncated output into a compact summary. The
+truncation length is configurable via `result_truncation_length`.
+
 ## Local Patches Applied
 
 None currently. All bug fixes are maintained in the fork.

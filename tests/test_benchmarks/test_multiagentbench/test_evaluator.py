@@ -4,6 +4,7 @@ import pytest
 
 from conftest import DummyModelAdapter
 from maseval.benchmark.multiagentbench.evaluator import (
+    DEFAULT_RESULT_TRUNCATION_LENGTH,
     MultiAgentBenchEvaluator,
     MultiAgentBenchMetrics,
 )
@@ -182,10 +183,13 @@ class TestMultiAgentBenchEvaluator:
         }
         final_answer = [{"agent_id": "agent1", "result": "Done"}]
 
-        # Mock model adapter to return research ratings
+        # Needs two responses: one for LLM summarization, one for research evaluation
         research_evaluator.model_adapter = DummyModelAdapter(
             model_id="test",
-            responses=['{"innovation": 4, "safety": 4, "feasibility": 4}'],
+            responses=[
+                '{"summary": "Agent completed the task"}',
+                '{"innovation": 4, "safety": 4, "feasibility": 4}',
+            ],
         )
 
         result = research_evaluator(traces, final_answer)
@@ -370,6 +374,12 @@ class TestDatabaseEvaluation:
             "environment": {"marble_state": {"task_description": "Find query issue"}},
         }
         final_answer = [{"agent_id": "agent1", "result": "SELECT * FROM orders"}]
+
+        # Needs a response for the LLM summarization call
+        database_evaluator.model_adapter = DummyModelAdapter(
+            model_id="test",
+            responses=["SELECT * FROM orders"],
+        )
 
         result = database_evaluator(traces, final_answer)
 
@@ -953,3 +963,155 @@ class TestDetermineCompletionEdgeCases:
             }
         )
         assert evaluator._determine_completion(metrics) is False
+
+
+class TestResultSummarization:
+    """Tests for MARBLE-compatible result truncation and LLM summarization.
+
+    MARBLE's evaluation pipeline truncates each agent result to 1000 chars
+    (_summarize_results) then summarizes via an LLM call (summarize_output)
+    before passing to the domain evaluator.
+    """
+
+    @pytest.fixture
+    def evaluator(self):
+        """Create evaluator with summarization enabled (default)."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            responses=["Summarized output"],
+        )
+        return MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+            output_format="Present the idea in 5Q format.",
+        )
+
+    def test_summarize_results_truncates_long_results(self, evaluator):
+        """Each agent result line should be truncated to result_truncation_length chars."""
+        long_result = "x" * 2000
+        agent_results = [{"agent_id": "a1", "result": long_result}]
+        summary = evaluator._summarize_results(agent_results)
+
+        # Header line + one result line
+        lines = summary.strip().split("\n")
+        assert lines[0] == "Agents' Results Summary:"
+        # "- " prefix + content, truncated to DEFAULT_RESULT_TRUNCATION_LENGTH total
+        assert len(lines[1]) == DEFAULT_RESULT_TRUNCATION_LENGTH
+
+    def test_summarize_results_short_results_unchanged(self, evaluator):
+        """Short results should not be truncated."""
+        agent_results = [{"agent_id": "a1", "result": "short"}]
+        summary = evaluator._summarize_results(agent_results)
+
+        lines = summary.strip().split("\n")
+        assert lines[1] == "- short"
+
+    def test_summarize_results_multiple_agents(self, evaluator):
+        """Multiple agent results should all appear in the summary."""
+        agent_results = [
+            {"agent_id": "a1", "result": "Result 1"},
+            {"agent_id": "a2", "result": "Result 2"},
+        ]
+        summary = evaluator._summarize_results(agent_results)
+
+        assert "Result 1" in summary
+        assert "Result 2" in summary
+        assert summary.startswith("Agents' Results Summary:\n")
+
+    def test_summarize_results_empty_list(self, evaluator):
+        """Empty results should produce header-only summary."""
+        summary = evaluator._summarize_results([])
+        assert summary == "Agents' Results Summary:\n"
+
+    def test_summarize_results_custom_truncation_length(self):
+        """Custom result_truncation_length should be respected."""
+        adapter = DummyModelAdapter(model_id="test", responses=[])
+        evaluator = MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+            result_truncation_length=50,
+        )
+        agent_results = [{"agent_id": "a1", "result": "x" * 200}]
+        summary = evaluator._summarize_results(agent_results)
+
+        lines = summary.strip().split("\n")
+        assert len(lines[1]) == 50
+
+    def test_summarize_output_calls_model(self, evaluator):
+        """_summarize_output should call the model adapter and return its response."""
+        result = evaluator._summarize_output("truncated summary", "research task", "5Q format")
+        assert isinstance(result, str)
+        assert result == "Summarized output"
+
+    def test_call_with_summarization_uses_both_steps(self):
+        """__call__ with agent results should use truncation + LLM summarization."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            responses=[
+                '{"summary": "Agents collaborated on federated learning"}',
+                '{"innovation": 4, "safety": 4, "feasibility": 4}',
+            ],
+        )
+        evaluator = MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+            output_format="5Q format",
+        )
+        traces = {
+            "agents": {"a1": {"token_usage": 100, "action_log": [], "communication_log": []}},
+            "environment": {"marble_state": {"task_description": "Research task"}},
+        }
+        final_answer = {
+            "agent_results": [{"agent_id": "a1", "result": "Raw paper search JSON " * 100}],
+        }
+
+        result = evaluator(traces, final_answer)
+
+        assert result["passed"] is True
+        assert result["metrics"]["task_evaluation"]["innovation"] == 4
+
+    def test_call_with_summarization_disabled(self):
+        """__call__ with result_truncation_length=None should skip summarization."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            # Only one response needed: no summarization call, just domain eval
+            responses=['{"innovation": 4, "safety": 4, "feasibility": 4}'],
+        )
+        evaluator = MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+            result_truncation_length=None,
+        )
+        traces = {
+            "agents": {"a1": {"token_usage": 100, "action_log": [], "communication_log": []}},
+            "environment": {},
+        }
+        final_answer = {
+            "agent_results": [{"agent_id": "a1", "result": "Raw result"}],
+        }
+
+        result = evaluator(traces, final_answer)
+
+        assert result["domain"] == "research"
+        assert result["passed"] is True
+
+    def test_call_string_final_answer_bypasses_summarization(self):
+        """String final_answer should bypass summarization (no agent_results to extract)."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            # Only one response needed: domain eval only
+            responses=['{"innovation": 4, "safety": 4, "feasibility": 4}'],
+        )
+        evaluator = MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+        )
+        traces = {
+            "agents": {},
+            "environment": {},
+        }
+
+        result = evaluator(traces, "plain string result")
+
+        assert result["domain"] == "research"
+        assert result["passed"] is True
