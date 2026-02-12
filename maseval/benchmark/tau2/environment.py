@@ -14,7 +14,7 @@ providing deterministic and reproducible evaluation.
 """
 
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, cast
 
 from maseval import Environment
 
@@ -194,8 +194,10 @@ class Tau2Environment(Environment):
             if agent_data:
                 db = update_pydantic_model_with_dict(db, agent_data)
             user_data = init_data.get("user_data")
-            if user_data and hasattr(db, "user_db") and db.user_db is not None:
-                db.user_db = update_pydantic_model_with_dict(db.user_db, user_data)
+            if user_data and hasattr(db, "user_db"):
+                telecom_db = cast(TelecomDB, db)
+                if telecom_db.user_db is not None:
+                    telecom_db.user_db = update_pydantic_model_with_dict(telecom_db.user_db, user_data)
 
         return db
 
@@ -266,25 +268,30 @@ class Tau2Environment(Environment):
             return
         if not hasattr(db, "user_db") or db.user_db is None:
             return
-        if db.user_db.surroundings.phone_number is None:
+
+        # Narrow types after domain + hasattr guards
+        telecom_db = cast(TelecomDB, db)
+        telecom_tools = cast(TelecomTools, toolkit)
+        user_db = telecom_db.user_db
+        if user_db is None or user_db.surroundings.phone_number is None:
             return
 
-        phone_number = db.user_db.surroundings.phone_number
+        phone_number = user_db.surroundings.phone_number
 
         try:
-            line = toolkit._get_line_by_phone(phone_number)
+            line = telecom_tools._get_line_by_phone(phone_number)
         except (ValueError, AttributeError):
             return
 
         from maseval.benchmark.tau2.domains.telecom.models import LineStatus
 
-        db.user_db.surroundings.line_active = line.status == LineStatus.ACTIVE
-        db.user_db.surroundings.roaming_allowed_in_location = line.roaming_enabled
+        user_db.surroundings.line_active = line.status == LineStatus.ACTIVE
+        user_db.surroundings.roaming_allowed_in_location = line.roaming_enabled
 
         try:
-            plan = toolkit._get_plan_by_id(line.plan_id)
+            plan = telecom_tools._get_plan_by_id(line.plan_id)
             data_limit = plan.data_limit_gb + getattr(line, "data_refueling_gb", 0.0)
-            db.user_db.surroundings.mobile_data_usage_exceeded = line.data_used_gb >= data_limit
+            user_db.surroundings.mobile_data_usage_exceeded = line.data_used_gb >= data_limit
         except (ValueError, AttributeError):
             pass
 
