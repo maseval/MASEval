@@ -159,7 +159,7 @@ class TestDefaultAgentWithRealTools:
             )
 
             agent = DefaultGaia2Agent(
-                tools=tools,
+                tools=tools,  # type: ignore[arg-type]  # Gaia2GenericTool has __call__
                 model=model,
                 environment=env,
                 max_iterations=1,
