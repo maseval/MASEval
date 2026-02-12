@@ -12,11 +12,13 @@ from urllib.request import urlopen
 
 from maseval import Task, TaskProtocol, TaskQueue
 
+ConverseDomain = Literal["travel", "real_estate", "insurance"]
+
 GITHUB_BASE = "https://raw.githubusercontent.com/amrgomaaelhady/ConVerse"
 DEFAULT_VERSION = "main"
 REPO_BASE_URL = f"{GITHUB_BASE}/{DEFAULT_VERSION}/resources"
 LOCAL_DATA_DIR = Path(__file__).parent / "data"
-DOMAIN_MAP: Dict[str, str] = {
+DOMAIN_MAP: Dict[ConverseDomain, str] = {
     "travel": "travel_planning_usecase",
     "real_estate": "real_estate_usecase",
     "insurance": "insurance_usecase",
@@ -47,7 +49,7 @@ def download_file(url: str, dest_path: Path, timeout: int = 30) -> None:
 
 
 def ensure_data_exists(
-    domain: Literal["travel", "real_estate", "insurance"],
+    domain: ConverseDomain,
     data_dir: Optional[Path] = None,
     force_download: bool = False,
 ) -> Path:
@@ -278,7 +280,7 @@ def parse_security_attacks(file_path: Path, persona_id: int, env_text: str, opti
 
 
 def load_tasks(
-    domain: Literal["travel", "real_estate", "insurance"],
+    domain: ConverseDomain,
     split: Literal["privacy", "security", "all"] = "all",
     limit: Optional[int] = None,
     data_dir: Optional[Path] = None,
