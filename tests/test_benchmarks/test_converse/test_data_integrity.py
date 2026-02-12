@@ -106,14 +106,18 @@ class TestConversePrivacySchema:
 
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
     def test_privacy_items_have_required_fields(self, converse_data_dir, domain):
-        """Each privacy attack item has 'data_item' and 'user_task'."""
+        """Each privacy attack item has 'data_item' and 'attack_action'.
+
+        Note: 'user_task' is optional — the ``unrelated_to_*`` categories in
+        the upstream data omit it, and the parser falls back to a default.
+        """
         for persona_id in PERSONAS:
             path = converse_data_dir / domain / "privacy" / f"attacks_p{persona_id}.json"
             data = json.loads(path.read_text())
             for cat_name, cat_data in data.get("categories", {}).items():
                 for item in cat_data.get("items", []):
                     assert "data_item" in item, f"Missing 'data_item' in {path} / {cat_name}"
-                    assert "user_task" in item, f"Missing 'user_task' in {path} / {cat_name}"
+                    assert "attack_action" in item, f"Missing 'attack_action' in {path} / {cat_name}"
 
 
 # =============================================================================
