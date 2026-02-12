@@ -59,13 +59,7 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
     def _get_mobile_data_working(self) -> bool:
         """Check if mobile data connection is working.
 
-        Checks all required conditions for mobile data to function:
-        - Mobile data enabled
-        - Not in airplane mode
-        - SIM is active
-        - Network is connected
-        - Signal is available
-        - If abroad: roaming must be enabled and supported
+        Matches tau2-bench TelecomUserTools._get_mobile_data_working().
 
         Returns:
             True if mobile data is working, False otherwise
@@ -73,35 +67,28 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
         device = self._device
         surroundings = self._surroundings
 
-        # Basic requirements
-        if not device.mobile_data_enabled:
-            return False
-        if device.airplane_mode:
-            return False
-        if device.sim_status != SimStatus.ACTIVE:
-            return False
-        if device.network_status != NetworkStatus.CONNECTED:
-            return False
-        if surroundings.signal_strength == SignalStrength.NONE:
+        if device.airplane_mode or device.network_signal_strength == SignalStrength.NONE:
             return False
 
-        # Roaming requirements
+        if device.network_connection_status == NetworkStatus.NO_SERVICE:
+            return False
+
         if surroundings.is_abroad:
-            if not device.roaming_enabled:
+            if not device.roaming_enabled or not surroundings.roaming_allowed_in_location:
                 return False
-            if not surroundings.roaming_allowed_in_location:
-                return False
+
+        if not device.mobile_data_enabled:
+            return False
+
+        if surroundings.mobile_data_usage_exceeded:
+            return False
 
         return True
 
     def _run_speed_test(self) -> Tuple[Optional[float], str]:
         """Run speed test and return numeric speed and description.
 
-        Calculates speed based on:
-        - Network technology (2G-5G have different speed ranges)
-        - Signal strength multiplier
-        - VPN impact (90% reduction if poor performance)
-        - Data saver mode (80% reduction)
+        Matches tau2-bench TelecomUserTools._run_speed_test().
 
         Returns:
             Tuple of (speed_mbps, description). Speed is None if no connection.
@@ -110,7 +97,6 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
             return None, "No Connection"
 
         device = self._device
-        surroundings = self._surroundings
 
         # Base factor starts at 1.0
         base_factor = 1.0
@@ -130,11 +116,12 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
             NetworkTechnology.THREE_G: (1.0, 5.0),
             NetworkTechnology.FOUR_G: (10.0, 100.0),
             NetworkTechnology.FIVE_G: (50.0, 500.0),
+            NetworkTechnology.NONE: (0.0, 0.0),
         }
 
-        min_speed, max_speed = tech_speeds.get(device.network_technology, (0.0, 0.0))
+        min_speed, max_speed = tech_speeds.get(device.network_technology_connected, (0.0, 0.0))
 
-        # Signal strength factor
+        # Signal strength factor (from device, set by simulate_network_search)
         signal_factors: Dict[SignalStrength, float] = {
             SignalStrength.NONE: 0.0,
             SignalStrength.POOR: 0.2,
@@ -142,10 +129,11 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
             SignalStrength.GOOD: 0.8,
             SignalStrength.EXCELLENT: 1.0,
         }
-        signal_factor = signal_factors.get(surroundings.signal_strength, 0.0)
+        signal_factor = signal_factors.get(device.network_signal_strength, 0.0)
 
         # Calculate final speed
         speed = (min_speed + max_speed) / 2 * signal_factor * base_factor
+        speed = round(speed, 2)
 
         # Determine description based on speed thresholds
         if speed < 1:
@@ -164,14 +152,32 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
     def _can_send_mms(self) -> bool:
         """Check if MMS can be sent.
 
+        Matches tau2-bench TelecomUserTools._can_send_mms().
+
         Returns:
             True if MMS sending is possible, False otherwise
         """
         if not self._get_mobile_data_working():
             return False
 
+        # 2G cannot send MMS
+        if self._device.network_technology_connected == NetworkTechnology.TWO_G:
+            return False
+
+        # WiFi calling with MMS over WiFi disables cellular MMS
+        if self._device.wifi_calling_enabled and self._device.wifi_calling_mms_over_wifi:
+            return False
+
         # Check APN MMSC URL
         if not self._device.apn_settings.mmsc_url:
+            return False
+
+        # Messaging app must be installed with required permissions
+        if "messaging" in self._device.installed_apps:
+            perms = self._device.installed_apps["messaging"].permissions
+            if not (perms.storage and perms.sms):
+                return False
+        else:
             return False
 
         return True
@@ -193,8 +199,8 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
             - battery_level: 0-100
         """
         return {
-            "signal_strength": self._surroundings.signal_strength.value,
-            "network_type": self._device.network_technology.value,
+            "signal_strength": self._device.network_signal_strength.value,
+            "network_type": self._device.network_technology_connected.value,
             "wifi_connected": self._device.wifi_connected,
             "airplane_mode": self._device.airplane_mode,
             "battery_level": self._device.battery_level,
@@ -216,8 +222,8 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
             - mobile_data: True/False
         """
         return {
-            "status": self._device.network_status.value,
-            "technology": self._device.network_technology.value,
+            "status": self._device.network_connection_status.value,
+            "technology": self._device.network_technology_connected.value,
             "roaming": self._device.roaming_enabled,
             "mobile_data": self._device.mobile_data_enabled,
         }
@@ -244,6 +250,7 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
         try:
             mode = NetworkModePreference(preference)
             self._device.network_mode_preference = mode
+            self.simulate_network_search()
             return f"Network mode preference set to {preference}"
         except ValueError:
             valid_modes = [m.value for m in NetworkModePreference]
@@ -267,7 +274,7 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
                 return "Airplane mode is on. No connection."
             if not self._device.mobile_data_enabled and not self._device.wifi_connected:
                 return "No internet connection available."
-            if self._surroundings.signal_strength == SignalStrength.NONE:
+            if self._device.network_signal_strength == SignalStrength.NONE:
                 return "Speed test failed: No signal."
             return "No internet connection available."
 
@@ -294,16 +301,16 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
 
         # Side effects
         if enable:
-            self._device.network_status = NetworkStatus.NO_SERVICE
             self._device.wifi_connected = False
-            # Bluetooth usually turns off too, but we don't model bluetooth
+            # Disconnect VPN if connected
+            if self._device.vpn_status:
+                self._device.vpn_status = False
+                self._device.vpn_details = None
+            self.simulate_network_search()
         else:
-            # Reconnect logic would be complex, simplified here:
-            if self._device.sim_status == SimStatus.ACTIVE:
-                self._device.network_status = NetworkStatus.CONNECTED
-
             if self._surroundings.wifi_networks_available and self._device.wifi_enabled:
                 self._device.wifi_connected = True
+            self.simulate_network_search()
 
         return f"Airplane mode {state}"
 
@@ -318,27 +325,22 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
         Returns:
             Status string (active, missing, locked_pin, locked_puk)
         """
+        if self._device.sim_card_missing:
+            return SimStatus.MISSING.value
         return self._device.sim_status.value
 
     @is_tool(ToolType.WRITE)
     def reseat_sim_card(self) -> str:
         """Remove and re-insert the SIM card.
 
-        Useful for troubleshooting connectivity issues.
+        Matches tau2-bench TelecomUserTools._reseat_sim_card().
 
         Returns:
             Success message
         """
-        if not self._device.has_sim_card:
-            return "No physical SIM card to reseat."
-
-        # Simulation of reseating
-        if self._device.sim_status != SimStatus.MISSING:
-            # If it was locked or active, it might reset or stay same
-            # Simplified: just say done
-            pass
-
-        return "SIM card reseated. Please wait for network registration."
+        self._device.sim_card_missing = False
+        self.simulate_network_search()
+        return "SIM card re-seated successfully."
 
     # =========================================================================
     # Mobile Data & Roaming
@@ -621,14 +623,7 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
         Returns:
             True if possible, False otherwise
         """
-        if not self._device.mobile_data_enabled:
-            return False
-
-        # Check APN
-        if not self._device.apn_settings.mmsc_url:
-            return False
-
-        return True
+        return self._can_send_mms()
 
     # =========================================================================
     # Device
@@ -713,6 +708,165 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
         return f"Payment of {amount} for bill {bill_id} successful."
 
     # =========================================================================
+    # Initialization Methods (not exposed as tools - called by init_actions)
+    # =========================================================================
+    # These methods match the func_names used in telecom task initialization_actions.
+    # They are callable via getattr() during environment initialization but are
+    # NOT decorated with @is_tool so they don't appear in the user's tool list.
+
+    def set_user_info(self, name: str, phone_number: str) -> None:
+        """Set the user's name and phone number."""
+        self._surroundings.name = name
+        self._surroundings.phone_number = phone_number
+
+    def set_user_location(self, abroad: bool) -> None:
+        """Set whether the user is abroad."""
+        self._surroundings.is_abroad = abroad
+
+    def turn_data_off(self) -> None:
+        """Turn mobile data off."""
+        self._device.mobile_data_enabled = False
+
+    def turn_airplane_mode_on(self) -> None:
+        """Turn airplane mode on with side effects.
+
+        Matches tau2-bench TelecomUserTools.turn_airplane_mode_on().
+        """
+        self._device.airplane_mode = True
+        self._device.wifi_connected = False
+        # Disconnect VPN if connected
+        if self._device.vpn_status:
+            self._device.vpn_status = False
+            self._device.vpn_details = None
+        self.simulate_network_search()
+
+    def turn_roaming_off(self) -> None:
+        """Turn data roaming off."""
+        self._device.roaming_enabled = False
+        self.simulate_network_search()
+
+    def turn_roaming_on(self) -> None:
+        """Turn data roaming on."""
+        self._device.roaming_enabled = True
+        self.simulate_network_search()
+
+    def turn_data_saver_mode_on(self) -> None:
+        """Turn data saver mode on."""
+        self._device.data_saver_mode = True
+
+    def unseat_sim_card(self) -> None:
+        """Remove the SIM card (simulate missing SIM)."""
+        self._device.sim_card_missing = True
+        self.simulate_network_search()
+
+    def lock_sim_card(self, mode: str) -> None:
+        """Lock the SIM card in pin or puk mode."""
+        if mode == "pin":
+            self._device.sim_status = SimStatus.LOCKED_PIN
+        elif mode == "puk":
+            self._device.sim_status = SimStatus.LOCKED_PUK
+        self.simulate_network_search()
+
+    def break_apn_settings(self) -> None:
+        """Break APN settings by setting name to BROKEN."""
+        self._device.apn_settings.name = APNNames.BROKEN.value
+        self.simulate_network_search()
+
+    def break_apn_mms_setting(self) -> None:
+        """Break the APN MMS setting by clearing the MMSC URL."""
+        self._device.apn_settings.mmsc_url = ""
+
+    def break_vpn(self) -> None:
+        """Connect VPN with poor performance."""
+        self._device.vpn_status = True
+        self._device.vpn_details = VpnDetails(
+            server_address="192.168.1.1",
+            protocol="OpenVPN",
+            server_performance=PerformanceLevel.POOR,
+        )
+
+    def remove_app_permission(self, app_name: str, permission: str) -> None:
+        """Remove a permission from an app."""
+        if app_name in self._device.installed_apps:
+            perms = self._device.installed_apps[app_name].permissions
+            if hasattr(perms, permission):
+                setattr(perms, permission, False)
+
+    def set_wifi_calling(self, enabled: bool, mms_over_wifi: Optional[bool] = None) -> None:
+        """Set Wi-Fi calling and optionally MMS over Wi-Fi."""
+        self._device.wifi_calling_enabled = enabled
+        if mms_over_wifi is not None:
+            self._device.wifi_calling_mms_over_wifi = mms_over_wifi
+
+    # =========================================================================
+    # Network Search (core simulation logic)
+    # =========================================================================
+
+    def simulate_network_search(self) -> None:
+        """Simulate cellular network search.
+
+        Updates network_connection_status, network_technology_connected,
+        and network_signal_strength based on SIM status, network mode
+        preference, signal availability, airplane mode, APN settings,
+        and line status.
+
+        Matches tau2-bench TelecomUserTools.simulate_network_search().
+        """
+        device = self._device
+        surroundings = self._surroundings
+
+        # Check SIM status (sim_card_missing takes precedence)
+        sim_status = SimStatus.MISSING if device.sim_card_missing else device.sim_status
+
+        if sim_status == SimStatus.ACTIVE:
+            device.network_connection_status = NetworkStatus.CONNECTED
+            pref = device.network_mode_preference
+
+            if pref == NetworkModePreference.FOUR_G_5G_PREFERRED:
+                five_g_signal = surroundings.signal_strength.get(NetworkTechnology.FIVE_G, SignalStrength.NONE)
+                if five_g_signal == SignalStrength.NONE:
+                    device.network_technology_connected = NetworkTechnology.FOUR_G
+                    device.network_signal_strength = surroundings.signal_strength.get(NetworkTechnology.FOUR_G, SignalStrength.NONE)
+                else:
+                    device.network_technology_connected = NetworkTechnology.FIVE_G
+                    device.network_signal_strength = five_g_signal
+            elif pref == NetworkModePreference.FOUR_G_ONLY:
+                device.network_technology_connected = NetworkTechnology.FOUR_G
+                device.network_signal_strength = surroundings.signal_strength.get(NetworkTechnology.FOUR_G, SignalStrength.NONE)
+            elif pref == NetworkModePreference.THREE_G_ONLY:
+                device.network_technology_connected = NetworkTechnology.THREE_G
+                device.network_signal_strength = surroundings.signal_strength.get(NetworkTechnology.THREE_G, SignalStrength.NONE)
+            elif pref == NetworkModePreference.TWO_G_ONLY:
+                device.network_technology_connected = NetworkTechnology.TWO_G
+                device.network_signal_strength = surroundings.signal_strength.get(NetworkTechnology.TWO_G, SignalStrength.NONE)
+            else:
+                device.network_technology_connected = NetworkTechnology.FOUR_G
+                device.network_signal_strength = surroundings.signal_strength.get(NetworkTechnology.FOUR_G, SignalStrength.NONE)
+        else:
+            # SIM missing, locked, or other non-active state
+            device.network_connection_status = NetworkStatus.NO_SERVICE
+            device.network_technology_connected = NetworkTechnology.NONE
+            device.network_signal_strength = SignalStrength.NONE
+
+        # No network if airplane mode is on
+        if device.airplane_mode:
+            device.network_connection_status = NetworkStatus.NO_SERVICE
+            device.network_technology_connected = NetworkTechnology.NONE
+            device.network_signal_strength = SignalStrength.NONE
+
+        # No network if APN is broken
+        if device.apn_settings.name == APNNames.BROKEN.value:
+            device.network_connection_status = NetworkStatus.NO_SERVICE
+            device.network_technology_connected = NetworkTechnology.NONE
+            device.network_signal_strength = SignalStrength.NONE
+
+        # No network if line is not active
+        if not surroundings.line_active:
+            device.network_connection_status = NetworkStatus.NO_SERVICE
+            device.network_technology_connected = NetworkTechnology.NONE
+            device.network_signal_strength = SignalStrength.NONE
+
+    # =========================================================================
     # Assertion Methods (for evaluation)
     # =========================================================================
 
@@ -762,7 +916,7 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
         Returns:
             True if actual status matches expected, False otherwise
         """
-        actual = self._device.network_status.value
+        actual = self._device.network_connection_status.value
         return actual == expected_status
 
     @is_tool(ToolType.READ)

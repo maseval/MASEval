@@ -236,15 +236,10 @@ class Tau2Evaluator(Evaluator):
         predicted_db_hash = env_trace.get("final_db_hash") or self.environment.get_db_hash()
 
         # Create gold environment and replay expected actions
+        # Gold environment is fully initialized via setup_state() (including
+        # initialization_data and initialization_actions), no extra init needed.
         gold_env_constructor = get_environment_constructor(self.task.environment_data)
         gold_env = gold_env_constructor()
-
-        # Apply initial state if present
-        initial_state = self.task.environment_data.get("initial_state")
-        if initial_state:
-            init_data = initial_state.get("initialization_data")
-            if init_data and init_data.get("agent_data"):
-                gold_env.toolkit.update_db(init_data["agent_data"])
 
         # Replay expected actions on gold environment
         golden_actions = self.actions or []

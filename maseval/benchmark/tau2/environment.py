@@ -149,7 +149,15 @@ class Tau2Environment(Environment):
             user_toolkit_class = DOMAIN_USER_TOOLKIT_CLASSES[self._domain]
             user_toolkit = user_toolkit_class(db)
 
-        # Store initial hash for comparison
+        # Execute initialization_actions AFTER toolkits are created
+        # These are tool calls (e.g., turn_data_off, set_data_usage) that set up
+        # the task's initial device/environment state.
+        if self._initial_state_config:
+            init_actions = self._initial_state_config.get("initialization_actions")
+            if init_actions:
+                self._execute_initialization_actions(init_actions, toolkit, user_toolkit, db)
+
+        # Store initial hash for comparison (AFTER init_actions)
         initial_db_hash = db.get_hash()
 
         # Get policy from embedded data or fallback to loading
@@ -167,28 +175,118 @@ class Tau2Environment(Environment):
         }
 
     def _apply_initial_state(self, db: DB, initial_state: Dict[str, Any]) -> DB:
-        """Apply initial state modifications to database.
+        """Apply initialization_data updates to database.
+
+        Only applies static data updates (agent_data, user_data).
+        initialization_actions are executed separately in setup_state()
+        after toolkits are created.
 
         Args:
             db: Database instance
-            initial_state: Initial state configuration with:
-                - initialization_data: Dict with agent_data/user_data updates
-                - initialization_actions: List of tool calls to execute
+            initial_state: Initial state configuration
 
         Returns:
             Modified database
         """
-        # Apply initialization data updates
         init_data = initial_state.get("initialization_data")
         if init_data:
             agent_data = init_data.get("agent_data")
             if agent_data:
                 db = update_pydantic_model_with_dict(db, agent_data)
-
-        # Note: initialization_actions (tool calls) are handled during
-        # evaluation replay, not during environment setup
+            user_data = init_data.get("user_data")
+            if user_data and hasattr(db, "user_db") and db.user_db is not None:
+                db.user_db = update_pydantic_model_with_dict(db.user_db, user_data)
 
         return db
+
+    def _execute_initialization_actions(
+        self,
+        actions: List[Dict[str, Any]],
+        toolkit: ToolKitBase,
+        user_toolkit: Optional[ToolKitBase],
+        db: DB,
+    ) -> None:
+        """Execute initialization actions to set up task state.
+
+        Routes each action to the appropriate toolkit based on env_type,
+        then calls _sync_tools_internal() after each action.
+
+        Matches tau2-bench Environment.run_env_function_call() behavior.
+
+        Args:
+            actions: List of action dicts with env_type, func_name, arguments
+            toolkit: Agent-side toolkit
+            user_toolkit: User-side toolkit (may be None)
+            db: Database instance
+        """
+        for action in actions:
+            env_type = action.get("env_type", "assistant")
+            func_name = action["func_name"]
+            arguments = action.get("arguments", {})
+
+            if env_type == "user":
+                if user_toolkit is None:
+                    raise ValueError(f"No user toolkit available for user action: {func_name}")
+                func = getattr(user_toolkit, func_name, None)
+                if func is None:
+                    raise ValueError(f"User function '{func_name}' not found on user toolkit")
+                func(**arguments)
+            elif env_type == "assistant":
+                func = getattr(toolkit, func_name, None)
+                if func is None:
+                    raise ValueError(f"Assistant function '{func_name}' not found on toolkit")
+                func(**arguments)
+            else:
+                raise ValueError(f"Unknown env_type: {env_type}")
+
+            # Sync state after each action (matching tau2-bench behavior)
+            self._sync_tools_internal(toolkit, user_toolkit, db)
+
+    def _sync_tools_internal(
+        self,
+        toolkit: ToolKitBase,
+        user_toolkit: Optional[ToolKitBase],
+        db: DB,
+    ) -> None:
+        """Synchronize agent-side and user-side state for telecom domain.
+
+        Bridges line data from agent DB to user surroundings. Called after
+        each initialization action. Only applies to telecom domain.
+
+        Matches tau2-bench TelecomEnvironment.sync_tools().
+
+        Args:
+            toolkit: Agent-side toolkit
+            user_toolkit: User-side toolkit
+            db: Database instance
+        """
+        if self._domain != "telecom":
+            return
+        if user_toolkit is None:
+            return
+        if not hasattr(db, "user_db") or db.user_db is None:
+            return
+        if db.user_db.surroundings.phone_number is None:
+            return
+
+        phone_number = db.user_db.surroundings.phone_number
+
+        try:
+            line = toolkit._get_line_by_phone(phone_number)
+        except (ValueError, AttributeError):
+            return
+
+        from maseval.benchmark.tau2.domains.telecom.models import LineStatus
+
+        db.user_db.surroundings.line_active = line.status == LineStatus.ACTIVE
+        db.user_db.surroundings.roaming_allowed_in_location = line.roaming_enabled
+
+        try:
+            plan = toolkit._get_plan_by_id(line.plan_id)
+            data_limit = plan.data_limit_gb + getattr(line, "data_refueling_gb", 0.0)
+            db.user_db.surroundings.mobile_data_usage_exceeded = line.data_used_gb >= data_limit
+        except (ValueError, AttributeError):
+            pass
 
     def create_tools(self) -> Dict[str, Callable]:  # type: ignore[override]
         """Create tools from the domain toolkit.

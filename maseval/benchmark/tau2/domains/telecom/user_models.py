@@ -163,12 +163,14 @@ class MockPhoneAttributes(BaseModel):
     battery_level: int = Field(100, description="Battery level percentage (0-100)")
 
     # SIM & Network
+    sim_card_missing: bool = Field(False, description="Whether the physical SIM card is missing")
     sim_status: SimStatus = Field(SimStatus.ACTIVE, description="Status of the SIM card")
     sim_pin: str = Field("1234", description="SIM PIN code")
     sim_puk: str = Field("12345678", description="SIM PUK code")
     sim_attempts_remaining: int = Field(3, description="Remaining SIM PIN attempts")
-    network_status: NetworkStatus = Field(NetworkStatus.CONNECTED, description="Network connection status")
-    network_technology: NetworkTechnology = Field(NetworkTechnology.FOUR_G, description="Current network technology")
+    network_connection_status: NetworkStatus = Field(NetworkStatus.CONNECTED, description="Network connection status")
+    network_technology_connected: NetworkTechnology = Field(NetworkTechnology.FOUR_G, description="Network technology currently connected")
+    network_signal_strength: SignalStrength = Field(SignalStrength.GOOD, description="Current cellular signal strength")
     network_mode_preference: NetworkModePreference = Field(NetworkModePreference.FOUR_G_5G_PREFERRED, description="Preferred network mode")
 
     # Data & Roaming
@@ -180,6 +182,7 @@ class MockPhoneAttributes(BaseModel):
     wifi_enabled: bool = Field(True, description="Whether Wi-Fi is enabled")
     wifi_connected: bool = Field(True, description="Whether connected to a Wi-Fi network")
     wifi_calling_enabled: bool = Field(False, description="Whether Wi-Fi calling is enabled")
+    wifi_calling_mms_over_wifi: bool = Field(False, description="Whether MMS over Wi-Fi is enabled")
 
     # Configuration
     apn_settings: APNSettings = Field(
@@ -204,9 +207,6 @@ class MockPhoneAttributes(BaseModel):
         description="Installed applications",
     )
 
-    # Hardware
-    has_sim_card: bool = Field(True, description="Whether a physical SIM card is inserted")
-
 
 # =============================================================================
 # User Environment
@@ -228,9 +228,19 @@ class UserSurroundings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # User identity (needed by sync_tools to look up lines by phone number)
+    name: Optional[str] = Field(None, description="The name of the user")
+    phone_number: Optional[str] = Field(None, description="The phone number of the user")
+
     is_abroad: bool = Field(False, description="Whether the user is currently abroad")
     roaming_allowed_in_location: bool = Field(True, description="Whether roaming is supported in current location")
-    signal_strength: SignalStrength = Field(SignalStrength.GOOD, description="Signal strength in current location")
+    signal_strength: Dict[NetworkTechnology, SignalStrength] = Field(
+        default_factory=lambda: {
+            NetworkTechnology.FOUR_G: SignalStrength.GOOD,
+            NetworkTechnology.THREE_G: SignalStrength.FAIR,
+        },
+        description="Signal strength per network technology in current location",
+    )
     available_technologies: List[NetworkTechnology] = Field(
         default_factory=lambda: [NetworkTechnology.FOUR_G, NetworkTechnology.THREE_G],
         description="Network technologies available in current location",
@@ -239,6 +249,10 @@ class UserSurroundings(BaseModel):
         default_factory=lambda: ["Home_WiFi", "Starbucks_WiFi"], description="List of available Wi-Fi networks"
     )
     payment_requests: List[PaymentRequest] = Field(default_factory=list, description="Pending payment requests")
+
+    # Synced from agent DB by sync_tools
+    line_active: bool = Field(True, description="Whether the user's line is active (synced from agent DB)")
+    mobile_data_usage_exceeded: bool = Field(False, description="Whether the user has exceeded their data usage limit (synced from agent DB)")
 
 
 class TelecomUserDB(BaseModel):
