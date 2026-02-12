@@ -736,71 +736,64 @@ class DefaultTau2Agent:
     def _get_tool_definitions(self) -> List[Dict[str, Any]]:
         """Generate tool definitions for the LLM.
 
+        Uses docstring_parser and Pydantic create_model to build parameter
+        schemas, matching the original tau2-bench Tool.openai_schema approach.
+
         Returns:
             List of tool definitions in OpenAI function calling format
         """
         import inspect
+        from typing import Any as TypingAny
+
+        from docstring_parser import parse as parse_docstring
+        from pydantic import Field, create_model
 
         definitions = []
         for name, func in self.tools.items():
             sig = inspect.signature(func)
-            doc = func.__doc__ or f"Tool: {name}"
+            doc = parse_docstring(func.__doc__ or "")
 
-            # Build parameters schema
-            properties = {}
-            required = []
+            # Build tool description from parsed docstring (short + long)
+            if doc.short_description:
+                description = doc.short_description
+                if doc.long_description:
+                    description += "\n\n" + doc.long_description
+            else:
+                description = name
+
+            # Build Pydantic model from signature + docstring params
+            doc_params = {p.arg_name: p for p in doc.params}
+            model_fields = {}
 
             for param_name, param in sig.parameters.items():
                 if param_name == "self":
                     continue
 
-                # Determine parameter type and build property schema
-                param_schema: Dict[str, Any] = {"description": f"Parameter: {param_name}"}
+                anno = param.annotation
+                default = param.default
 
-                if param.annotation is not inspect.Parameter.empty:
-                    if param.annotation is int:
-                        param_schema["type"] = "integer"
-                    elif param.annotation is float:
-                        param_schema["type"] = "number"
-                    elif param.annotation is bool:
-                        param_schema["type"] = "boolean"
-                    elif param.annotation is list or (hasattr(param.annotation, "__origin__") and param.annotation.__origin__ is list):
-                        param_schema["type"] = "array"
-                        # Add items schema for array types (required by Google GenAI)
-                        param_schema["items"] = {"type": "string"}
-                        # Try to get the inner type for List[X]
-                        if hasattr(param.annotation, "__args__") and param.annotation.__args__:
-                            inner_type = param.annotation.__args__[0]
-                            if inner_type is int:
-                                param_schema["items"] = {"type": "integer"}
-                            elif inner_type is float:
-                                param_schema["items"] = {"type": "number"}
-                            elif inner_type is bool:
-                                param_schema["items"] = {"type": "boolean"}
-                    elif param.annotation is dict:
-                        param_schema["type"] = "object"
-                    else:
-                        param_schema["type"] = "string"
-                else:
-                    param_schema["type"] = "string"
+                if default is param.empty:
+                    default = ...  # required
 
-                properties[param_name] = param_schema
+                if param_name in doc_params:
+                    default = Field(default, description=doc_params[param_name].description)
+                    if (anno is param.empty) and (doc_params[param_name].type_name is not None):
+                        anno = doc_params[param_name].type_name
 
-                # Check if parameter is required (no default value)
-                if param.default is inspect.Parameter.empty:
-                    required.append(param_name)
+                if anno is param.empty:
+                    anno = TypingAny
+
+                model_fields[param_name] = (anno, default)
+
+            params_model = create_model("parameters", **model_fields)  # type: ignore[call-overload]
 
             definitions.append(
                 {
                     "type": "function",
                     "function": {
                         "name": name,
-                        "description": doc.strip().split("\n")[0],  # First line of docstring
-                        "parameters": {
-                            "type": "object",
-                            "properties": properties,
-                            "required": required,
-                        },
+                        "description": description,
+                        "parameters": params_model.model_json_schema(),
                     },
                 }
             )
