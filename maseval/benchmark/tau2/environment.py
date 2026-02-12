@@ -13,6 +13,7 @@ This environment uses real tools that modify actual database state,
 providing deterministic and reproducible evaluation.
 """
 
+import functools
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Type, cast
 
@@ -252,10 +253,12 @@ class Tau2Environment(Environment):
     ) -> None:
         """Synchronize agent-side and user-side state for telecom domain.
 
-        Bridges line data from agent DB to user surroundings. Called after
-        each initialization action. Only applies to telecom domain.
+        Bridges state between agent DB and user surroundings. Called after
+        every tool invocation and each initialization action.
+        Only applies to telecom domain.
 
-        Matches tau2-bench TelecomEnvironment.sync_tools().
+        Matches tau2-bench TelecomEnvironment.sync_tools()
+        (telecom/environment.py:40-94).
 
         Args:
             toolkit: Agent-side toolkit
@@ -285,9 +288,13 @@ class Tau2Environment(Environment):
 
         from maseval.benchmark.tau2.domains.telecom.models import LineStatus
 
+        # Sync line active status (agent DB → user surroundings)
         user_db.surroundings.line_active = line.status == LineStatus.ACTIVE
+
+        # Sync roaming capability (agent DB → user surroundings)
         user_db.surroundings.roaming_allowed_in_location = line.roaming_enabled
 
+        # Sync data usage exceeded (agent DB → user surroundings)
         try:
             plan = telecom_tools._get_plan_by_id(line.plan_id)
             data_limit = plan.data_limit_gb + getattr(line, "data_refueling_gb", 0.0)
@@ -295,24 +302,86 @@ class Tau2Environment(Environment):
         except (ValueError, AttributeError):
             pass
 
+        # Sync paid bills (user surroundings → agent DB)
+        # Original: tau2-bench telecom/environment.py:76-81
+        from maseval.benchmark.tau2.domains.telecom.user_models import PaymentRequest
+
+        paid_ids = set()
+        for req in user_db.surroundings.payment_requests:
+            if req.paid:
+                try:
+                    telecom_tools._set_bill_to_paid(req.bill_id)
+                except (ValueError, AttributeError):
+                    pass
+                paid_ids.add(req.bill_id)
+        if paid_ids:
+            user_db.surroundings.payment_requests = [r for r in user_db.surroundings.payment_requests if r.bill_id not in paid_ids]
+
+        # Sync payment requests (agent DB → user surroundings)
+        # Original: tau2-bench telecom/environment.py:83-94
+        has_pending = any(not r.paid for r in user_db.surroundings.payment_requests)
+        if not has_pending:
+            try:
+                customer = telecom_tools.get_customer_by_phone(phone_number)
+                bills = telecom_tools._get_bills_awaiting_payment(customer)
+                if bills:
+                    bill = bills[0]
+                    user_db.surroundings.payment_requests.append(PaymentRequest(bill_id=bill.bill_id, amount_due=bill.total_due))
+            except (ValueError, AttributeError):
+                pass
+
+    def sync_tools(self) -> None:
+        """Synchronize agent-side and user-side state.
+
+        Called automatically after every tool invocation via wrapped callables.
+        Currently only applies to telecom domain (no-op for retail/airline).
+
+        Matches tau2-bench orchestrator.py:361 behavior where ``sync_tools()``
+        is called after every orchestration step.
+        """
+        self._sync_tools_internal(self.toolkit, self.user_toolkit, self.db)
+
+    def _wrap_with_sync(self, func: Callable) -> Callable:
+        """Wrap a tool callable to call ``sync_tools()`` after each invocation.
+
+        Args:
+            func: The original tool callable
+
+        Returns:
+            Wrapped callable that syncs state after execution
+        """
+
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = func(*args, **kwargs)
+            self.sync_tools()
+            return result
+
+        return wrapper
+
     def create_tools(self) -> Dict[str, Callable]:  # type: ignore[override]
         """Create tools from the domain toolkit.
 
         These are real Python methods that modify database state.
+        Each tool is wrapped with a post-invocation ``sync_tools()`` call
+        to keep agent-side and user-side state synchronized.
 
         Returns:
             Dict mapping tool names to callable methods
         """
-        return self.toolkit.tools
+        return {name: self._wrap_with_sync(func) for name, func in self.toolkit.tools.items()}
 
     def create_user_tools(self) -> Dict[str, Callable]:
         """Create user tools from the domain user toolkit.
+
+        Each tool is wrapped with a post-invocation ``sync_tools()`` call
+        to keep agent-side and user-side state synchronized.
 
         Returns:
             Dict mapping tool names to callable methods
         """
         if self.user_toolkit:
-            return self.user_toolkit.tools
+            return {name: self._wrap_with_sync(func) for name, func in self.user_toolkit.tools.items()}
         return {}
 
     def get_db_hash(self) -> str:
