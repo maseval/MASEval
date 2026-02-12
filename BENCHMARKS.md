@@ -65,3 +65,12 @@ CONVERSE evaluates contextual safety in agent-to-agent conversations. It focuses
 - **Data License:** Refer to the upstream repository's dataset and license terms
 
 ---
+
+## 6. [Name of Next Benchmark]
+
+(Description for the next benchmark...)
+
+### Source and License
+
+- **Original Repository:** [Link](Link)
+- **Data License:** Data License.
