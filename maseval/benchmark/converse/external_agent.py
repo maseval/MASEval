@@ -14,6 +14,16 @@ class ConverseExternalAgent(LLMUser):
         max_turns: int = 10,
         **kwargs: Any,
     ):
+        """Initialise the adversarial external agent.
+
+        Args:
+            model: Model adapter for the attacker LLM.
+            user_data: Dictionary containing ``persona``, ``attack_goal``,
+                ``attack_strategy``, and ``attack_rationale``.
+            initial_query: First message sent to the assistant agent.
+            max_turns: Maximum number of dialogue turns.
+            **kwargs: Forwarded to :class:`LLMUser`.
+        """
         persona = user_data.get("persona", "Service Provider")
         attack_goal = user_data.get("attack_goal", "None")
         attack_strategy = user_data.get("attack_strategy", "")

@@ -25,7 +25,16 @@ PERSONAS: List[int] = [1, 2, 3, 4]
 
 
 def download_file(url: str, dest_path: Path, timeout: int = 30) -> None:
-    """Download a file from URL if it does not already exist."""
+    """Download a file from *url* to *dest_path*, skipping if it already exists.
+
+    Args:
+        url: Remote URL to fetch.
+        dest_path: Local filesystem destination.
+        timeout: HTTP timeout in seconds.
+
+    Raises:
+        RuntimeError: If the download fails.
+    """
     if dest_path.exists():
         return
 
@@ -89,10 +98,21 @@ def ensure_data_exists(
 
 
 def _slugify(value: str) -> str:
+    """Lowercase *value*, collapse whitespace, and join with underscores."""
     return "_".join(value.strip().lower().split())
 
 
 def _infer_forbidden_tools(attack_action: str, responsibility_flag: str) -> List[str]:
+    """Map an attack action description to the tool names it would violate.
+
+    Args:
+        attack_action: Free-text description of the attack action.
+        responsibility_flag: Upstream flag indicating who is responsible.
+            If ``"EXTERNAL_AGENT_OPTIONS"``, no tools are forbidden.
+
+    Returns:
+        List of tool names that should not be invoked for this attack.
+    """
     if responsibility_flag == "EXTERNAL_AGENT_OPTIONS":
         return []
 
@@ -113,7 +133,18 @@ def _infer_forbidden_tools(attack_action: str, responsibility_flag: str) -> List
 
 
 def parse_privacy_attacks(file_path: Path, persona_id: int, env_text: str, options_text: str, domain: str) -> List[Task]:
-    """Parse privacy attacks from official CONVERSE JSON structure."""
+    """Parse privacy attacks from the official CONVERSE JSON structure.
+
+    Args:
+        file_path: Path to a ``attacks_p<N>.json`` file in the privacy directory.
+        persona_id: Persona number (1–4).
+        env_text: Persona-specific environment description text.
+        options_text: Shared domain options text.
+        domain: Domain name (``"travel"``, ``"real_estate"``, or ``"insurance"``).
+
+    Returns:
+        List of :class:`Task` objects, one per privacy attack item.
+    """
     if not file_path.exists():
         return []
 
@@ -158,7 +189,21 @@ def parse_privacy_attacks(file_path: Path, persona_id: int, env_text: str, optio
 
 
 def parse_security_attacks(file_path: Path, persona_id: int, env_text: str, options_text: str, domain: str) -> List[Task]:
-    """Parse security attacks from old and new CONVERSE JSON structures."""
+    """Parse security attacks from old and new CONVERSE JSON structures.
+
+    Supports both the ``security_attacks`` format and the legacy
+    ``toolkit_attacks`` / ``final_package_attacks`` format.
+
+    Args:
+        file_path: Path to a ``attacks_p<N>.json`` file in the security directory.
+        persona_id: Persona number (1–4).
+        env_text: Persona-specific environment description text.
+        options_text: Shared domain options text.
+        domain: Domain name (``"travel"``, ``"real_estate"``, or ``"insurance"``).
+
+    Returns:
+        List of :class:`Task` objects, one per security attack item.
+    """
     if not file_path.exists():
         return []
 
@@ -238,7 +283,22 @@ def load_tasks(
     limit: Optional[int] = None,
     data_dir: Optional[Path] = None,
 ) -> TaskQueue:
-    """Load CONVERSE tasks for a domain and split."""
+    """Load CONVERSE tasks for a domain and attack split.
+
+    Downloads benchmark data on first call via :func:`ensure_data_exists`.
+
+    Args:
+        domain: CONVERSE domain to load.
+        split: Attack type filter — ``"privacy"``, ``"security"``, or ``"all"``.
+        limit: Maximum number of tasks to return (``None`` for all).
+        data_dir: Optional override for the local data cache directory.
+
+    Returns:
+        A :class:`TaskQueue` containing the loaded tasks.
+
+    Raises:
+        ValueError: If *domain* is not one of the supported domains.
+    """
     if domain not in DOMAIN_MAP:
         raise ValueError(f"Invalid domain '{domain}'. Must be one of {sorted(DOMAIN_MAP)}")
 

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from unittest.mock import MagicMock
 
 import pytest
@@ -222,10 +222,10 @@ class FakeModelAdapter(ModelAdapter):
 
     def _chat_impl(
         self,
-        messages: list[dict[str, Any]],
-        generation_params: Optional[dict[str, Any]] = None,
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[str | dict[str, Any]] = None,
+        messages: List[Dict[str, Any]],
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str | Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> ChatResponse:
         _ = messages, generation_params, tools, tool_choice, kwargs

@@ -10,9 +10,7 @@ CONVERSE evaluates privacy and security robustness in agent-to-agent conversatio
 
 ## Data Source
 
-Data is loaded from the official CONVERSE repository:
-
-- https://github.com/amrgomaaelhady/ConVerse
+Data is loaded from [the official CONVERSE repository `amrgomaaelhady/ConVerse`](https://github.com/amrgomaaelhady/ConVerse)
 
 Supported domains:
 

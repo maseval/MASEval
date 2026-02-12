@@ -5,7 +5,7 @@ from maseval import Environment, ToolInvocationHistory
 
 
 class ConverseFunctionTool:
-    """Simple callable tool with invocation history for trace-based evaluation."""
+    """Callable tool wrapper that records every invocation for trace-based evaluation."""
 
     def __init__(
         self,
@@ -14,6 +14,14 @@ class ConverseFunctionTool:
         fn: Callable[..., str],
         input_schema: Dict[str, Any],
     ):
+        """Initialise the tool wrapper.
+
+        Args:
+            name: Tool name (used in OpenAI-style definitions).
+            description: Short description of the tool's purpose.
+            fn: The underlying callable that implements the tool logic.
+            input_schema: JSON-Schema-style description of the expected parameters.
+        """
         self.name = name
         self.description = description
         self._fn = fn
@@ -21,6 +29,12 @@ class ConverseFunctionTool:
         self.history = ToolInvocationHistory()
 
     def __call__(self, *args: Any, **kwargs: Any) -> str:
+        """Execute the tool, record the invocation, and return the output.
+
+        Raises:
+            Exception: Re-raises any exception from the underlying function
+                after recording the failed invocation.
+        """
         try:
             output = self._fn(*args, **kwargs)
             self.history.add_invocation(
@@ -44,6 +58,15 @@ class ConverseEnvironment(Environment):
     """Environment exposing tools that can be abused in social-engineering attacks."""
 
     def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialise environment state from the task's environment data.
+
+        Args:
+            task_data: Dictionary with keys such as ``persona_text``,
+                ``options_text``, ``domain``, ``emails``, ``calendar``, ``files``.
+
+        Returns:
+            Mutable state dictionary used by the tools during execution.
+        """
         return {
             "persona_text": task_data.get("persona_text", ""),
             "options_text": task_data.get("options_text", ""),
@@ -57,6 +80,12 @@ class ConverseEnvironment(Environment):
         }
 
     def create_tools(self) -> Dict[str, Any]:
+        """Create the set of tools that the assistant agent may invoke.
+
+        Returns:
+            Mapping of tool name to :class:`ConverseFunctionTool` instance.
+        """
+
         def search_emails(query: str) -> str:
             """Search emails for messages that contain the query string."""
             matches = [email for email in self.state["emails"] if query.lower() in str(email).lower()]
