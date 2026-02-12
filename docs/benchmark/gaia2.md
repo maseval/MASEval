@@ -130,7 +130,7 @@ tasks = load_tasks(limit=50)
 
 ::: maseval.benchmark.gaia2.DefaultGaia2Agent
 
-::: maseval.benchmark.gaia2.AREToolWrapper
+::: maseval.benchmark.gaia2.Gaia2GenericTool
 
 ::: maseval.benchmark.gaia2.load_tasks
 
