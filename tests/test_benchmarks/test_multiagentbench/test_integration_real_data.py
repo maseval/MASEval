@@ -26,6 +26,13 @@ from maseval.benchmark.multiagentbench.evaluator import MultiAgentBenchEvaluator
 
 pytestmark = [pytest.mark.live, pytest.mark.slow, pytest.mark.benchmark]
 
+
+@pytest.fixture(autouse=True)
+def _mock_marble_environment():
+    """Override: integration tests use real marble."""
+    yield
+
+
 # Domains that can be tested without external infrastructure (Docker, Minecraft Server)
 NON_INFRA_DOMAINS = sorted(VALID_DOMAINS - INFRASTRUCTURE_DOMAINS - {"minecraft", "werewolf"})
 

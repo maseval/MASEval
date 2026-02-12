@@ -15,10 +15,11 @@ MultiAgentBench-Specific Components
 
 import pytest
 from typing import Any, Dict, List, Optional, Sequence, Tuple
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from conftest import DummyModelAdapter
 from maseval import AgentAdapter, Task, MessageHistory
+from maseval.benchmark.multiagentbench.environment import MultiAgentBenchEnvironment
 
 
 # =============================================================================
@@ -42,6 +43,33 @@ def ensure_marble_data():
     from maseval.benchmark.multiagentbench.data_loader import ensure_marble_exists
 
     return ensure_marble_exists(auto_download=True)
+
+
+@pytest.fixture(autouse=True)
+def _mock_marble_environment():
+    """Mock MARBLE environment creation for all Tier 1 (offline) tests.
+
+    MultiAgentBenchEnvironment.setup_state() calls _create_marble_environment()
+    which imports marble — a vendored dependency not available in CI. This fixture
+    replaces that method with a MagicMock so structural tests can exercise the full
+    benchmark pipeline without marble installed.
+
+    Tests that need the real _create_marble_environment can override this fixture
+    with a no-op at the class or file level (standard pytest fixture scoping).
+    """
+    mock_env = MagicMock()
+    mock_env.is_done.return_value = False
+    mock_env.is_task_completed.return_value = False
+    mock_env.get_state.return_value = {}
+    mock_env._action_handlers = {}
+    mock_env.action_handler_descriptions = {}
+
+    with patch.object(
+        MultiAgentBenchEnvironment,
+        "_create_marble_environment",
+        return_value=mock_env,
+    ):
+        yield
 
 
 # =============================================================================

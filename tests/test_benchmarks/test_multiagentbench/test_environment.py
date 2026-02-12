@@ -45,19 +45,6 @@ class TestMultiAgentBenchEnvironment:
 
         assert env.domain == "bargaining"
 
-    def test_init_raises_without_marble(self, sample_research_task_data: Dict[str, Any]):
-        """Constructor should raise ImportError when MARBLE is not available."""
-        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
-        for module_name in marble_modules:
-            sys.modules.pop(module_name, None)
-
-        try:
-            with patch.dict("sys.modules", {"marble.environments.base_env": None}):
-                with pytest.raises(ImportError, match="MARBLE is not available"):
-                    MultiAgentBenchEnvironment(task_data=sample_research_task_data)
-        finally:
-            sys.modules.update(marble_modules)
-
     def test_setup_state_extracts_domain(self, sample_research_task_data: Dict[str, Any]):
         """setup_state should extract domain from task data."""
         env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
@@ -102,8 +89,31 @@ class TestMultiAgentBenchEnvironment:
         assert config["domain"] == "research"
         assert "tool_descriptions" in config
 
+
+class TestMultiAgentBenchEnvironmentRealMarble:
+    """Tests that need the real _create_marble_environment (no mock)."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_marble_environment(self):
+        """Override: let these tests use real marble imports."""
+        yield
+
+    def test_init_raises_without_marble(self, sample_research_task_data: Dict[str, Any]):
+        """Constructor should raise ImportError when MARBLE is not available."""
+        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
+        for module_name in marble_modules:
+            sys.modules.pop(module_name, None)
+
+        try:
+            with patch.dict("sys.modules", {"marble.environments.base_env": None}):
+                with pytest.raises(ImportError, match="MARBLE is not available"):
+                    MultiAgentBenchEnvironment(task_data=sample_research_task_data)
+        finally:
+            sys.modules.update(marble_modules)
+
+    @pytest.mark.live
     def test_marble_env_type_in_state(self, sample_research_task_data: Dict[str, Any]):
-        """setup_state should include MARBLE env type."""
+        """setup_state should include MARBLE env type (needs real marble)."""
         env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)
 
         assert env.state["marble_env_type"] == "ResearchEnvironment"
