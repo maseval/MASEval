@@ -35,9 +35,6 @@ def gaia2_tasks():
     This fixture loads all tasks via load_tasks(capability=None).
     Requires ``datasets`` and ``are`` packages.
     """
-    pytest.importorskip("datasets", reason="HuggingFace datasets library required")
-    pytest.importorskip("are", reason="ARE (meta-agents-research-environments) required")
-
     from maseval.benchmark.gaia2.data_loader import load_tasks
 
     tasks = load_tasks(split="validation")
@@ -117,9 +114,6 @@ class TestGaia2CapabilityCoverage:
     @pytest.mark.parametrize("capability", list(VALID_CAPABILITIES))
     def test_capability_has_tasks(self, capability):
         """Each VALID_CAPABILITY can be loaded and has tasks on HuggingFace."""
-        pytest.importorskip("datasets", reason="HuggingFace datasets library required")
-        pytest.importorskip("are", reason="ARE (meta-agents-research-environments) required")
-
         from maseval.benchmark.gaia2.data_loader import load_tasks
 
         try:

@@ -44,9 +44,6 @@ def ensure_gaia2_data():
     Returns:
         List of Task objects from the validation split
     """
-    pytest.importorskip("datasets", reason="HuggingFace datasets library required")
-    pytest.importorskip("are", reason="ARE (meta-agents-research-environments) required")
-
     from maseval.benchmark.gaia2.data_loader import load_tasks
 
     tasks = load_tasks(split="validation")

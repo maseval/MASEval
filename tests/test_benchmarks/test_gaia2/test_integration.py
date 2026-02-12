@@ -27,9 +27,6 @@ def real_gaia2_tasks():
     Loads 5 tasks to keep download and runtime manageable while still
     exercising real data paths.
     """
-    pytest.importorskip("datasets", reason="HuggingFace datasets library required")
-    pytest.importorskip("are", reason="ARE (meta-agents-research-environments) required")
-
     from maseval.benchmark.gaia2.data_loader import load_tasks
 
     tasks = load_tasks(capability="execution", split="validation", limit=5)

@@ -45,7 +45,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install uv
-          uv sync --group dev
+          uv sync --all-extras --group dev
       - name: Run benchmark tests
         run: |
           uv run pytest -m benchmark -v
