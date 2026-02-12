@@ -60,7 +60,6 @@ class Gaia2Evaluator(Evaluator):
 
         # Extract evaluation data from task
         eval_data = task.evaluation_data
-        self.oracle_events = eval_data.get("oracle_events", [])
         self.judge_type = eval_data.get("judge_type", "graph_per_event")
 
     def filter_traces(self, traces: Dict[str, Any]) -> Dict[str, Any]:

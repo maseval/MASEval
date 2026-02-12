@@ -42,8 +42,8 @@ class TestGaia2EvaluatorInit:
 
         assert evaluator.environment == mock_env
 
-    def test_extracts_oracle_events_from_task(self, sample_gaia2_task):
-        """Test evaluator extracts oracle events from task."""
+    def test_extracts_judge_type_from_task(self, sample_gaia2_task):
+        """Test evaluator extracts judge_type from task evaluation_data."""
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
         mock_env = MagicMock()
@@ -53,7 +53,7 @@ class TestGaia2EvaluatorInit:
             environment=mock_env,
         )
 
-        assert evaluator.oracle_events == sample_gaia2_task.evaluation_data.get("oracle_events", [])
+        assert evaluator.judge_type == sample_gaia2_task.evaluation_data.get("judge_type", "graph_per_event")
 
     def test_default_use_llm_judge_is_false(self, sample_gaia2_task):
         """Test use_llm_judge defaults to False."""

@@ -384,30 +384,25 @@ def mock_judge_failed() -> MockGraphPerEventJudge:
 
 @pytest.fixture
 def sample_gaia2_task() -> Task:
-    """Create a sample GAIA2 task for testing."""
+    """Create a sample GAIA2 task for testing.
+
+    GAIA2 tasks have empty query (event-driven) and minimal evaluation_data
+    (judge is created at runtime by preprocess_scenario).
+    """
     return Task(
         id="gaia2_test_001",
-        query="Schedule a meeting with John tomorrow at 2pm and send him an email confirmation.",
+        query="",
         environment_data={
-            "scenario_json": {
-                "id": "test_scenario",
-                "initial_state": {},
-                "oracle_events": [
-                    {"type": "calendar_event_created", "data": {"title": "Meeting with John"}},
-                    {"type": "email_sent", "data": {"recipient": "john@example.com"}},
-                ],
-            },
+            "scenario": MagicMock(scenario_id="test_scenario"),
+            "capability": "execution",
         },
         evaluation_data={
-            "oracle_events": [
-                {"type": "calendar_event_created"},
-                {"type": "email_sent"},
-            ],
+            "judge_type": "graph_per_event",
         },
         user_data={},
         metadata={
+            "scenario_id": "test_scenario",
             "capability": "execution",
-            "difficulty": "medium",
         },
     )
 
@@ -419,19 +414,19 @@ def sample_gaia2_task_queue(sample_gaia2_task) -> TaskQueue:
         sample_gaia2_task,
         Task(
             id="gaia2_test_002",
-            query="Check my calendar for today's events.",
-            environment_data={"scenario_json": {"id": "test_2", "initial_state": {}, "oracle_events": []}},
-            evaluation_data={"oracle_events": []},
+            query="",
+            environment_data={"scenario": MagicMock(scenario_id="test_2"), "capability": "search"},
+            evaluation_data={"judge_type": "graph_per_event"},
             user_data={},
-            metadata={"capability": "search"},
+            metadata={"scenario_id": "test_2", "capability": "search"},
         ),
         Task(
             id="gaia2_test_003",
-            query="Wait for a notification from the system.",
-            environment_data={"scenario_json": {"id": "test_3", "initial_state": {}, "oracle_events": []}},
-            evaluation_data={"oracle_events": []},
+            query="",
+            environment_data={"scenario": MagicMock(scenario_id="test_3"), "capability": "time"},
+            evaluation_data={"judge_type": "graph_per_event"},
             user_data={},
-            metadata={"capability": "time"},
+            metadata={"scenario_id": "test_3", "capability": "time"},
         ),
     ]
     return TaskQueue(tasks)

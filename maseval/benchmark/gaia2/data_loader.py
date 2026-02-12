@@ -11,7 +11,6 @@ Data: https://huggingface.co/datasets/meta-agents-research-environments/gaia2
 No side effects on import. Data download/processing must be explicitly called.
 """
 
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from maseval import Task, TaskQueue
@@ -22,27 +21,26 @@ from maseval.core.task import TaskProtocol
 # Constants
 # =============================================================================
 
-DEFAULT_DATA_DIR = Path(__file__).parent / "data"
-
+# HuggingFace config names that exist on the dataset.
+# Each config corresponds to a capability and contains ~160 scenarios.
+# ARE simulation/types.py: CapabilityTag enum values
 VALID_CAPABILITIES: Tuple[str, ...] = (
     "execution",
     "search",
     "adaptability",
     "time",
     "ambiguity",
-    "agent2agent",
-    "noise",
 )
 
 VALID_SPLITS: Tuple[str, ...] = ("validation",)  # Only validation has oracle events
 
-DEFAULT_CONFIG = "validation"  # Full dataset
 # ARE scenarios/config.py:20: DEFAULT_SCENARIO_TIMEOUT = 1860
 DEFAULT_TIMEOUT_SECONDS = 1860.0  # 31 minutes per task (matching ARE)
 DEFAULT_MAX_RETRIES = 1
 
 # HuggingFace dataset info
 HF_DATASET_ID = "meta-agents-research-environments/gaia2"
+HF_DATASET_REVISION = "78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99"
 
 
 # =============================================================================
@@ -59,24 +57,24 @@ def load_tasks(
 ) -> TaskQueue:
     """Load Gaia2 tasks from HuggingFace.
 
+    Each HuggingFace config corresponds to a capability (execution, search,
+    adaptability, time, ambiguity). When ``capability`` is None, all
+    capabilities are loaded and combined.
+
+    GAIA2 is event-driven: the task query is delivered to agents via the
+    notification system at runtime (first ``send_message_to_agent`` event),
+    not as a static field. ``task.query`` is left empty.
+
     Args:
-        capability: Filter by capability type (execution, search, adaptability,
-            time, ambiguity, agent2agent, noise). None loads all.
+        capability: Filter by capability type. None loads all capabilities.
         split: Dataset split (currently only "validation" available)
-        limit: Maximum number of tasks to load
+        limit: Maximum number of tasks to load (across all capabilities)
         timeout_seconds: Maximum execution time per task. Default 1860 (31 minutes,
             matching ARE's DEFAULT_SCENARIO_TIMEOUT). Set to None to disable timeout.
         max_retries: Maximum retry attempts. Default 1 (skip on failure).
 
     Returns:
-        TaskQueue with Task objects containing:
-            - id: Unique scenario identifier
-            - query: Initial task instructions
-            - environment_data: {"scenario": BenchmarkScenario, "capability": str}
-            - evaluation_data: {"oracle_events": [...], "judge_type": str}
-            - user_data: {}  # Gaia2 uses event-based simulation, not user turns
-            - metadata: {"capability": str, "universe_id": str, ...}
-            - protocol: TaskProtocol with timeout and tags
+        TaskQueue with Task objects.
 
     Raises:
         ValueError: If capability or split is invalid
@@ -111,77 +109,68 @@ def load_tasks(
             "Or: uv add --optional gaia2 meta-agents-research-environments"
         ) from e
 
-    # Determine HuggingFace config name
-    config_name = capability if capability else DEFAULT_CONFIG
+    # When no capability specified, load all capabilities and combine
+    capabilities = [capability] if capability else list(VALID_CAPABILITIES)
 
-    # Load dataset from HuggingFace
-    # Passing `split` guarantees the return type is Dataset (not DatasetDict)
-    dataset = load_dataset(
-        HF_DATASET_ID,
-        name=config_name,
-        split=split,
-    )
-    assert isinstance(dataset, Dataset)
-
-    # Apply limit
-    if limit:
-        dataset = dataset.select(range(min(limit, len(dataset))))
-
-    # Convert to MASEval Task objects
     importer = JsonScenarioImporter()
-    tasks = []
+    tasks: List[Task] = []
 
-    for row in dataset:
-        # Parse scenario from JSON
-        scenario, oracle_events, _ = importer.import_from_json_to_benchmark(json_str=row["data"])
-
-        task = _convert_gaia2_to_maseval(
-            row=row,
-            scenario=scenario,
-            oracle_events=oracle_events,
-            timeout_seconds=timeout_seconds,
-            max_retries=max_retries,
-            config_capability=config_name,
+    for cap in capabilities:
+        # Each capability is a HuggingFace config name
+        # Passing `split` guarantees the return type is Dataset (not DatasetDict)
+        dataset = load_dataset(
+            HF_DATASET_ID,
+            name=cap,
+            split=split,
+            revision=HF_DATASET_REVISION,
         )
-        tasks.append(task)
+        assert isinstance(dataset, Dataset)
+
+        for row in dataset:
+            # Parse scenario from JSON
+            # import_from_json_to_benchmark returns (scenario, completed_events, _)
+            # completed_events are from previous runs, not oracle events.
+            # Oracle events are generated at runtime by preprocess_scenario().
+            scenario, _, _ = importer.import_from_json_to_benchmark(json_str=row["data"])
+
+            task = _convert_gaia2_to_maseval(
+                row=row,
+                scenario=scenario,
+                timeout_seconds=timeout_seconds,
+                max_retries=max_retries,
+                config_capability=cap,
+            )
+            tasks.append(task)
+
+            if limit and len(tasks) >= limit:
+                break
+
+        if limit and len(tasks) >= limit:
+            break
 
     return TaskQueue(tasks)
-
-
-def _get_scenario_metadata(scenario: Any, key: str, default: Any = None) -> Any:
-    """Safely get metadata from an ARE scenario object.
-
-    Args:
-        scenario: ARE BenchmarkScenario object
-        key: Metadata key to retrieve
-        default: Default value if key not found
-
-    Returns:
-        The metadata value or default
-    """
-    metadata = getattr(scenario, "metadata", None)
-    if metadata is None:
-        return default
-    if isinstance(metadata, dict):
-        return metadata.get(key, default)
-    # Try attribute access as fallback
-    return getattr(metadata, key, default)
 
 
 def _convert_gaia2_to_maseval(
     row: Dict[str, Any],
     scenario: Any,
-    oracle_events: List[Any],
     timeout_seconds: Optional[float],
     max_retries: int,
     config_capability: str,
 ) -> Task:
     """Convert Gaia2 scenario to MASEval Task.
 
+    GAIA2 is event-driven: the task query is delivered via the notification
+    system at runtime (first ``send_message_to_agent`` event). There is no
+    static query field on ARE scenario objects.
+    ARE agents/default_agent/are_simulation_main.py:79-102
+
+    Oracle events are generated at runtime by ``preprocess_scenario()`` during
+    environment setup, not at data-load time.
+
     Args:
         row: Raw row from HuggingFace dataset
         scenario: ARE BenchmarkScenario object
-        oracle_events: List of oracle events for evaluation
         timeout_seconds: Maximum execution time per task
         max_retries: Maximum retry attempts
         config_capability: The capability from the HuggingFace config name
@@ -189,11 +178,7 @@ def _convert_gaia2_to_maseval(
     Returns:
         MASEval Task object
     """
-    # Extract query from scenario's task definition
-    query = getattr(scenario, "task_instruction", "")
-
-    # Use capability from config name (which determines which dataset subset was loaded)
-    capability = config_capability
+    scenario_id = getattr(scenario, "scenario_id", None)
 
     # Build environment_data
     # Duration is NOT set here — ARE's preprocess_scenario() sets it during
@@ -201,46 +186,40 @@ def _convert_gaia2_to_maseval(
     # ARE scenarios/config.py:18-19, scenarios/scenario_imported_from_json/utils.py:69-76
     environment_data: Dict[str, Any] = {
         "scenario": scenario,
-        "capability": capability,
-        "universe_id": _get_scenario_metadata(scenario, "universe_id"),
+        "capability": config_capability,
     }
 
-    # Build evaluation_data with oracle events
+    # Evaluation uses scenario.judge.validate() at runtime (created by
+    # preprocess_scenario). No static evaluation data needed at load time.
+    # ARE scenarios/scenario_imported_from_json/utils.py:110-112
     evaluation_data: Dict[str, Any] = {
-        "oracle_events": oracle_events,
-        "judge_type": _get_scenario_metadata(scenario, "judge_type", "graph_per_event"),
+        "judge_type": "graph_per_event",
     }
 
-    # Build metadata
     metadata: Dict[str, Any] = {
-        "scenario_id": row.get("scenario_id") or row.get("id"),
-        "capability": capability,
-        "universe_id": environment_data.get("universe_id"),
+        "scenario_id": scenario_id or row.get("scenario_id") or row.get("id"),
+        "capability": config_capability,
     }
 
-    # Build protocol
     protocol = TaskProtocol(
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
-        tags={"capability": capability, "benchmark": "gaia2"},
+        tags={"capability": config_capability, "benchmark": "gaia2"},
     )
 
-    # Build task kwargs
-    task_kwargs: Dict[str, Any] = {
-        "query": query,
-        "environment_data": environment_data,
-        "evaluation_data": evaluation_data,
-        "user_data": {},  # Gaia2 uses event-based simulation
-        "metadata": metadata,
-        "protocol": protocol,
-    }
-
-    # Include id if provided
     task_id = row.get("id") or row.get("scenario_id")
-    if task_id:
-        task_kwargs["id"] = str(task_id)
+    if not task_id:
+        raise ValueError("HuggingFace row missing both 'id' and 'scenario_id' fields")
 
-    return Task(**task_kwargs)
+    return Task(
+        id=str(task_id),
+        query="",  # Event-driven: real query comes from notification system at runtime
+        environment_data=environment_data,
+        evaluation_data=evaluation_data,
+        user_data={},
+        metadata=metadata,
+        protocol=protocol,
+    )
 
 
 # =============================================================================
@@ -298,6 +277,6 @@ if __name__ == "__main__":
         tasks = load_tasks(limit=5)
         print(f"Loaded {len(tasks)} tasks")
         for task in tasks:
-            print(f"  - {task.id}: {task.query[:50]}...")
+            print(f"  - {task.id} (capability={task.metadata.get('capability')})")
     except ImportError as e:
         print(f"Error: {e}")

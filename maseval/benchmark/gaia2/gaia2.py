@@ -729,15 +729,22 @@ class DefaultGaia2Agent:
     def run(self, query: str) -> str:
         """Execute task and return final response.
 
+        GAIA2 is event-driven: the real task instruction is delivered via the
+        notification system (first ``send_message_to_agent`` event), polled in
+        ``_pull_notifications()`` at the start of each iteration. When the
+        query is empty (normal for GAIA2), we skip the ``[TASK]`` message to
+        avoid wasting a turn on an empty prompt.
+
         Args:
-            query: Task query/instructions
+            query: Task query/instructions (may be empty for GAIA2)
 
         Returns:
             Final text response from agent
         """
         # Match ARE's message format: [TASK]: \n{content}\n
         # ARE base_agent.py:97
-        self._messages.append({"role": "user", "content": f"[TASK]: \n{query}\n"})
+        if query:
+            self._messages.append({"role": "user", "content": f"[TASK]: \n{query}\n"})
         return self._react_loop()
 
     def _pull_notifications(self) -> None:

@@ -12,11 +12,13 @@ Run with::
 
 import pytest
 
+from maseval.benchmark.gaia2.data_loader import VALID_CAPABILITIES
+
 pytestmark = [pytest.mark.live, pytest.mark.slow, pytest.mark.benchmark, pytest.mark.gaia2]
 
 # Minimum expected task count across all capabilities.
 # The GAIA2 dataset organizes tasks by capability (HuggingFace config name).
-# Each capability typically has 20-30+ tasks in the validation split.
+# Each capability typically has ~160 tasks in the validation split.
 MIN_TOTAL_TASKS = 50
 
 
@@ -29,23 +31,17 @@ MIN_TOTAL_TASKS = 50
 def gaia2_tasks():
     """Load GAIA2 validation tasks from HuggingFace across all capabilities.
 
-    The HuggingFace dataset uses capability names as config names (not "validation").
-    This fixture loads tasks from each capability individually and combines them.
+    The HuggingFace dataset uses capability names as config names.
+    This fixture loads all tasks via load_tasks(capability=None).
     Requires ``datasets`` and ``are`` packages.
     """
     pytest.importorskip("datasets", reason="HuggingFace datasets library required")
     pytest.importorskip("are", reason="ARE (meta-agents-research-environments) required")
 
-    from maseval.benchmark.gaia2.data_loader import VALID_CAPABILITIES, load_tasks
+    from maseval.benchmark.gaia2.data_loader import load_tasks
 
-    all_tasks = []
-    for cap in VALID_CAPABILITIES:
-        try:
-            tasks = load_tasks(capability=cap, split="validation")
-            all_tasks.extend(list(tasks))
-        except (ValueError, Exception):
-            # Capability may not be available on HuggingFace yet
-            pass
+    tasks = load_tasks(split="validation")
+    all_tasks = list(tasks)
 
     assert len(all_tasks) > 0, (
         "No GAIA2 tasks loaded from any capability. Check that the HuggingFace dataset is accessible and has validation data."
@@ -80,20 +76,9 @@ class TestGaia2DatasetIntegrity:
             assert "capability" in task.environment_data, f"Task {task.id} missing 'capability' in environment_data"
 
     def test_required_evaluation_fields(self, gaia2_tasks):
-        """Every task has oracle_events in evaluation_data."""
+        """Every task has judge_type in evaluation_data."""
         for task in gaia2_tasks:
-            assert "oracle_events" in task.evaluation_data, f"Task {task.id} missing 'oracle_events' in evaluation_data"
-
-    def test_oracle_events_non_empty(self, gaia2_tasks):
-        """Every task has at least one oracle event."""
-        for task in gaia2_tasks:
-            oracle_events = task.evaluation_data.get("oracle_events", [])
-            assert len(oracle_events) > 0, f"Task {task.id} has 0 oracle events. Oracle events are required for GAIA2 evaluation."
-
-    def test_tasks_have_queries(self, gaia2_tasks):
-        """Every task has a non-empty query (task instruction)."""
-        for task in gaia2_tasks:
-            assert task.query, f"Task {task.id} has empty query"
+            assert "judge_type" in task.evaluation_data, f"Task {task.id} missing 'judge_type' in evaluation_data"
 
     def test_tasks_have_ids(self, gaia2_tasks):
         """Every task has a non-empty id."""
@@ -106,6 +91,20 @@ class TestGaia2DatasetIntegrity:
             scenario = task.environment_data.get("scenario")
             assert scenario is not None, f"Task {task.id} has None scenario. ARE's JsonScenarioImporter may have failed to deserialize."
 
+    def test_scenarios_have_serialized_events(self, gaia2_tasks):
+        """Every scenario has serialized_events (populated from HF JSON)."""
+        for task in gaia2_tasks:
+            scenario = task.environment_data.get("scenario")
+            serialized_events = getattr(scenario, "serialized_events", None)
+            assert serialized_events, f"Task {task.id} has empty serialized_events. The HF JSON data column should contain events."
+
+    def test_scenarios_have_serialized_apps(self, gaia2_tasks):
+        """Every scenario has serialized_apps (the universe state)."""
+        for task in gaia2_tasks:
+            scenario = task.environment_data.get("scenario")
+            serialized_apps = getattr(scenario, "serialized_apps", None)
+            assert serialized_apps, f"Task {task.id} has empty serialized_apps. The HF JSON data column should contain app definitions."
+
 
 # =============================================================================
 # Capability Coverage
@@ -115,18 +114,7 @@ class TestGaia2DatasetIntegrity:
 class TestGaia2CapabilityCoverage:
     """Validate that all declared capabilities can be loaded from HuggingFace."""
 
-    @pytest.mark.parametrize(
-        "capability",
-        [
-            "execution",
-            "search",
-            "adaptability",
-            "time",
-            "ambiguity",
-            "agent2agent",
-            "noise",
-        ],
-    )
+    @pytest.mark.parametrize("capability", list(VALID_CAPABILITIES))
     def test_capability_has_tasks(self, capability):
         """Each VALID_CAPABILITY can be loaded and has tasks on HuggingFace."""
         pytest.importorskip("datasets", reason="HuggingFace datasets library required")

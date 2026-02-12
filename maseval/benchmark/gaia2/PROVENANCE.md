@@ -73,16 +73,15 @@ Scenarios are loaded from HuggingFace:
 https://huggingface.co/datasets/meta-agents-research-environments/gaia2
 ```
 
-| Config      | Description                                | Split      |
-| ----------- | ------------------------------------------ | ---------- |
-| `validation`| Full validation set (all capabilities)     | validation |
-| `execution` | Execution capability only                  | validation |
-| `search`    | Search capability only                     | validation |
-| `adaptability` | Adaptability capability only            | validation |
-| `time`      | Temporal reasoning only                    | validation |
-| `ambiguity` | Ambiguity handling only                    | validation |
-| `agent2agent` | Multi-agent collaboration only           | validation |
-| `noise`     | Noise handling only                        | validation |
+Revision: `78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99`
+
+| Config         | Description                    | Split      |
+| -------------- | ------------------------------ | ---------- |
+| `execution`    | Execution capability only      | validation |
+| `search`       | Search capability only         | validation |
+| `adaptability` | Adaptability capability only   | validation |
+| `time`         | Temporal reasoning only        | validation |
+| `ambiguity`    | Ambiguity handling only        | validation |
 
 ## MASEval-Specific Additions
 

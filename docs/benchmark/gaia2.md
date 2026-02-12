@@ -8,7 +8,7 @@ The **Gaia2 Benchmark** evaluates LLM-based agents on dynamic, multi-step scenar
 
 - **ARE simulation environment** with real-time dynamics and event scheduling
 - **Tool-based time control** via `wait_for_notification()` for temporal reasoning
-- **7 capability dimensions**: execution, search, adaptability, time, ambiguity, agent2agent, noise
+- **5 capability dimensions**: execution, search, adaptability, time, ambiguity
 - **Deterministic evaluation** via GraphPerEventJudge comparing completed vs expected events
 - **12 app tools**: Calendar, Email, Messaging, Contacts, Shopping, Cab, City, FileSystem, Browser, ChatsApp, SystemApp, Timer
 
@@ -97,8 +97,6 @@ Gaia2 tasks are organized by capability dimension:
 | `adaptability` | Adapting to changing requirements                |
 | `time`         | Temporal reasoning tasks                         |
 | `ambiguity`    | Handling ambiguous instructions                  |
-| `agent2agent`  | Multi-agent collaboration                        |
-| `noise`        | Handling noisy inputs                            |
 
 Load specific capabilities:
 

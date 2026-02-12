@@ -13,8 +13,6 @@ Capabilities:
     - adaptability: Adapting to changing requirements
     - time: Temporal reasoning tasks
     - ambiguity: Handling ambiguous instructions
-    - agent2agent: Multi-agent collaboration
-    - noise: Handling noisy inputs
 
 Usage:
     from maseval.benchmark.gaia2 import (
@@ -80,6 +78,7 @@ from maseval.benchmark.gaia2.data_loader import (
     VALID_CAPABILITIES,
     VALID_SPLITS,
     HF_DATASET_ID,
+    HF_DATASET_REVISION,
 )
 
 
@@ -105,4 +104,5 @@ __all__ = [
     "VALID_CAPABILITIES",
     "VALID_SPLITS",
     "HF_DATASET_ID",
+    "HF_DATASET_REVISION",
 ]

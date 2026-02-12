@@ -5,7 +5,6 @@ Note: load_tasks requires ARE package which may not be installed.
 """
 
 import pytest
-from unittest.mock import MagicMock
 
 from maseval import Task, TaskQueue
 
@@ -26,12 +25,26 @@ class TestDataLoaderConstants:
         assert HF_DATASET_ID == "meta-agents-research-environments/gaia2"
 
     def test_valid_capabilities_includes_expected(self):
-        """Test VALID_CAPABILITIES includes expected capabilities."""
+        """Test VALID_CAPABILITIES includes capabilities that exist on HuggingFace."""
         from maseval.benchmark.gaia2.data_loader import VALID_CAPABILITIES
 
-        expected = ["execution", "search", "adaptability", "time", "ambiguity", "agent2agent", "noise"]
+        expected = ["execution", "search", "adaptability", "time", "ambiguity"]
         for cap in expected:
             assert cap in VALID_CAPABILITIES
+
+    def test_valid_capabilities_excludes_nonexistent(self):
+        """Test VALID_CAPABILITIES does not include configs absent from HuggingFace."""
+        from maseval.benchmark.gaia2.data_loader import VALID_CAPABILITIES
+
+        for cap in ("agent2agent", "noise"):
+            assert cap not in VALID_CAPABILITIES
+
+    def test_hf_dataset_revision_is_pinned(self):
+        """Test HF_DATASET_REVISION is set for reproducibility."""
+        from maseval.benchmark.gaia2.data_loader import HF_DATASET_REVISION
+
+        assert HF_DATASET_REVISION, "HF_DATASET_REVISION must be set for reproducibility"
+        assert isinstance(HF_DATASET_REVISION, str)
 
     def test_valid_splits_includes_validation(self):
         """Test VALID_SPLITS includes validation."""
@@ -134,55 +147,3 @@ class TestConfigureModelIds:
 
         assert result is tasks
         assert all(t.evaluation_data.get("model_id") == "test-model" for t in tasks)
-
-
-# =============================================================================
-# Test _get_scenario_metadata helper
-# =============================================================================
-
-
-@pytest.mark.benchmark
-class TestGetScenarioMetadata:
-    """Tests for _get_scenario_metadata helper function."""
-
-    def test_extracts_from_dict_metadata(self):
-        """Test extraction from dict-style metadata."""
-        from maseval.benchmark.gaia2.data_loader import _get_scenario_metadata
-
-        scenario = MagicMock()
-        scenario.metadata = {"capability": "execution", "universe_id": "test"}
-
-        assert _get_scenario_metadata(scenario, "capability") == "execution"
-        assert _get_scenario_metadata(scenario, "universe_id") == "test"
-
-    def test_returns_default_for_missing_key(self):
-        """Test returns default when key not found."""
-        from maseval.benchmark.gaia2.data_loader import _get_scenario_metadata
-
-        scenario = MagicMock()
-        scenario.metadata = {"other": "value"}
-
-        assert _get_scenario_metadata(scenario, "missing") is None
-        assert _get_scenario_metadata(scenario, "missing", "default") == "default"
-
-    def test_handles_none_metadata(self):
-        """Test handles None metadata attribute."""
-        from maseval.benchmark.gaia2.data_loader import _get_scenario_metadata
-
-        scenario = MagicMock()
-        scenario.metadata = None
-
-        assert _get_scenario_metadata(scenario, "any_key") is None
-        assert _get_scenario_metadata(scenario, "any_key", "default") == "default"
-
-    def test_handles_object_metadata(self):
-        """Test handles object-style metadata with attributes."""
-        from maseval.benchmark.gaia2.data_loader import _get_scenario_metadata
-
-        metadata = MagicMock()
-        metadata.capability = "search"
-        scenario = MagicMock()
-        scenario.metadata = metadata
-
-        # Note: dict access will fail, falls back to attribute
-        assert _get_scenario_metadata(scenario, "capability") == "search"

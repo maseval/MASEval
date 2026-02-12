@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tool wrapper (`AREToolWrapper`) for MASEval tracing of ARE tools with simulation time tracking (PR: #26)
   - Data loading utilities: `load_tasks()`, `configure_model_ids()` for loading scenarios from HuggingFace (PR: #26)
   - Metrics: `compute_gaia2_metrics()` for GSR (Goal Success Rate) computation by capability type (PR: #26)
-  - Support for 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, noise (PR: #26)
+  - Support for 5 capability dimensions: execution, search, adaptability, time, ambiguity (PR: #26)
   - Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #26)
 
 - MultiAgentBench Benchmark: Integration with MARBLE MultiAgentBench for evaluating multi-agent collaboration across all 6 paper-defined domains: research, bargaining, coding, database, werewolf, and minecraft (PR: #25)
@@ -97,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Benchmarks**
 
 - GAIA2: Fixed multi-turn scenario evaluation always failing due to missing intermediate judge calls. The evaluator now calls `judge(env)` for each intermediate turn before `judge.validate(env)`, matching ARE's intended evaluation flow. Single-turn scenarios were unaffected. (PR: #PR_NUMBER_PLACEHOLDER)
+- GAIA2: Fixed data loader producing unusable tasks — `VALID_CAPABILITIES` included nonexistent HF configs (`agent2agent`, `noise`), `DEFAULT_CONFIG` referenced nonexistent `"validation"` config, `task.query` used fabricated `task_instruction` field (doesn't exist in ARE), and `oracle_events` were stored but never used. `load_tasks()` now correctly iterates HF capability configs with a pinned revision, leaves `query` empty (GAIA2 is event-driven), and omits oracle events from evaluation_data. (PR: #PR_NUMBER_PLACEHOLDER)
 - Fixed incorrect return type annotations on `DB.load()` and `DB.copy_deep()` in Tau2 benchmark — now use `Self` instead of `"DB"`, so subclass methods return the correct type (PR: #29)
 
 ### Removed
