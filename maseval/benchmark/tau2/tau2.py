@@ -57,9 +57,13 @@ Default Agent Implementation:
     results = benchmark.run(tasks)
 """
 
+import json
 from abc import abstractmethod
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Callable
+
+from pydantic import BaseModel
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
 from maseval.core.user import AgenticLLMUser
@@ -521,6 +525,45 @@ _SYSTEM_PROMPT_TEMPLATE = """
 """.strip()
 
 
+def _to_json_str(resp: Any) -> str:
+    """Convert a tool response to a JSON string.
+
+    Matches the serialization from the original tau2-bench Environment.to_json_str
+    (environment.py:338-366). Pydantic models are serialized via model_dump(),
+    dates via isoformat(), and the result is passed through json.dumps().
+
+    Args:
+        resp: Tool response (Pydantic model, dict, list, primitive, etc.)
+
+    Returns:
+        JSON string representation
+    """
+
+    def _process(obj: Any) -> Any:
+        if isinstance(obj, BaseModel):
+            return obj.model_dump()
+        elif isinstance(obj, str):
+            return obj
+        elif obj is None:
+            return obj
+        elif isinstance(obj, (int, float, bool)):
+            return obj
+        elif isinstance(obj, list):
+            return [_process(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return tuple(_process(item) for item in obj)
+        elif isinstance(obj, dict):
+            return {k: _process(v) for k, v in obj.items()}
+        elif isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        else:
+            return str(obj)
+
+    if isinstance(resp, str):
+        return resp
+    return json.dumps(_process(resp), default=str)
+
+
 class DefaultTau2Agent:
     """Default agent implementation matching original tau2-bench LLMAgent.
 
@@ -666,11 +709,14 @@ class DefaultTau2Agent:
                     tool_result = self._execute_tool_call(tool_call)
 
                     # Add tool result to history
+                    # Serialize via _to_json_str to match original tau2-bench
+                    # (environment.py:408), which uses model_dump() + json.dumps()
+                    # instead of Python's str()/repr().
                     self._messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": tool_call.get("id", ""),
-                            "content": str(tool_result),
+                            "content": _to_json_str(tool_result),
                         }
                     )
 

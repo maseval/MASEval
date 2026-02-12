@@ -98,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - GAIA2: Fixed multi-turn scenario evaluation always failing due to missing intermediate judge calls. The evaluator now calls `judge(env)` for each intermediate turn before `judge.validate(env)`, matching ARE's intended evaluation flow. Single-turn scenarios were unaffected. (PR: #PR_NUMBER_PLACEHOLDER)
 - GAIA2: Fixed data loader producing unusable tasks — `VALID_CAPABILITIES` included nonexistent HF configs (`agent2agent`, `noise`), `DEFAULT_CONFIG` referenced nonexistent `"validation"` config, `task.query` used fabricated `task_instruction` field (doesn't exist in ARE), and `oracle_events` were stored but never used. `load_tasks()` now correctly iterates HF capability configs with a pinned revision, leaves `query` empty (GAIA2 is event-driven), and omits oracle events from evaluation_data. (PR: #PR_NUMBER_PLACEHOLDER)
+- Tau2: Fixed tool result serialization in `DefaultTau2Agent` — now uses `model_dump()` + `json.dumps()` (matching original tau2-bench) instead of Python `str()`/`repr()`, which produced noisy formats with raw enum values, Pydantic repr strings, and `datetime.date(...)` literals that degraded agent accuracy (PR: #PR_NUMBER_PLACEHOLDER)
 - Fixed incorrect return type annotations on `DB.load()` and `DB.copy_deep()` in Tau2 benchmark — now use `Self` instead of `"DB"`, so subclass methods return the correct type (PR: #29)
 
 ### Removed
