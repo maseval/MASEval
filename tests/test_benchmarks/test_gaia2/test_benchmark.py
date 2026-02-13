@@ -112,6 +112,13 @@ class TestGaia2BenchmarkSetupEnvironment:
         # Mock preprocess_scenario as a no-op
         def mock_preprocess_scenario(scenario, judge_config, max_scenario_duration):
             scenario.duration = max_scenario_duration
+            # In real ARE, start_time and time_increment_in_seconds are set from
+            # JSON data before preprocess_scenario runs. Ensure real values so
+            # environment.py guards (e.g. start_time > 0) don't fail on MagicMock.
+            if not isinstance(getattr(scenario, "start_time", None), (int, float)):
+                scenario.start_time = 1728975600.0  # 2024-10-15 07:00:00 UTC
+            if not isinstance(getattr(scenario, "time_increment_in_seconds", None), (int, float)):
+                scenario.time_increment_in_seconds = 1
 
         mock_are.simulation.scenarios.scenario_imported_from_json.utils.preprocess_scenario = mock_preprocess_scenario
 

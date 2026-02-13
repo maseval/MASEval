@@ -138,10 +138,14 @@ class Gaia2Environment(Environment):
         )
 
         # Create ARE environment for the agent run
+        # Match ARE scenario_runner.py:267-282
         config = EnvironmentConfig(
             oracle_mode=False,
             duration=scenario.duration,
+            time_increment_in_seconds=scenario.time_increment_in_seconds,
         )
+        if scenario.start_time and scenario.start_time > 0:
+            config.start_time = scenario.start_time
         self._are_env = AREEnvironment(config)
 
         # Run scenario (registers apps, schedules events, starts event loop)
