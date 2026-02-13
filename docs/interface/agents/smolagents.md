@@ -1,8 +1,30 @@
-# Huggingface `Smolagents`
+# SmolAgents
 
-Adapter implementing commonly used functions for the Huggingface
-[smolagents](https://huggingface.co/docs/smolagents/en/index) package. The
-API will be rendered when the optional dependency is installed in the build
-environment.
+Adapter implementing commonly used functions for the HuggingFace `smolagents` package.
 
-::: maseval.interface.agents.smolagents
+- [Documentation](https://huggingface.co/docs/smolagents/en/index)
+- [Code Repository](https://github.com/huggingface/smolagents)
+
+## Installation
+
+```bash
+pip install maseval[smolagents]
+```
+
+Alternatively, install smolagents directly:
+
+```bash
+pip install smolagents
+```
+
+## API Reference
+
+[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/agents/smolagents.py){ .md-source-file }
+
+::: maseval.interface.agents.smolagents.SmolAgentAdapter
+
+::: maseval.interface.agents.smolagents.SmolAgentLLMUser
+
+[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/agents/smolagents_optional.py){ .md-source-file }
+
+::: maseval.interface.agents.smolagents_optional.SmolAgentUserSimulationInputTool

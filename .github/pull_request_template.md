@@ -19,7 +19,7 @@
 
 ### Documentation
 
-- [ ] Added/updated docstrings for new/modified functions
+- [ ] Added/updated docstrings for new/modified functions as instructed [CONTRIBUTING.md](CONTRIBUTING.md)
 - [ ] Updated relevant documentation in `docs/` (if applicable)
 - [ ] Tag github issue with this PR (if applicable)
 

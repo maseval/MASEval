@@ -8,9 +8,11 @@ MASEval provides message tracing to capture agent conversations during benchmark
 - **Analysis**: Understand agent behavior patterns across tasks
 - **Dataset Creation**: Extract conversations for further analysis or training
 
-!!! note "Tracing vs Logging"
-**Tracing** = Collecting execution data during task runs (messages, tool calls, metrics)  
- **Logging** = Persisting traces and evaluation results to disk/databases after benchmarks complete
+!!! info "Tracing vs Logging"
+
+    **Tracing** = Collecting execution data during task runs (messages, tool calls, metrics)
+
+    **Logging** = Persisting traces and evaluation results to disk/databases after benchmarks complete
 
     This guide covers tracing. Logging functionality for persisting results is planned for future releases.
 

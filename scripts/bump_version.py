@@ -71,7 +71,8 @@ def main():
 
     # Commit and tag
     print("\nCreating git commit and tag...")
-    subprocess.run(["git", "add", str(pyproject_path)], check=True)
+    changelog_path = repo_root / "CHANGELOG.md"
+    subprocess.run(["git", "add", str(pyproject_path), str(changelog_path)], check=True)
     subprocess.run(["git", "commit", "-m", f"Bump version to {new_version}"], check=True)
     subprocess.run(["git", "tag", "-s", f"v{new_version}", "-m", f"Release v{new_version}"], check=True)
 

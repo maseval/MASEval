@@ -6,4 +6,8 @@ Think of it as the experiment controller: you describe _what_ to set up and _how
 
 Each method below is documented starting with the formal method definition and a following `How to use` section that is more educational and should help getting started.
 
-::: maseval.core.benchmark
+[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/core/benchmark.py){ .md-source-file }
+
+::: maseval.core.benchmark.Benchmark
+
+::: maseval.core.benchmark.TaskExecutionStatus

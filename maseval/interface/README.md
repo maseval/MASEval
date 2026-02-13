@@ -12,6 +12,29 @@ Adapters and lightweight integration shims for external libraries live under
   inside functions or methods and raise helpful ImportError messages when missing.
 - Prefer explicit, focused modules over monolithic files that mix many adapters.
 
+### Import patterns
+
+**Typing imports** are fine to use with `TYPE_CHECKING`:
+
+```python
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from smolagents import SomeType  # Only used for type hints
+```
+
+**Classes that inherit from framework types** must go in a separate `<framework>_optional.py` file. This allows the main module to work without the framework installed (for type checking, documentation, and import error messages).
+
+Example: `smolagents.py` contains `SmolAgentAdapter` (inherits from MASEval types), while `smolagents_optional.py` contains `SmolAgentUserSimulationInputTool` (inherits from `smolagents.UserInputTool`).
+
+The main module imports from the optional module lazily:
+
+```python
+def get_tool(self):
+    from maseval.interface.agents.smolagents_optional import SmolAgentUserSimulationInputTool
+    return SmolAgentUserSimulationInputTool(self)
+```
+
 ## Short layout
 
 maseval/interface/

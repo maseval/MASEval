@@ -1,0 +1,16 @@
+Evaluate the code quality based on the following criteria.
+
+Task Description: {task_description}
+Implementation Requirements: {requirements}
+
+Solution:
+{solution}
+
+Rate each dimension on a scale of 1-5:
+- Instruction Following: Does the code fulfill all requirements?
+- Executability: Is the code syntactically correct and executable?
+- Consistency: Is the code consistent in naming, formatting, and logic?
+- Quality: Is the code well-documented, clear, and modular?
+
+Respond with a JSON object:
+{{"instruction_following": <score>, "executability": <score>, "consistency": <score>, "quality": <score>}}

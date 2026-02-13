@@ -1,0 +1,7 @@
+# Ignore generated data files created by the MACS benchmark
+data/*
+
+# Ignore downloaded prompt templates (user.txt, system.txt, issues.txt)
+prompt_templates/user.txt
+prompt_templates/system.txt
+prompt_templates/issues.txt

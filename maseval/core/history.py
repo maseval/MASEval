@@ -274,5 +274,9 @@ class ToolInvocationHistory:
             }
         )
 
+    def __len__(self) -> int:
+        """Get number of invocations."""
+        return len(self.logs)
+
     def to_list(self) -> List[dict]:
         return self.logs

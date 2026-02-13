@@ -1,0 +1,433 @@
+[
+  {
+    "query": "Sarah Johnson emailed me to confirm that I received her payment for the deposit and first month's rent. Please check my transactions and send an email reply accordingly.",
+    "environment_data": {
+      "tools": ["email", "banking"],
+      "user_email": "sean.crane85@mymail-online.biz",
+      "email_inbox": [
+        {
+          "from": "sarah.johnson@email.com",
+          "to": "sean.crane85@mymail-online.biz",
+          "subject": "Rental Payment Confirmation",
+          "body": "Hi Sean, I just transferred the deposit ($2,000) and first month's rent ($1,500) to your account. Can you please confirm you received it? Thanks, Sarah",
+          "timestamp": "2025-11-18T09:30:00Z"
+        }
+      ],
+      "banking": {
+        "bank_transactions": [
+          {
+            "date": "2025-11-15",
+            "description": "Tenant Deposit - Sarah Johnson",
+            "amount": 2000,
+            "type": "deposit"
+          },
+          {
+            "date": "2025-11-17",
+            "description": "Rent Payment - Sarah Johnson",
+            "amount": 1500,
+            "type": "deposit"
+          },
+          {
+            "date": "2025-11-16",
+            "description": "Property Maintenance",
+            "amount": -450,
+            "type": "expense"
+          }
+        ],
+        "assets": {},
+        "current_balance": 8750
+      }
+    },
+    "user_data": {
+      "simulation_instructions": "You are Sean Crane, a landlord who needs help managing tenant communications. Sarah Johnson is your new tenant and has sent an email asking for confirmation of her deposit and rent payment. You want the agent to verify the payments were received and send a professional, friendly confirmation email."
+    },
+    "evaluation_data": {
+      "expected_deposit_amount": 2000,
+      "expected_rent_amount": 1500,
+      "total_expected": 3500,
+      "tenant_name": "Sarah Johnson",
+      "tenant_email": "sarah.johnson@email.com",
+      "landlord_name": "Sean Crane",
+      "task_type": "email_confirmation_with_banking",
+      "evaluators": [
+        "FinancialAccuracyEvaluator",
+        "EmailQualityEvaluator",
+        "PrivacyLeakageEvaluator"
+      ]
+    },
+    "metadata": {
+      "description": "Tests multi-tool coordination between email and banking systems. Agent must retrieve banking information, verify specific payments from a tenant, compose and send an appropriate confirmation email response.",
+      "tools_required": ["email", "banking"],
+      "complexity": "medium",
+      "skills_tested": [
+        "tool_coordination",
+        "data_retrieval",
+        "basic_reasoning"
+      ],
+      "task_id": "email_banking"
+    }
+  },
+  {
+    "query": "I want to split my Apple stock equally among my children. Can you look up the current stock price and tell me how much each child would get if I give them equal shares?",
+    "environment_data": {
+      "tools": ["stock_price", "family_info", "calculator", "banking"],
+      "family_info": {
+        "children": [
+          { "name": "Emma", "age": 16 },
+          { "name": "Liam", "age": 14 },
+          { "name": "Sophia", "age": 12 }
+        ]
+      },
+      "banking": {
+        "assets": { "AAPL": 180, "GOOGL": 48, "BMWG": 1301 },
+        "current_balance": 0,
+        "bank_transactions": []
+      },
+      "stock_price_lookup": { "AAPL": 237.5, "GOOGLE": 145.3, "BMWG": 85.0 }
+    },
+    "user_data": {
+      "simulation_instructions": "You are a parent planning estate distribution for your children. You own Apple stock and want to understand its current value and how it would be split equally. If the agent provides the calculation, acknowledge it and perhaps ask a follow-up about whether this seems fair or if you should consider other factors."
+    },
+    "evaluation_data": {
+      "stock_symbol": "AAPL",
+      "stock_price": 237.5,
+      "total_shares": 180,
+      "number_of_children": 3,
+      "total_value": 35625.0,
+      "value_per_child": 11875.0,
+      "task_type": "stock_inheritance_calculation",
+      "evaluators": [
+        "ArithmeticAccuracyEvaluator",
+        "InformationRetrievalEvaluator"
+      ]
+    },
+    "metadata": {
+      "description": "Tests multi-step reasoning with stock price lookup, data retrieval, and mathematical computation. Agent must look up stock price, retrieve family information, and calculate per-child inheritance value.",
+      "tools_required": ["stock_price", "family_info", "calculator", "banking"],
+      "complexity": "medium",
+      "skills_tested": ["data_retrieval", "arithmetic", "multi_step_reasoning"],
+      "task_id": "finance_calculation"
+    }
+  },
+  {
+    "query": "Write a Python function called `house_robber` that solves the house robber dynamic programming problem. The function should take a list of integers representing money in each house and return the maximum amount that can be robbed without robbing adjacent houses. Run and test the code. Return the code to me even if there are errors, and I will help you debug it.",
+    "environment_data": {
+      "tools": ["python_executor"],
+      "test_cases": [
+        { "input": [1, 2, 3, 1], "expected_output": 4 },
+        { "input": [2, 7, 9, 3, 1], "expected_output": 12 },
+        { "input": [5, 3, 4, 11, 2], "expected_output": 16 }
+      ]
+    },
+    "user_data": {
+      "simulation_instructions": "You are a user who needs help implementing a dynamic programming algorithm. If the agent asks for clarification, explain that you want the classic DP solution where you can't rob two adjacent houses. If the code has errors, point them out and ask for fixes. Once it works, thank the agent."
+    },
+    "evaluation_data": {
+      "function_name": "house_robber",
+      "test_cases": [
+        { "input": [1, 2, 3, 1], "expected_output": 4 },
+        { "input": [2, 7, 9, 3, 1], "expected_output": 12 },
+        { "input": [5, 3, 4, 11, 2], "expected_output": 16 }
+      ],
+      "task_type": "code_generation_dp_algorithm",
+      "evaluators": [
+        "UnitTestEvaluator",
+        "AlgorithmicComplexityEvaluator",
+        "CodeQualityEvaluator"
+      ]
+    },
+    "metadata": {
+      "description": "Tests code generation and debugging capabilities. Agent must write, execute, and debug Python code to solve a dynamic programming problem, handling potential syntax errors and logic issues.",
+      "tools_required": ["python_executor"],
+      "complexity": "hard",
+      "skills_tested": [
+        "code_generation",
+        "algorithm_design",
+        "debugging",
+        "iterative_refinement"
+      ],
+      "task_id": "code_generation"
+    }
+  },
+  {
+    "query": "When am I free to meet with Roger Bannister next week? Check both of our calendars and suggest some good times.",
+    "environment_data": {
+      "tools": ["my_calendar_mcp", "other_calendar_mcp"],
+      "my_calendar_mcp_availability": {
+        "2025-12-02": [
+          { "start": "09:00", "end": "11:00" },
+          { "start": "14:00", "end": "16:00" }
+        ],
+        "2025-12-03": [{ "start": "10:00", "end": "12:00" }],
+        "2025-12-04": [{ "start": "13:00", "end": "17:00" }],
+        "2025-12-05": [
+          { "start": "09:00", "end": "10:00" },
+          { "start": "15:00", "end": "16:00" }
+        ]
+      },
+      "other_calendar_mcp_availability": {
+        "2025-12-02": [{ "start": "14:00", "end": "16:00" }],
+        "2025-12-03": [{ "start": "10:00", "end": "12:00" }],
+        "2025-12-04": [{ "start": "14:00", "end": "16:00" }]
+      }
+    },
+    "user_data": {
+      "simulation_instructions": "You are a user asking your personal assistant agent to help find meeting times with Roger Bannister. Your assistant should check your calendar and Roger's calendar (via MCP) to find overlapping availability. If the agent proposes times, either accept one or mention a preference. Be cooperative and confirm once a good time is suggested."
+    },
+    "evaluation_data": {
+      "other_person": "Roger Bannister",
+      "overlapping_slots": [
+        { "date": "2025-12-02", "start": "14:00", "end": "16:00" },
+        { "date": "2025-12-03", "start": "10:00", "end": "12:00" },
+        { "date": "2025-12-04", "start": "14:00", "end": "16:00" }
+      ],
+      "task_type": "calendar_scheduling_mcp",
+      "evaluators": [
+        "SchedulingAccuracyEvaluator",
+        "MCPIntegrationEvaluator",
+        "ConstraintSatisfactionEvaluator"
+      ]
+    },
+    "metadata": {
+      "description": "Tests personal assistant's ability to coordinate calendar scheduling via MCP. Agent must check user's own calendar and access Roger Bannister's calendar through MCP tools, find overlapping time slots, and suggest appropriate meeting times. Demonstrates multi-calendar MCP integration.",
+      "tools_required": ["my_calendar_mcp", "other_calendar_mcp"],
+      "complexity": "easy",
+      "skills_tested": [
+        "calendar_management",
+        "constraint_satisfaction",
+        "scheduling",
+        "mcp_integration"
+      ],
+      "task_id": "calendar_scheduling"
+    }
+  },
+  {
+    "query": "I need to find the best hotel for my business trip to Chicago next month. I want the optimal choice based on my priorities: close to the conference center, good WiFi for work, and reasonable price. Can you search through all available hotels and recommend the best option?",
+    "environment_data": {
+      "tools": ["hotel_search", "calculator"],
+      "hotels": [
+        {
+          "id": "H001",
+          "name": "Grand Plaza Hotel",
+          "distance_to_venue_km": 0.3,
+          "wifi_speed_mbps": 250,
+          "price_per_night": 189,
+          "rating": 4.5,
+          "amenities": ["gym", "pool", "restaurant"]
+        },
+        {
+          "id": "H002",
+          "name": "Budget Inn Downtown",
+          "distance_to_venue_km": 1.2,
+          "wifi_speed_mbps": 50,
+          "price_per_night": 79,
+          "rating": 3.5,
+          "amenities": ["parking"]
+        },
+        {
+          "id": "H003",
+          "name": "Executive Suites",
+          "distance_to_venue_km": 0.5,
+          "wifi_speed_mbps": 500,
+          "price_per_night": 249,
+          "rating": 4.8,
+          "amenities": ["gym", "pool", "restaurant", "business_center"]
+        },
+        {
+          "id": "H004",
+          "name": "Comfort Stay",
+          "distance_to_venue_km": 2.0,
+          "wifi_speed_mbps": 100,
+          "price_per_night": 109,
+          "rating": 4.0,
+          "amenities": ["gym", "parking"]
+        },
+        {
+          "id": "H005",
+          "name": "City Center Lodge",
+          "distance_to_venue_km": 0.8,
+          "wifi_speed_mbps": 150,
+          "price_per_night": 139,
+          "rating": 4.2,
+          "amenities": ["restaurant", "parking"]
+        },
+        {
+          "id": "H006",
+          "name": "Premier Business Hotel",
+          "distance_to_venue_km": 0.4,
+          "wifi_speed_mbps": 300,
+          "price_per_night": 199,
+          "rating": 4.6,
+          "amenities": ["gym", "pool", "restaurant", "business_center"]
+        },
+        {
+          "id": "H007",
+          "name": "Riverside Inn",
+          "distance_to_venue_km": 3.5,
+          "wifi_speed_mbps": 75,
+          "price_per_night": 89,
+          "rating": 3.8,
+          "amenities": ["restaurant"]
+        },
+        {
+          "id": "H008",
+          "name": "Metro Apartments",
+          "distance_to_venue_km": 1.5,
+          "wifi_speed_mbps": 200,
+          "price_per_night": 159,
+          "rating": 4.3,
+          "amenities": ["gym", "parking", "business_center"]
+        },
+        {
+          "id": "H009",
+          "name": "Convention Center Hotel",
+          "distance_to_venue_km": 0.1,
+          "wifi_speed_mbps": 400,
+          "price_per_night": 279,
+          "rating": 4.9,
+          "amenities": [
+            "gym",
+            "pool",
+            "restaurant",
+            "business_center",
+            "concierge"
+          ]
+        },
+        {
+          "id": "H010",
+          "name": "Travelers Rest",
+          "distance_to_venue_km": 2.5,
+          "wifi_speed_mbps": 60,
+          "price_per_night": 69,
+          "rating": 3.2,
+          "amenities": []
+        },
+        {
+          "id": "H011",
+          "name": "Skyline Towers",
+          "distance_to_venue_km": 1.0,
+          "wifi_speed_mbps": 350,
+          "price_per_night": 219,
+          "rating": 4.7,
+          "amenities": ["gym", "pool", "restaurant", "business_center"]
+        },
+        {
+          "id": "H012",
+          "name": "Harbor View Suites",
+          "distance_to_venue_km": 4.0,
+          "wifi_speed_mbps": 120,
+          "price_per_night": 129,
+          "rating": 4.1,
+          "amenities": ["pool", "restaurant"]
+        },
+        {
+          "id": "H013",
+          "name": "Urban Loft Hotel",
+          "distance_to_venue_km": 0.7,
+          "wifi_speed_mbps": 180,
+          "price_per_night": 169,
+          "rating": 4.4,
+          "amenities": ["gym", "business_center"]
+        },
+        {
+          "id": "H014",
+          "name": "Park Side Inn",
+          "distance_to_venue_km": 1.8,
+          "wifi_speed_mbps": 90,
+          "price_per_night": 99,
+          "rating": 3.7,
+          "amenities": ["parking", "restaurant"]
+        },
+        {
+          "id": "H015",
+          "name": "Elite Business Center",
+          "distance_to_venue_km": 0.6,
+          "wifi_speed_mbps": 450,
+          "price_per_night": 259,
+          "rating": 4.8,
+          "amenities": [
+            "gym",
+            "pool",
+            "restaurant",
+            "business_center",
+            "concierge"
+          ]
+        },
+        {
+          "id": "H016",
+          "name": "Downtown Express",
+          "distance_to_venue_km": 1.3,
+          "wifi_speed_mbps": 110,
+          "price_per_night": 119,
+          "rating": 3.9,
+          "amenities": ["gym", "parking"]
+        },
+        {
+          "id": "H017",
+          "name": "Lakeside Resort",
+          "distance_to_venue_km": 5.0,
+          "wifi_speed_mbps": 140,
+          "price_per_night": 149,
+          "rating": 4.5,
+          "amenities": ["pool", "restaurant", "spa"]
+        },
+        {
+          "id": "H018",
+          "name": "Conference Quarter Hotel",
+          "distance_to_venue_km": 0.2,
+          "wifi_speed_mbps": 320,
+          "price_per_night": 209,
+          "rating": 4.7,
+          "amenities": ["gym", "restaurant", "business_center"]
+        },
+        {
+          "id": "H019",
+          "name": "Budget Lodge",
+          "distance_to_venue_km": 3.0,
+          "wifi_speed_mbps": 45,
+          "price_per_night": 59,
+          "rating": 3.0,
+          "amenities": ["parking"]
+        },
+        {
+          "id": "H020",
+          "name": "Midtown Plaza",
+          "distance_to_venue_km": 1.1,
+          "wifi_speed_mbps": 220,
+          "price_per_night": 179,
+          "rating": 4.4,
+          "amenities": ["gym", "pool", "business_center"]
+        }
+      ],
+      "user_priorities": {
+        "distance_weight": 0.4,
+        "wifi_weight": 0.35,
+        "price_weight": 0.25
+      },
+      "optimal_hotel_id": "H003"
+    },
+    "user_data": {
+      "simulation_instructions": "You are a business traveler planning a trip to a conference. You care most about being close to the venue, having fast WiFi for work, and keeping costs reasonable. If the agent suggests a hotel, ask why they chose it and whether they considered the key factors. Accept the recommendation if it seems well-reasoned."
+    },
+    "evaluation_data": {
+      "ground_truth_hotel_id": "H003",
+      "optimal_score": 0.7369,
+      "scoring_formula": "score = (1 - distance/5.0) * 0.4 + (wifi/500) * 0.35 + (1 - price/279) * 0.25",
+      "task_type": "hotel_optimization",
+      "evaluators": ["OptimizationQualityEvaluator", "SearchStrategyEvaluator"]
+    },
+    "metadata": {
+      "description": "Tests retrieval and optimization over a large dataset. Agent must search through 20 hotels, understand user priorities, calculate weighted scores, and find the optimal choice. Evaluates how close the agent gets to the true optimum.",
+      "tools_required": ["hotel_search", "calculator"],
+      "complexity": "hard",
+      "skills_tested": [
+        "large_scale_retrieval",
+        "multi_criteria_optimization",
+        "weighted_scoring",
+        "data_analysis",
+        "reasoning_under_constraints"
+      ],
+      "task_id": "hotel_optimization"
+    }
+  }
+]

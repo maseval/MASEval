@@ -20,6 +20,50 @@ MASEval is an evaluation library that provides a unified interface for benchmark
 
 Analogous to pytest for testing or MLflow for ML experimentation, MASEval focuses exclusively on evaluation infrastructure. It does not implement agents, define multi-agent communication protocols, or turn LLMs into agents. Instead, it wraps existing agent systems via simple adapters, orchestrates the evaluation lifecycle (setup, execution, measurement, teardown), and provides lifecycle hooks for tracing, logging, and metrics collection. This separation allows researchers to compare different agent architectures apples-to-apples across frameworks, while maintaining full control over their agent implementations.
 
+## Why MASEval?
+
+Compare multi-agent evaluation frameworks across key capabilities.
+
+| Library           | Multi-Agent | System Evaluation | Agent-Agnostic | Benchmarks | Multi-turn User | No Lock-In | BYO | State-Action Eval | Error Attr | Lightweight | Project Maturity | Sandboxed Environment |
+| ----------------- | :---------: | :---------------: | :------------: | :--------: | :-------------: | :--------: | :-: | :---------------: | :--------: | :---------: | :--------------: | :-------------------: |
+| **MASEval**       |     ✅      |        ✅         |       ✅       |     ✅     |       ✅        |     ✅     | 🟢  |        ✅         |     ✅     |     ✅      |        ✅        |          🟢           |
+| **HAL Harness**   |     🟡      |        ✅         |       ✅       |     ✅     |       🟡        |     ✅     | 🟡  |        🟡         |     ❌     |     ✅      |        🟡        |          ✅           |
+| **AnyAgent**      |     🟡      |        ✅         |       ✅       |     ❌     |       🟡        |     ✅     | 🟢  |        🟡         |     ❌     |     ✅      |        ✅        |          ❌           |
+| **Inspect-AI**    |     🟡      |        ✅         |       🟡       |     ✅     |       🟡        |     ✅     | 🟡  |        🟡         |     ❌     |     🟡      |        ✅        |          ✅           |
+| **MLflow GenAI**  |     🟡      |        🟡         |       🟢       |     ❌     |       🟡        |     ✅     | 🟢  |        ✅         |     ❌     |     🟡      |        ✅        |          🟡           |
+| **LangSmith**     |     🟡      |        🟡         |       🟡       |     ❌     |       ✅        |     ❌     | 🟡  |        ✅         |     ❌     |     ✅      |        ✅        |          ❌           |
+| **OpenCompass**   |     ❌      |        🟡         |       ❌       |     ✅     |       🟡        |     ✅     | 🟡  |        🟡         |     ❌     |     ❌      |        ✅        |          🟡           |
+| **AgentGym**      |     ❌      |        ❌         |       ❌       |     ✅     |       🟡        |     ✅     | 🟢  |        🟡         |     ❌     |     ❌      |        🟡        |          🟡           |
+| **Arize Phoenix** |     🟡      |        ❌         |       🟡       |     ❌     |       ❌        |     🟡     | 🟢  |        ✅         |     ❌     |     🟡      |        ✅        |          ❌           |
+| **MARBLE**        |     ✅      |        ❌         |       ❌       |     ✅     |       ❌        |     ✅     | ❌  |        🟡         |     ?      |     🟡      |        🟡        |          🟡           |
+| **TruLens**       |     🟡      |        ❌         |       🟡       |     ❌     |       ❌        |     ✅     | 🟡  |        🟢         |     ❌     |     🟡      |        ✅        |          ❌           |
+| **AgentBeats**    |     🟡      |        ❌         |       🟡       |     ❌     |       ❌        |     🟡     | 🟡  |        🟡         |     ?      |     ✅      |        🟡        |          🟡           |
+| **DeepEval**      |     🟡      |        ❌         |       🟡       |     ❌     |       🟡        |     🟡     | 🟡  |        🟡         |     ❌     |     🟡      |        ✅        |          ❌           |
+| **MCPEval**       |     ❌      |        ❌         |       ❌       |     ✅     |       ❌        |     ✅     | 🟡  |        🟡         |     ❌     |     🟡      |        🟡        |          ❌           |
+| **Galileo**       |     🟡      |        ❌         |       🟡       |     ❌     |       ❌        |     ❌     | 🟡  |        🟡         |     ❌     |     🟡      |        ✅        |          ❌           |
+
+**✅** Full/Native · **🟢** Flexible for BYO · **🟡** Partial/Limited · **❌** Not possible
+
+<details>
+<summary>Expand for Column Explanation</summary>
+
+| Column                | Feature                      | One-Liner                                                                                                          |
+| --------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Multi-Agent**       | Multi-Agent Native           | Native orchestration with per-agent tracing, independent message histories, and explicit coordination patterns.    |
+| **System Evaluation** | System-Level Comparison      | Compare different framework implementations on the same benchmark (not just swapping LLMs).                        |
+| **Agent Agnostic**    | Agent Framework Agnostic     | Evaluate agents from any framework via thin adapters without requiring protocol adoption or code recreation.       |
+| **Benchmarks**        | Pre-Implemented Benchmarks   | Ships complete, ready-to-run benchmarks with environments, tools, and evaluators (not just templates).             |
+| **Multi-turn User**   | User-Agent Multi-turn        | First-class user simulation with personas, stop tokens, and tool access for realistic multi-turn conversations.    |
+| **No Lock-In**        | No Vendor Lock-In            | Fully open-source, works offline, permissive license (MIT/Apache), no mandatory cloud services or telemetry.       |
+| **BYO**               | BYO Philosophy               | Bring your own logging, agents, environments, and tools — flexibility over opinionated defaults.                   |
+| **State-Action Eval** | Trace-First Evaluation       | Evaluate intermediate steps and tool usage patterns via trace filtering, not just final output scoring.            |
+| **Error Attr**        | Structured Error Attribution | Structured exceptions distinguish between different failure for fair scoring (`AgentError` vs `EnvironmentError`). |
+| **Lightweight**       | Lightweight                  | Minimal dependencies, small codebase (~20k LOC), quick time to first evaluation (~5-15 min).                       |
+| **Project Maturity**  | Professional Tooling         | Published on PyPI, CI/CD, good test coverage, structured logging, active maintenance, excellent docs.              |
+| **Sandbox**           | Sandboxed Execution          | Built-in Docker/K8s/VM isolation for safe code execution (or BYO sandbox via abstract Environment).                |
+
+</details>
+
 ## Core Principles:
 
 - **Evaluation, Not Implementation:** MASEval provides the evaluation infrastructure—you bring your agent implementation. Whether you've built agents with AutoGen, LangChain, custom code, or direct LLM calls, MASEval wraps them via simple adapters and runs them through standardized benchmarks.
@@ -46,16 +90,23 @@ The package is published on PyPI as `maseval`. To install the stable release for
 pip install maseval
 ```
 
-If you want the optional integrations used by the examples (smolagents, langchain, etc.), install the examples extras:
+If you want the optional integrations used by the examples (smolagents, langgraph, llamaindex, etc.), install the examples extras:
 
 ```bash
 pip install "maseval[examples]"
 ```
 
-Or install only the smolagents integration:
+Or install specific framework integrations:
 
 ```bash
+# Smolagents
 pip install "maseval[smolagents]"
+
+# LangGraph
+pip install "maseval[langgraph]"
+
+# LlamaIndex
+pip install "maseval[llamaindex]"
 ```
 
 ## Example
@@ -64,7 +115,7 @@ Examples are available in the [Documentation](https://maseval.readthedocs.io/en/
 
 ## Contribute
 
-We welcome any contributions. Please read the [CONTRIBUTING.md](https://github.com/parameterlab/MASEval/tree/fix-porting-issue?tab=contributing-ov-file) file to learn more!
+We welcome any contributions. Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file to learn more!
 
 ## Benchmarks
 

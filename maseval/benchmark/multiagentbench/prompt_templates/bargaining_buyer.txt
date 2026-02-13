@@ -1,0 +1,14 @@
+Evaluate the buyer's negotiation performance.
+
+Task: {task}
+
+Negotiation Result:
+{result}
+
+Rate each dimension on a scale of 1-5:
+- Effectiveness of Strategies: How well did the buyer negotiate?
+- Progress and Outcome: Did the buyer achieve a favorable outcome?
+- Interaction Dynamics: How well did the buyer engage with the seller?
+
+Respond with a JSON object:
+{{"effectiveness_of_strategies": <score>, "progress_and_outcome": <score>, "interaction_dynamics": <score>}}

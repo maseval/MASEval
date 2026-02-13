@@ -51,11 +51,14 @@ class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin):
         Args:
             query: The user query/prompt to send to the agent
 
+        Common return patterns:
+
+        - String containing the final answer
+        - Dict with structured output
+        - Any framework-specific result object
+
         Returns:
-            The agent's final answer/result. Common patterns:
-            - String containing the final answer
-            - Dict with structured output
-            - Any framework-specific result object
+            The agent's final answer/result.
 
         Example:
             ```python
@@ -101,28 +104,31 @@ class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin):
         """
         return self.messages if self.messages is not None else MessageHistory()
 
-    def gather_traces(self) -> dict[str, Any]:
+    def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces from this agent.
 
         Collects comprehensive information about the agent's execution including
         message history, callback information, and agent metadata.
 
+        Output fields:
+
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp
+        - `name` - Agent name
+        - `agent_type` - Underlying agent framework class name
+        - `message_count` - Number of messages in history
+        - `messages` - Full message history as list of dicts
+        - `callbacks` - List of callback class names attached to this agent
+
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - name: Agent name
-            - agent_type: Underlying agent framework class name
-            - message_count: Number of messages in history
-            - messages: Full message history as list of dicts
-            - callbacks: List of callback class names attached to this agent
+            Dictionary containing agent execution traces.
 
         How to use:
             This method is automatically called by Benchmark during trace collection.
             Framework-specific adapters can extend this to include additional data:
 
             ```python
-            def gather_traces(self) -> dict[str, Any]:
+            def gather_traces(self) -> Dict[str, Any]:
                 return {
                     **super().gather_traces(),
                     "framework_specific_metric": self.agent.some_metric
@@ -140,27 +146,30 @@ class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin):
             "logs": self.logs,
         }
 
-    def gather_config(self) -> dict[str, Any]:
+    def gather_config(self) -> Dict[str, Any]:
         """Gather configuration from this agent.
 
         Collects comprehensive configuration information about the agent including
         its name, type, and callback configuration.
 
+        Output fields:
+
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp
+        - `name` - Agent name
+        - `agent_type` - Underlying agent framework class name
+        - `adapter_type` - The specific adapter class (e.g., `SmolAgentAdapter`)
+        - `callbacks` - List of callback class names attached to this agent
+
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - name: Agent name
-            - agent_type: Underlying agent framework class name
-            - adapter_type: The specific adapter class (e.g., SmolAgentAdapter)
-            - callbacks: List of callback class names attached to this agent
+            Dictionary containing agent configuration.
 
         How to use:
             This method is automatically called by Benchmark during config collection.
             Framework-specific adapters can extend this to include additional data:
 
             ```python
-            def gather_config(self) -> dict[str, Any]:
+            def gather_config(self) -> Dict[str, Any]:
                 return {
                     **super().gather_config(),
                     "framework_specific_setting": self.agent.some_setting

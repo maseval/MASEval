@@ -1,0 +1,29 @@
+[
+  {
+    "task_id": 0,
+    "task_description": "Email + Banking coordination",
+    "agent_type": "multi",
+    "primary_agent_id": "main_agent",
+
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Task Orchestrator",
+        "agent_instruction": "You coordinate specialized agents to complete user tasks. Delegate to appropriate specialists and synthesize their outputs into a complete response.",
+        "tools": []
+      },
+      {
+        "agent_id": "banking_specialist",
+        "agent_name": "Banking Specialist",
+        "agent_instruction": "You handle banking and financial data retrieval. Analyze transactions and account information, then report findings clearly and accurately.",
+        "tools": ["banking"]
+      },
+      {
+        "agent_id": "email_specialist",
+        "agent_name": "Email Specialist",
+        "agent_instruction": "You handle email operations. Manage emails and compose professional, friendly communications as needed.",
+        "tools": ["email"]
+      }
+    ]
+  }
+]

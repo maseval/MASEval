@@ -6,7 +6,7 @@ with MASEval. Each integration is optional and requires installing the correspon
 Organization:
 - inference/: Model inference adapters (OpenAI, Google, HuggingFace, etc.)
 - agents/: Agent framework adapters (smolagents, langgraph, etc.)
-- logging/: Logging platform adapters (wandb, neptune, langfuse, etc.)
+- logging/: Logging platform adapters (wandb, langfuse, etc.)
 
 Canonical rules:
 - Keep adapters thin: translate between MASEval internal abstractions and the external API.

@@ -5,4 +5,4 @@ This package contains adapters for different logging platforms.
 
 __all__ = []
 
-# TODO: Add wandb, neptune, langfuse adapters
+# TODO: Add wandb, langfuse adapters

@@ -36,7 +36,6 @@
   border-bottom: 1px solid
     color-mix(in srgb, var(--maseval-teal-primary) 25%, transparent);
   margin-bottom: 0.5rem;
-  font-size: 1.1rem;
 }
 
 /* Make the object name (like class names) more prominent */
@@ -44,14 +43,12 @@
 .doc .doc-class-name {
   font-weight: 700;
   color: var(--maseval-teal-dark);
-  font-size: 1.15rem;
 }
 
 /* Cleaner label chips with teal theme */
 .doc-label {
   border-radius: 8px;
   padding: 2px 6px;
-  font-size: 0.8rem;
   background-color: color-mix(
     in srgb,
     var(--maseval-teal-primary) 12%,
@@ -106,7 +103,6 @@
 
 /* Smaller signature font in code boxes */
 .doc-signature pre code {
-  font-size: 0.825rem !important;
   line-height: 1.4;
 }
 
@@ -119,50 +115,14 @@
   margin-bottom: 0.3rem;
 }
 
-/* Increase font size in parameter tables/details */
-.doc-parameters,
-.doc-other-parameters,
-.doc-returns,
-.doc-raises {
-  font-size: 0.85rem !important;
-}
-
-/* Unified font size for all code elements */
-.md-typeset code {
-  font-size: 0.85rem !important;
-}
-
-.md-typeset pre code {
-  font-size: 0.85rem !important;
-}
-
-/* Subtle teal-themed code background */
-.md-typeset code:not(.doc-symbol-heading) {
+/* Subtle teal-themed inline code background */
+.md-typeset code:not(pre code):not(.doc-symbol-heading) {
   background: color-mix(in srgb, var(--maseval-teal-primary) 8%, transparent);
   padding: 0.05rem 0.3rem;
   border-radius: 4px;
   color: var(--maseval-teal-dark);
   border: 1px solid
     color-mix(in srgb, var(--maseval-teal-primary) 15%, transparent);
-}
-
-/* Normalize font size in example code blocks */
-.doc-contents .highlight pre,
-.doc-contents .highlight code,
-.doc-contents pre code {
-  font-size: 0.85rem !important;
-}
-
-/* Normalize text size in docstring content - examples, descriptions */
-.doc-contents .md-typeset,
-.doc-contents p,
-.doc-contents li {
-  font-size: 0.85rem !important;
-}
-
-/* Ensure admonitions (note, warning boxes) have unified text size */
-.doc-contents .admonition {
-  font-size: 0.85rem !important;
 }
 
 /* More compact vertical rhythm in docstrings */
@@ -183,7 +143,6 @@
 
 /* Reduce section heading size in docstrings */
 .doc-section-title {
-  font-size: 0.95rem;
   font-weight: 600;
   color: var(--maseval-teal-primary);
   margin-top: 0.8rem;
@@ -197,4 +156,17 @@
 .md-typeset ul,
 .md-typeset ol {
   margin: 0.6rem 0 0.6rem 1.2rem;
+}
+
+/* Source file link - floats right aligned with class headings */
+.md-source-file {
+  float: right;
+  margin-left: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--maseval-slate);
+}
+
+.md-source-file:hover {
+  color: var(--maseval-teal-primary);
 }

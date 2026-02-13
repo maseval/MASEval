@@ -26,6 +26,27 @@ jobs:
 
       - name: Verify version matches tag
         run: |
+          # Check if this is a tag-triggered run
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "============================================================"
+            echo "ERROR: This workflow must be triggered from a version tag"
+            echo "============================================================"
+            echo ""
+            echo "Current ref: $GITHUB_REF"
+            echo ""
+            echo "How to fix:"
+            echo "  Option 1: Push a tag to trigger automatically"
+            echo "    git tag v0.X.X"
+            echo "    git push origin v0.X.X"
+            echo ""
+            echo "  Option 2: Use workflow_dispatch from a tag"
+            echo "    1. Go to Actions → 'Release to PyPI' → 'Run workflow'"
+            echo "    2. In 'Use workflow from' dropdown, select the TAG (e.g., v0.2.0)"
+            echo "       NOT a branch like 'main'"
+            echo "    3. Click 'Run workflow'"
+            echo "============================================================"
+            exit 1
+          fi
           TAG_VERSION=${GITHUB_REF#refs/tags/v}
           PYPROJECT_VERSION=$(uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
 

@@ -2,26 +2,61 @@ site_name: Multi-Agent System Evaluation
 site_description: "System-level multi-agent benchmarks"
 docs_dir: docs
 site_dir: site
+site_author: ParameterLab
+site_url: https://maseval.readthedocs.io/en/stable/
+repo_name: parameterlab/maseval
+repo_url: https://github.com/parameterlab/maseval
+edit_uri: edit/main/docs/
 
 theme:
   name: material
   logo: assets/logo-short.svg
+  favicon: assets/favicon.svg
   palette:
-    primary: teal
-    accent: teal
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
   features:
     - navigation.sections
     - content.code.copy
+    - navigation.indexes
+
 extra_css:
   - css/mkdocstrings.css
 
 markdown_extensions:
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 plugins:
   - search
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: date
   - mkdocs-jupyter:
       include_source: True
       execute: False
@@ -39,46 +74,62 @@ plugins:
             separate_signature: true
             # Keep type paths brief in signatures
             annotations_path: brief
-            show_root_full_path: true
+            show_root_full_path: false
             show_root_heading: true
             type_parameter_headings: true
             show_source: false
+            inherited_members: true # Include inherited members in the documentation
 
             # Hide private members (methods/attributes starting with _)
             extra:
               show_private: false
 
 nav:
+  - Home: index.md
   - Getting Started:
-      - Home: index.md
       - Quickstart: getting-started/quickstart.md
       - FAQ: getting-started/faq.md
   - Guides:
+      - guides/index.md
       - Message Tracing: guides/message-tracing.md
+      - Configuration Gathering: guides/config-gathering.md
+      - Exception Handling: guides/exception-handling.md
+      - Seeding: guides/seeding.md
   - Examples:
-      - Example 1: examples/example1.md
-      - Example 2: examples/example2.md
-      # - AWS Collaboration Benchmark: examples/amazon_collab.ipynb
+      - examples/index.md
+      - Tiny Tutorial: examples/tutorial.ipynb
+      - 5-A-Day Benchmark: examples/five_a_day_benchmark.ipynb
   - Reference:
+      - reference/index.md
       - Core:
           - Agent: reference/agent.md
           - Benchmark: reference/benchmark.md
           - Callback: reference/callback.md
           - Environment: reference/environment.md
           - Evaluator: reference/evaluator.md
+          - Exceptions: reference/exceptions.md
           - History: reference/history.md
           - Model: reference/model.md
+          - Seeding: reference/seeding.md
           - Simulator: reference/simulator.md
-          - Task: reference/task.md
+          - Tasks: reference/task.md
           - User: reference/user.md
+          - Utilities: reference/utilities.md
       - Interface:
           - Agents:
-              - SmolAgents: interface/agents/smolagents.md
+              - CAMEL-AI: interface/agents/camel.md
               - LangGraph: interface/agents/langgraph.md
+              - LlamaIndex: interface/agents/llamaindex.md
+              - SmolAgents: interface/agents/smolagents.md
           - Models:
-              - OpenAI: interface/inference/openai.md
-              - HuggingFace: interface/inference/huggingface.md
+              - Anthropic: interface/inference/anthropic.md
               - Google GenAI: interface/inference/google_genai.md
-      # - Benchmarks:
-      # - GAIA: benchmarks/gaia.md
-      # - AgentBench: benchmarks/agentbench.md
+              - HuggingFace: interface/inference/huggingface.md
+              - LiteLLM: interface/inference/litellm.md
+              - OpenAI: interface/inference/openai.md
+      - Benchmarks:
+          - Converse: benchmark/converse.md
+          - MACS: benchmark/macs.md
+          - MultiAgentBench: benchmark/multiagentbench.md
+          - Tau2: benchmark/tau2.md
+          - Gaia2: benchmark/gaia2.md

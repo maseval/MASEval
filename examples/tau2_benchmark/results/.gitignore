@@ -1,0 +1,6 @@
+# Ignore all result files
+*.jsonl
+*.json
+
+# But keep this .gitignore
+!.gitignore

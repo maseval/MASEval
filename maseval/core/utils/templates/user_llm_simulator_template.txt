@@ -12,7 +12,7 @@ The user's objective in this conversation is to accomplish the following tasks:
 This is the conversation so far. You will provide the user's next turn.
 {{conversation_history}}
 
-
+{{early_stopping_instructions}}
 ### YOUR TASK
 Based on the user's profile, their goals, and the agent's last message, generate the next response from the user's perspective. Follow these steps:
 1.  Decide what the user would say next to advance their goals. This could be providing new information, answering a question, or asking for clarification.

@@ -1,0 +1,127 @@
+[
+  {
+    "task_id": 0,
+    "task_description": "Email + Banking coordination",
+    "agent_type": "multi",
+    "primary_agent_id": "main_agent",
+
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Task Orchestrator",
+        "agent_instruction": "You coordinate specialized agents to complete user tasks. Delegate to appropriate specialists and synthesize their outputs into a complete response.",
+        "tools": []
+      },
+      {
+        "agent_id": "banking_specialist",
+        "agent_name": "Banking Specialist",
+        "agent_instruction": "You handle banking and financial data retrieval. Analyze transactions and account information, then report findings clearly and accurately.",
+        "tools": ["banking"]
+      },
+      {
+        "agent_id": "email_specialist",
+        "agent_name": "Email Specialist",
+        "agent_instruction": "You handle email operations. Manage emails and compose professional, friendly communications as needed.",
+        "tools": ["email"]
+      }
+    ]
+  },
+  {
+    "task_id": 1,
+    "task_description": "Stock inheritance calculation",
+    "agent_type": "multi",
+    "primary_agent_id": "main_agent",
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Financial Planning Orchestrator",
+        "agent_instruction": "You coordinate specialized agents to complete financial planning tasks. Delegate to appropriate specialists and present the final results clearly.",
+        "tools": []
+      },
+      {
+        "agent_id": "data_specialist",
+        "agent_name": "Data Retrieval Specialist",
+        "agent_instruction": "You retrieve information from various data sources. Provide complete and accurate data as requested.",
+        "tools": ["family_info", "stock_price"]
+      },
+      {
+        "agent_id": "banking_specialist",
+        "agent_name": "Banking Specialist",
+        "agent_instruction": "You handle banking and asset information. Retrieve and verify account details and holdings.",
+        "tools": ["banking"]
+      },
+      {
+        "agent_id": "calc_specialist",
+        "agent_name": "Calculation Specialist",
+        "agent_instruction": "You perform precise calculations. Verify all arithmetic and show your work step by step.",
+        "tools": ["calculator"]
+      }
+    ]
+  },
+  {
+    "task_id": 2,
+    "task_description": "Code generation (DP algorithm)",
+    "agent_type": "multi",
+    "primary_agent_id": "main_agent",
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Code Development Orchestrator",
+        "agent_instruction": "You coordinate coding specialists. Review their work and ensure quality and correctness.",
+        "tools": []
+      },
+      {
+        "agent_id": "code_specialist",
+        "agent_name": "Algorithm Specialist",
+        "agent_instruction": "You are an expert programmer specializing in algorithms. Write clean, efficient code that solves the given problem. Test thoroughly and explain your solution.",
+        "tools": ["python_executor"]
+      }
+    ]
+  },
+  {
+    "task_id": 3,
+    "task_description": "Calendar scheduling",
+    "agent_type": "multi",
+    "primary_agent_id": "main_agent",
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Scheduling Orchestrator",
+        "agent_instruction": "You coordinate calendar specialists to help with scheduling tasks. Analyze their findings and provide clear recommendations.",
+        "tools": []
+      },
+      {
+        "agent_id": "calendar_specialist",
+        "agent_name": "Calendar Specialist",
+        "agent_instruction": "You access and analyze calendar information. Retrieve availability data and identify patterns as requested.",
+        "tools": ["my_calendar_mcp", "other_calendar_mcp"]
+      }
+    ]
+  },
+  {
+    "task_id": 4,
+    "task_description": "Hotel search optimization",
+    "agent_type": "multi",
+    "primary_agent_id": "main_agent",
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Travel Planning Orchestrator",
+        "agent_instruction": "You coordinate specialists to help with travel planning tasks. Synthesize their work and present clear recommendations.",
+        "tools": []
+      },
+      {
+        "agent_id": "search_specialist",
+        "agent_name": "Hotel Search Specialist",
+        "agent_instruction": "You search for hotels and apply filters based on specified criteria.",
+        "tools": ["hotel_search"]
+      },
+      {
+        "agent_id": "optimization_specialist",
+        "agent_name": "Optimization Specialist",
+        "agent_instruction": "You analyze options and calculate optimal choices based on given criteria and formulas. Show your calculations and explain your recommendations.",
+        "tools": ["calculator"]
+      }
+    ]
+  }
+]

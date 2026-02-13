@@ -1,6 +1,10 @@
+# Subdirectories can have their own .gitignores.
+# E.g. check `maseval/benchmar/.../.gitignore
+
 # Custom
 .idea/
 .DS_Store
+.devcontainer/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -204,6 +208,11 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Agents
+.claude/
+.gemini/
+.codex/
 
 # Marimo
 marimo/_static/

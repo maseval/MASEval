@@ -164,7 +164,7 @@ def get_environment_variables(include_patterns: Optional[list[str]] = None) -> D
         include_patterns: Optional list of substring patterns to match against environment variable names (case-insensitive).
             If None, defaults to common AI/ML framework variables including:
             - AI Services: OPENAI, ANTHROPIC, GOOGLE, GEMINI, HUGGINGFACE, HF_
-            - Experiment Tracking: WANDB, NEPTUNE, LANGFUSE
+            - Experiment Tracking: WANDB, LANGFUSE
             - ML Frameworks: CUDA, PYTORCH, TF_ (TensorFlow)
             - Python Environment: PATH, PYTHONPATH, VIRTUAL_ENV, CONDA
 
@@ -183,7 +183,6 @@ def get_environment_variables(include_patterns: Optional[list[str]] = None) -> D
             "HUGGINGFACE",
             "HF_",
             "WANDB",
-            "NEPTUNE",
             "LANGFUSE",
             "CUDA",
             "PYTORCH",

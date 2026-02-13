@@ -8,9 +8,9 @@ import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict
 
-from maseval import AgentAdapter, MessageHistory, User
+from maseval import AgentAdapter, MessageHistory, LLMUser
 
-__all__ = ["LangGraphAgentAdapter", "LangGraphUser"]
+__all__ = ["LangGraphAgentAdapter", "LangGraphLLMUser"]
 
 # Only import langgraph types for type checking, not at runtime
 if TYPE_CHECKING:
@@ -32,33 +32,88 @@ def _check_langgraph_installed():
 class LangGraphAgentAdapter(AgentAdapter):
     """An AgentAdapter for LangGraph CompiledGraph agents.
 
-    Requires langgraph to be installed.
+    This adapter integrates LangGraph's compiled graphs with MASEval's benchmarking framework,
+    converting LangChain/LangGraph message types to OpenAI-compatible MessageHistory format.
+    It preserves tool calls, tool responses, multi-modal content, and supports both stateless
+    and stateful (checkpointed) graph execution.
 
-    This adapter converts LangChain/LangGraph message types to MASEval's
-    OpenAI-compatible MessageHistory format. It preserves tool calls, tool
-    responses, and multi-modal content.
+    LangGraph graphs can operate in two modes:
 
-    LangGraph graphs can be stateless or stateful (with checkpointer). This
-    adapter supports both modes:
-    - Stateless: Messages from invoke() result are cached in adapter
-    - Stateful: Messages fetched from graph state if config/thread_id provided
+    - **Stateless**: Messages from invoke() result are cached in the adapter for access
+    - **Stateful**: With checkpointer and thread_id, messages are fetched from persistent state
 
-    Example:
-        ```python
-        from maseval.interface.agents.langgraph import LangGraphAgentAdapter
-        from langgraph.graph import StateGraph
+    The adapter automatically handles both modes, preferring persistent state when available
+    and falling back to cached results for stateless graphs.
 
-        # Create a LangGraph graph
-        graph = StateGraph(...)
-        compiled_graph = graph.compile()
+    How to use:
+        1. **Create a LangGraph graph** with state and nodes
+        2. **Compile the graph** (optionally with checkpointer for state persistence)
+        3. **Wrap with LangGraphAgentAdapter** to enable MASEval integration
+        4. **Use in benchmarks** or call directly for testing
+        5. **Access traces and config** for analysis and debugging
 
-        agent_adapter = LangGraphAgentAdapter(compiled_graph, "agent_name")
-        result = agent_adapter.run("What's the weather?")
+        Example workflow:
+            ```python
+            from maseval.interface.agents.langgraph import LangGraphAgentAdapter
+            from langgraph.graph import StateGraph, MessagesState
+            from langgraph.checkpoint.memory import MemorySaver
 
-        # Access message history
-        for msg in agent_adapter.get_messages():
-            print(msg['role'], msg['content'])
-        ```
+            # Define your graph
+            def chatbot(state: MessagesState):
+                # Your agent logic
+                return {"messages": [response]}
+
+            # Build graph
+            graph = StateGraph(MessagesState)
+            graph.add_node("chatbot", chatbot)
+            graph.set_entry_point("chatbot")
+            graph.set_finish_point("chatbot")
+
+            # Compile (stateless)
+            compiled_graph = graph.compile()
+            agent_adapter = LangGraphAgentAdapter(compiled_graph, "agent_name")
+
+            # Or compile with checkpointer (stateful)
+            memory = MemorySaver()
+            compiled_graph = graph.compile(checkpointer=memory)
+            config = {"configurable": {"thread_id": "session_1"}}
+            agent_adapter = LangGraphAgentAdapter(
+                compiled_graph,
+                "agent_name",
+                config=config
+            )
+
+            # Run agent
+            result = agent_adapter.run("What's the weather?")
+
+            # Access message history in OpenAI format
+            for msg in agent_adapter.get_messages():
+                print(f"{msg['role']}: {msg['content']}")
+
+            # Gather execution traces
+            traces = agent_adapter.gather_traces()
+            if 'total_tokens' in traces:
+                print(f"Total tokens: {traces['total_tokens']}")
+
+            # Use in benchmark
+            benchmark = MyBenchmark(agent_data={"agent": agent_adapter})
+            results = benchmark.run(tasks)
+            ```
+
+        For stateful graphs, the adapter preserves conversation context across multiple
+        calls using the same thread_id, enabling multi-turn interactions.
+
+    Message Format:
+        LangGraph uses LangChain message types. The adapter converts to `maseval` / OpenAI format.
+
+        Tool calls are preserved with metadata and converted to OpenAI's tool call format.
+
+    Token Usage:
+        If LangChain messages include `usage_metadata`, the adapter automatically extracts
+        and aggregates token counts. This is available for models that provide usage information.
+
+    Requires:
+        langgraph to be installed: `pip install maseval[langgraph]`
     """
 
     def __init__(self, agent_instance, name: str, callbacks=None, config=None):
@@ -316,16 +371,17 @@ class LangGraphAgentAdapter(AgentAdapter):
         return MessageHistory(history_messages)
 
 
-class LangGraphUser(User):
-    """A LangGraph-specific user that provides a tool for user interaction.
+class LangGraphLLMUser(LLMUser):
+    """A LangGraph-specific LLM user that provides a tool for user interaction.
 
+    Extends LLMUser to provide a LangChain-compatible tool via get_tool().
     Requires langgraph to be installed.
 
     Example:
         ```python
-        from maseval.interface.agents.langgraph import LangGraphUser
+        from maseval.interface.agents.langgraph import LangGraphLLMUser
 
-        user = LangGraphUser(...)
+        user = LangGraphLLMUser(...)
         tool = user.get_tool()  # Returns a LangChain tool
         ```
     """
@@ -347,6 +403,6 @@ class LangGraphUser(User):
             Returns:
                 The user's response
             """
-            return user_instance.simulate_response(question)
+            return user_instance.respond(question)
 
         return ask_user

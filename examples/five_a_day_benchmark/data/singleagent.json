@@ -1,0 +1,72 @@
+[
+  {
+    "task_id": 0,
+    "task_description": "Email + Banking coordination",
+    "agent_type": "single",
+    "primary_agent_id": "main_agent",
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Email and Banking Assistant",
+        "agent_instruction": "You are a helpful assistant. Help users with email and banking tasks by using the available tools to retrieve information and take appropriate actions. Be professional and thorough in your responses.",
+        "tools": ["email", "banking"]
+      }
+    ]
+  },
+  {
+    "task_id": 1,
+    "task_description": "Stock inheritance calculation",
+    "agent_type": "single",
+    "primary_agent_id": "main_agent",
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Financial Planning Assistant",
+        "agent_instruction": "You are a financial planning assistant. Help users with financial queries by gathering necessary information and performing accurate calculations. Always show your work step by step.",
+        "tools": ["stock_price", "family_info", "calculator", "banking"]
+      }
+    ]
+  },
+  {
+    "task_id": 2,
+    "task_description": "Code generation (DP algorithm)",
+    "agent_type": "single",
+    "primary_agent_id": "main_agent",
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Python Code Generator",
+        "agent_instruction": "You are an expert Python programmer. Write clean, efficient, well-documented code that solves the given problem. Test your code thoroughly and explain your approach.",
+        "tools": ["python_executor"]
+      }
+    ]
+  },
+  {
+    "task_id": 3,
+    "task_description": "Calendar scheduling",
+    "agent_type": "single",
+    "primary_agent_id": "main_agent",
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Scheduling Assistant",
+        "agent_instruction": "You are a scheduling assistant. Help users with calendar-related tasks by accessing calendar information and providing clear recommendations.",
+        "tools": ["my_calendar_mcp", "other_calendar_mcp"]
+      }
+    ]
+  },
+  {
+    "task_id": 4,
+    "task_description": "Hotel search optimization",
+    "agent_type": "single",
+    "primary_agent_id": "main_agent",
+    "agents": [
+      {
+        "agent_id": "main_agent",
+        "agent_name": "Hotel Search Assistant",
+        "agent_instruction": "You are a hotel search assistant. Help users find and compare hotels based on their criteria. Provide clear recommendations with explanations.",
+        "tools": ["hotel_search", "calculator"]
+      }
+    ]
+  }
+]

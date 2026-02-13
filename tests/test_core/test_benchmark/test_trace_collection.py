@@ -5,7 +5,7 @@ from all registered components correctly.
 """
 
 import pytest
-from maseval import TaskCollection
+from maseval import TaskQueue
 
 
 @pytest.mark.core
@@ -16,10 +16,10 @@ class TestTraceCollection:
         """Test that traces are collected from all registered components."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = DummyBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
         traces = reports[0]["traces"]
 
         # Verify traces have the expected structure
@@ -49,10 +49,10 @@ class TestTraceCollection:
         """Test that agent traces include complete message histories."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test query", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
+        benchmark = DummyBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
         traces = reports[0]["traces"]
 
         # Get agent trace
@@ -82,18 +82,18 @@ class TestTraceCollection:
                 raise RuntimeError("Trace gathering failed")
 
         class TestBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 from conftest import DummyAgent
 
                 agent = DummyAgent()
                 agent_adapter = FailingAgentAdapter(agent, "failing_agent")
                 return [agent_adapter], {"failing_agent": agent_adapter}  # type: ignore[return-value]
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
-        benchmark = TestBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = TestBenchmark()
 
         # Should complete without raising, with error info in traces
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
         traces = reports[0]["traces"]
 
         # Verify trace collection handled the error
@@ -121,7 +121,7 @@ class TestTraceCollection:
                 return "result"
 
         class TestBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 from conftest import DummyAgent
 
                 agent = DummyAgent()
@@ -130,10 +130,10 @@ class TestTraceCollection:
                 self.register("models", "test_model", model)
                 return [agent_adapter], {"test_agent": agent_adapter}  # type: ignore[return-value]
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
-        benchmark = TestBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = TestBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
         traces = reports[0]["traces"]
 
         # Verify model traces
@@ -151,10 +151,10 @@ class TestTraceCollection:
         """Test that Environment traces include tool information."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = DummyBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
         traces = reports[0]["traces"]
 
         # Verify environment traces include tools
@@ -217,13 +217,13 @@ class TestTraceCollection:
                 }
 
         callback = CustomCallback()
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"}, callbacks=[callback])
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = DummyBenchmark(callbacks=[callback])
 
         # Register callback for tracing
         benchmark.register("callbacks", "custom_callback", callback)
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
         traces = reports[0]["traces"]
 
         # Verify callback traces
@@ -238,10 +238,10 @@ class TestTraceCollection:
         import json
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {"key": "value"}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {"key": "value"}}])
+        benchmark = DummyBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
         traces = reports[0]["traces"]
 
         # Should be able to serialize to JSON
@@ -259,10 +259,10 @@ class TestTraceCollection:
         """Test that all trace components include timestamps."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = DummyBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
         traces = reports[0]["traces"]
 
         # Check metadata timestamp
@@ -280,10 +280,10 @@ class TestTraceCollection:
         """Test that all traces include component type information."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = DummyBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
         traces = reports[0]["traces"]
 
         # Check agent type

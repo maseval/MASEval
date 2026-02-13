@@ -7,7 +7,12 @@ from .config import ConfigurableMixin
 
 
 class Environment(ABC, TraceableMixin, ConfigurableMixin):
-    """Manages the state and tools available during a task execution."""
+    """Manages the state and tools available during a task execution.
+
+    Subclasses must implement:
+    - setup_state(task_data) -> Any: Initialize environment state from task data
+    - create_tools() -> Dict[str, Any]: Create tools keyed by name
+    """
 
     def __init__(self, task_data: Dict[str, Any], callbacks: Optional[List[EnvironmentCallback]] = None):
         super().__init__()
@@ -16,12 +21,6 @@ class Environment(ABC, TraceableMixin, ConfigurableMixin):
             cb.on_setup_start(self)
         self.state = self.setup_state(task_data)
         self.tools = self.create_tools()
-        # Store tools in a dict for easier lookup during tracing
-        self._tools_dict: Dict[str, Any] = {}
-        if isinstance(self.tools, list):
-            for tool in self.tools:
-                tool_name = getattr(tool, "name", None) or getattr(tool, "__name__", str(type(tool).__name__))
-                self._tools_dict[tool_name] = tool
         for cb in self.callbacks:
             cb.on_setup_end(self)
 
@@ -31,26 +30,45 @@ class Environment(ABC, TraceableMixin, ConfigurableMixin):
         pass
 
     @abstractmethod
-    def create_tools(self) -> list:
-        """Creates tools that can interact with the environment's state."""
+    def create_tools(self) -> Dict[str, Any]:
+        """Creates tools that can interact with the environment's state.
+
+        Returns:
+            Dict mapping tool names to tool instances
+        """
         pass
 
-    def get_tools(self) -> list:
+    def get_tools(self) -> Dict[str, Any]:
+        """Get all tools as a dict."""
         return self.tools
+
+    def get_tool(self, name: str) -> Optional[Any]:
+        """Get a tool by name.
+
+        Args:
+            name: Tool name
+
+        Returns:
+            The tool, or None if not found
+        """
+        return self.tools.get(name)
 
     def gather_traces(self) -> dict[str, Any]:
         """Gather execution traces from this environment and its tools.
 
+        Output fields:
+
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp
+        - `tool_count` - Number of tools in environment
+        - `tools` - Dictionary of tool traces keyed by tool name
+
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - tool_count: Number of tools in environment
-            - tools: Dictionary of tool traces keyed by tool name
+            Dictionary containing environment execution traces.
         """
         tool_traces = {}
 
-        for tool_name, tool in self._tools_dict.items():
+        for tool_name, tool in self.tools.items():
             # Try to gather traces from the tool
             if hasattr(tool, "gather_traces"):
                 tool_traces[tool_name] = tool.gather_traces()
@@ -76,22 +94,25 @@ class Environment(ABC, TraceableMixin, ConfigurableMixin):
 
         return {
             **super().gather_traces(),
-            "tool_count": len(self._tools_dict),
+            "tool_count": len(self.tools),
             "tools": tool_traces,
         }
 
     def gather_config(self) -> dict[str, Any]:
         """Gather configuration from this environment.
 
+        Output fields:
+
+        - `type` - Component class name
+        - `gathered_at` - ISO timestamp
+        - `tool_count` - Number of tools
+        - `tool_names` - List of tool names
+
         Returns:
-            Dictionary containing:
-            - type: Component class name
-            - gathered_at: ISO timestamp
-            - tool_count: Number of tools
-            - tool_names: List of tool names
+            Dictionary containing environment configuration.
         """
         return {
             **super().gather_config(),
-            "tool_count": len(self._tools_dict),
-            "tool_names": list(self._tools_dict.keys()),
+            "tool_count": len(self.tools),
+            "tool_names": list(self.tools.keys()),
         }

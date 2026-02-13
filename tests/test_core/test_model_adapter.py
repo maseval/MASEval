@@ -16,6 +16,7 @@ import json
 import time
 from datetime import datetime
 from conftest import DummyModelAdapter
+from maseval.core.model import ChatResponse
 
 
 @pytest.mark.core
@@ -23,7 +24,7 @@ class TestModelAdapterBaseContract:
     """Test fundamental ModelAdapter base class behavior."""
 
     def test_model_adapter_has_abstract_methods(self):
-        """ModelAdapter requires subclasses to implement model_id and _generate_impl."""
+        """ModelAdapter requires subclasses to implement model_id and _chat_impl."""
         from maseval.core.model import ModelAdapter
 
         # Cannot instantiate abstract class directly
@@ -35,14 +36,14 @@ class TestModelAdapterBaseContract:
         from maseval.core.model import ModelAdapter
 
         class IncompleteAdapter(ModelAdapter):
-            def _generate_impl(self, prompt, generation_params=None, **kwargs):
-                return "test"
+            def _chat_impl(self, messages, generation_params=None, tools=None, tool_choice=None, **kwargs):
+                return ChatResponse(content="test")
 
         with pytest.raises(TypeError):
             IncompleteAdapter()  # type: ignore
 
-    def test_model_adapter_requires_generate_impl(self):
-        """Subclasses must implement _generate_impl method."""
+    def test_model_adapter_requires_chat_impl(self):
+        """Subclasses must implement _chat_impl method."""
         from maseval.core.model import ModelAdapter
 
         class IncompleteAdapter(ModelAdapter):
@@ -91,7 +92,7 @@ class TestModelAdapterGenerationContract:
         # Verify required fields
         call = dummy_model.logs[0]
         assert "timestamp" in call
-        assert "prompt_length" in call
+        assert "message_count" in call
         assert "response_length" in call
         assert "duration_seconds" in call
         assert "status" in call
@@ -146,7 +147,60 @@ class TestModelAdapterGenerationContract:
 
         assert isinstance(result, str)
         assert len(model.logs) == 1
-        assert model.logs[0]["prompt_length"] == 0
+        # Empty prompt creates one message
+        assert model.logs[0]["message_count"] == 1
+
+
+@pytest.mark.core
+class TestModelAdapterChatContract:
+    """Test chat() method behavior."""
+
+    def test_chat_returns_chat_response(self):
+        """chat() returns a ChatResponse object."""
+        model = DummyModelAdapter(responses=["Test response"])
+        result = model.chat([{"role": "user", "content": "Hello"}])
+
+        assert isinstance(result, ChatResponse)
+        assert result.content == "Test response"
+        assert result.role == "assistant"
+
+    def test_chat_with_multiple_messages(self):
+        """chat() accepts multiple messages."""
+        model = DummyModelAdapter(responses=["Response"])
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hello"},
+        ]
+        result = model.chat(messages)
+
+        assert isinstance(result, ChatResponse)
+        assert model.logs[0]["message_count"] == 2
+
+    def test_chat_response_to_message(self):
+        """ChatResponse.to_message() returns dict."""
+        model = DummyModelAdapter(responses=["Hello!"])
+        result = model.chat([{"role": "user", "content": "Hi"}])
+
+        message = result.to_message()
+        assert isinstance(message, dict)
+        assert message["role"] == "assistant"
+        assert message["content"] == "Hello!"
+
+    def test_chat_with_tool_calls(self):
+        """chat() returns tool_calls when provided."""
+        tool_calls = [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+            }
+        ]
+        model = DummyModelAdapter(responses=[""], tool_calls=[tool_calls])
+        result = model.chat([{"role": "user", "content": "Weather?"}])
+
+        assert result.tool_calls is not None
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0]["function"]["name"] == "get_weather"
 
 
 @pytest.mark.core
@@ -157,7 +211,7 @@ class TestModelAdapterErrorHandling:
         """Test that errors are logged correctly."""
 
         class FailingModel(DummyModelAdapter):
-            def _generate_impl(self, prompt, generation_params=None, **kwargs):
+            def _chat_impl(self, messages, generation_params=None, tools=None, tool_choice=None, **kwargs):
                 raise ValueError("Test error")
 
         model = FailingModel()
@@ -174,7 +228,7 @@ class TestModelAdapterErrorHandling:
         """generate() logs duration even when errors occur."""
 
         class FailingModel(DummyModelAdapter):
-            def _generate_impl(self, prompt, generation_params=None, **kwargs):
+            def _chat_impl(self, messages, generation_params=None, tools=None, tool_choice=None, **kwargs):
                 time.sleep(0.01)  # Small delay
                 raise RuntimeError("Fail")
 
@@ -187,10 +241,10 @@ class TestModelAdapterErrorHandling:
         assert call["duration_seconds"] >= 0.01
 
     def test_generate_logs_error_metadata(self):
-        """generate() logs prompt length and params even on error."""
+        """generate() logs message count and params even on error."""
 
         class FailingModel(DummyModelAdapter):
-            def _generate_impl(self, prompt, generation_params=None, **kwargs):
+            def _chat_impl(self, messages, generation_params=None, tools=None, tool_choice=None, **kwargs):
                 raise Exception("Fail")
 
         model = FailingModel()
@@ -200,7 +254,7 @@ class TestModelAdapterErrorHandling:
             model.generate("Test prompt", generation_params=params, custom="arg")
 
         call = model.logs[0]
-        assert call["prompt_length"] == len("Test prompt")
+        assert call["message_count"] == 1
         assert call["generation_params"] == params
         assert "custom" in call["kwargs"]
 
@@ -211,7 +265,7 @@ class TestModelAdapterErrorHandling:
             pass
 
         class FailingModel(DummyModelAdapter):
-            def _generate_impl(self, prompt, generation_params=None, **kwargs):
+            def _chat_impl(self, messages, generation_params=None, tools=None, tool_choice=None, **kwargs):
                 raise CustomError("Original error")
 
         model = FailingModel()
@@ -285,11 +339,11 @@ class TestModelAdapterTracing:
                 super().__init__()
                 self.call_count = 0
 
-            def _generate_impl(self, prompt, generation_params=None, **kwargs):
+            def _chat_impl(self, messages, generation_params=None, tools=None, tool_choice=None, **kwargs):
                 self.call_count += 1
                 if self.call_count % 2 == 0:
                     raise ValueError("Fail")
-                return "Success"
+                return ChatResponse(content="Success")
 
         model = SometimesFailingModel()
 
@@ -491,3 +545,95 @@ class TestModelAdapterMixinIntegration:
         # Fields from ConfigurableMixin
         assert "type" in config
         assert "gathered_at" in config
+
+
+@pytest.mark.core
+class TestModelAdapterSeeding:
+    """Test ModelAdapter seeding functionality."""
+
+    def test_model_adapter_accepts_seed(self):
+        """ModelAdapter accepts seed parameter."""
+        model = DummyModelAdapter(seed=42)
+        assert model.seed == 42
+
+    def test_model_adapter_seed_none_by_default(self):
+        """ModelAdapter seed is None by default."""
+        model = DummyModelAdapter()
+        assert model.seed is None
+
+    def test_model_adapter_seed_in_config(self):
+        """ModelAdapter seed appears in gather_config()."""
+        model = DummyModelAdapter(seed=12345)
+        config = model.gather_config()
+
+        assert "seed" in config
+        assert config["seed"] == 12345
+
+    def test_model_adapter_seed_none_in_config_when_not_set(self):
+        """ModelAdapter seed is None in config when not set."""
+        model = DummyModelAdapter()
+        config = model.gather_config()
+
+        assert "seed" in config
+        assert config["seed"] is None
+
+    def test_anthropic_adapter_rejects_seed(self):
+        """AnthropicModelAdapter raises SeedingError when seed is provided."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import AnthropicModelAdapter
+        from maseval.core.seeding import SeedingError
+
+        mock_client = MagicMock()
+
+        with pytest.raises(SeedingError, match="Anthropic models do not support seeding"):
+            AnthropicModelAdapter(client=mock_client, model_id="claude-3", seed=42)
+
+    def test_anthropic_adapter_works_without_seed(self):
+        """AnthropicModelAdapter works fine when no seed is provided."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import AnthropicModelAdapter
+
+        mock_client = MagicMock()
+
+        # Should not raise
+        adapter = AnthropicModelAdapter(client=mock_client, model_id="claude-3")
+        assert adapter.seed is None
+
+    def test_openai_adapter_accepts_seed(self):
+        """OpenAIModelAdapter accepts seed parameter."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import OpenAIModelAdapter
+
+        mock_client = MagicMock()
+        adapter = OpenAIModelAdapter(client=mock_client, model_id="gpt-4", seed=42)
+
+        assert adapter.seed == 42
+
+    def test_google_adapter_accepts_seed(self):
+        """GoogleGenAIModelAdapter accepts seed parameter."""
+        from unittest.mock import MagicMock
+        from maseval.interface.inference import GoogleGenAIModelAdapter
+
+        mock_client = MagicMock()
+        adapter = GoogleGenAIModelAdapter(client=mock_client, model_id="gemini-pro", seed=42)
+
+        assert adapter.seed == 42
+
+    def test_litellm_adapter_accepts_seed(self):
+        """LiteLLMModelAdapter accepts seed parameter."""
+        from maseval.interface.inference import LiteLLMModelAdapter
+
+        adapter = LiteLLMModelAdapter(model_id="gpt-4", seed=42)
+
+        assert adapter.seed == 42
+
+    def test_huggingface_adapter_accepts_seed(self):
+        """HuggingFaceModelAdapter accepts seed parameter."""
+        from maseval.interface.inference import HuggingFaceModelAdapter
+
+        def mock_model(x):
+            return "response"
+
+        adapter = HuggingFaceModelAdapter(model=mock_model, model_id="llama", seed=42)
+
+        assert adapter.seed == 42

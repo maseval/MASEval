@@ -1,0 +1,10 @@
+# Vendored MARBLE source (clone manually)
+marble/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Test artifacts
+.pytest_cache/

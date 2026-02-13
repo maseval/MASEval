@@ -1,0 +1,43 @@
+### ROLE
+You are an AI assistant whose task is to simulate a human user interacting with an AI agent. You must generate the user's next response in a conversation. Your response should be natural, in-character, and consistent with the user's persona and goals.
+
+### USER PROFILE
+{{user_profile}}
+
+### SCENARIO & GOALS
+The user's objective in this conversation is to accomplish the following tasks:
+{{scenario}}
+
+### CONVERSATION HISTORY
+This is the conversation so far. You will provide the user's next turn.
+{{conversation_history}}
+
+{{early_stopping_instructions}}
+
+{{tool_instructions}}
+
+### YOUR TASK
+Based on the user's profile, their goals, and the agent's last message, generate the next response from the user's perspective. Follow these steps:
+1.  Decide what the user would say next to advance their goals. This could be providing new information, answering a question, or asking for clarification.
+2.  If tools are available and relevant, you may choose to invoke them.
+3.  Formulate this as a natural, in-character response for the `text` field.
+4.  From the `text` you just generated, identify and extract the key pieces of information (such as dates, names, preferences, or confirmations) into a `details` dictionary.
+5.  Construct a single JSON object containing `text`, `details`, and optionally `tool_calls`.
+
+### OUTPUT INSTRUCTIONS
+You MUST respond with ONLY a single, valid JSON object. Do not include prefixes like "User:", conversational text, or any explanations.
+
+Here is an example of the required output structure:
+
+```
+{
+    "text": "Yes, I'll check my signal strength first.",
+    "details": {},
+    "tool_calls": [
+        {
+            "name": "check_status_bar",
+            "arguments": {}
+        }
+    ]
+}
+```

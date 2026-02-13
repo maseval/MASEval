@@ -151,7 +151,7 @@ def create_agent_for_framework(framework: str):
         def agent_node(state: State) -> State:
             return {"messages": state["messages"] + [AIMessage(content="Response")]}
 
-        graph = StateGraph(State)
+        graph = StateGraph(State)  # type: ignore[arg-type]  # TypedDict in function scope
         graph.add_node("agent", agent_node)
         graph.set_entry_point("agent")
         graph.add_edge("agent", END)

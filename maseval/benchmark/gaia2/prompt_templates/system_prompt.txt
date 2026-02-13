@@ -1,0 +1,11 @@
+<general_instructions>
+{general_instructions}
+</general_instructions>
+
+<agent_instructions>
+{agent_instructions}
+</agent_instructions>
+
+<environment_instructions>
+{environment_instructions}
+</environment_instructions>

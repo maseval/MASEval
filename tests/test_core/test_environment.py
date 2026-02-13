@@ -19,13 +19,17 @@ class TestEnvironment:
     def test_environment_create_tools_called(self, dummy_environment):
         """Test that create_tools is called during initialization."""
         assert dummy_environment.tools is not None
-        assert isinstance(dummy_environment.tools, list)
+        assert isinstance(dummy_environment.tools, dict)
 
-    def test_environment_get_tools_returns_list(self, dummy_environment):
-        """Test that get_tools() returns the tools list."""
+    def test_environment_get_tools_returns_dict(self, dummy_environment):
+        """Test that get_tools() returns the tools dict."""
         tools = dummy_environment.get_tools()
-        assert isinstance(tools, list)
+        assert isinstance(tools, dict)
         assert tools is dummy_environment.tools
+
+    def test_environment_get_tool_returns_none_for_missing(self, dummy_environment):
+        """Test that get_tool() returns None for missing tools."""
+        assert dummy_environment.get_tool("nonexistent") is None
 
     def test_environment_callbacks_triggered(self):
         """Test that environment callbacks are triggered."""
@@ -64,9 +68,9 @@ class TestEnvironment:
         # Create environment (tools would be added by subclass)
         env = DummyEnvironment({"test": "data"})
 
-        # Verify tools dict is created
-        assert hasattr(env, "_tools_dict")
-        assert isinstance(env._tools_dict, dict)
+        # Verify tools dict is available
+        assert hasattr(env, "tools")
+        assert isinstance(env.tools, dict)
 
     def test_environment_gather_config(self, dummy_environment):
         """Test that gather_config() returns configuration."""

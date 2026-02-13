@@ -2,39 +2,119 @@
 
 import pytest
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
 from maseval import (
     Benchmark,
     AgentAdapter,
     Environment,
+    LLMUser,
     User,
     Task,
-    TaskCollection,
+    TaskQueue,
     Evaluator,
     MessageHistory,
+    SeedGenerator,
 )
-from maseval.core.model import ModelAdapter
+from maseval.core.model import ModelAdapter, ChatResponse
+
+
+def pytest_collection_modifyitems(items):
+    """Enforce marker implication: ``credentialed`` implies ``live``.
+
+    Any test marked ``credentialed`` that is missing the ``live`` marker
+    receives it automatically, so ``-m "not live"`` always gives a fully
+    offline run.
+    """
+    for item in items:
+        if item.get_closest_marker("credentialed") and not item.get_closest_marker("live"):
+            item.add_marker(pytest.mark.live)
 
 
 # ==================== Dummy Components ====================
 
 
 class DummyModelAdapter(ModelAdapter):
-    """Minimal model adapter for testing."""
+    """Minimal model adapter for testing.
 
-    def __init__(self, model_id: str = "test-model", responses: Optional[List[str]] = None):
-        super().__init__()
+    Simulates model responses without making actual API calls. Useful for
+    unit tests and integration tests that don't require real LLM inference.
+
+    Supports both chat() and generate() methods, returning responses from
+    a predefined list in round-robin fashion.
+    """
+
+    def __init__(
+        self,
+        model_id: str = "test-model",
+        responses: Optional[List[Optional[str]]] = None,
+        tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
+        usage: Optional[Dict[str, int]] = None,
+        stop_reason: Optional[str] = None,
+        seed: Optional[int] = None,
+    ):
+        """Initialize DummyModelAdapter.
+
+        Args:
+            model_id: Identifier for this model instance.
+            responses: List of text responses to return. Cycles through the list.
+                Can include None for tool-only responses.
+            tool_calls: Optional list of tool call lists. If provided, each call
+                returns the corresponding tool_calls (cycling through the list).
+                Can include None for text-only responses.
+            usage: Optional usage dict to include in all responses. Should have
+                input_tokens, output_tokens, total_tokens.
+            stop_reason: Optional stop_reason to include in all responses.
+            seed: Seed for deterministic generation.
+        """
+        super().__init__(seed=seed)
         self._model_id = model_id
-        self._responses = responses or ["test response"]
+        self._responses: List[Optional[str]] = responses or ["test response"]
+        self._tool_calls = tool_calls
+        self._usage = usage
+        self._stop_reason = stop_reason
         self._call_count = 0
 
     @property
     def model_id(self) -> str:
         return self._model_id
 
-    def _generate_impl(self, prompt: str, generation_params: Optional[Dict[str, Any]] = None, **kwargs: Any) -> str:
+    def _chat_impl(
+        self,
+        messages: List[Dict[str, Any]],
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        """Return a mock response.
+
+        Args:
+            messages: Input messages (ignored for mock).
+            generation_params: Generation parameters (ignored for mock).
+            tools: Tool definitions (ignored for mock).
+            tool_choice: Tool choice (ignored for mock).
+            **kwargs: Additional arguments (ignored for mock).
+
+        Returns:
+            ChatResponse with mock content and optional tool_calls.
+        """
         response = self._responses[self._call_count % len(self._responses)]
+
+        # Get tool_calls for this response if provided
+        response_tool_calls = None
+        if self._tool_calls:
+            response_tool_calls = self._tool_calls[self._call_count % len(self._tool_calls)]
+
         self._call_count += 1
-        return response
+
+        return ChatResponse(
+            content=response,
+            tool_calls=response_tool_calls,
+            role="assistant",
+            model=self._model_id,
+            usage=self._usage,
+            stop_reason=self._stop_reason,
+        )
 
 
 class DummyAgent:
@@ -91,6 +171,176 @@ class FakeSmolagentsModel:
         return GenerationResult(text)
 
 
+# ==================== CAMEL Mock Helpers ====================
+
+
+class MockCamelMemory:
+    """Mock CAMEL memory that returns messages in OpenAI format.
+
+    Used for testing CAMEL integrations without requiring actual CAMEL agents.
+    Compatible with both contract tests and integration tests.
+    """
+
+    def __init__(self, messages=None):
+        self._messages = messages or []
+
+    def get_context(self):
+        """Return (messages, token_count) tuple like real CAMEL memory."""
+        return self._messages, len(self._messages) * 10
+
+    def add_message(self, msg):
+        self._messages.append(msg)
+
+
+class MockCamelResponse:
+    """Mock CAMEL ChatAgentResponse.
+
+    Simulates the response structure returned by CAMEL ChatAgent.step().
+    Supports both msgs list and singular msg attribute patterns.
+    """
+
+    def __init__(
+        self,
+        content="Test response",
+        terminated=False,
+        info=None,
+        use_msg=False,
+    ):
+        """Create a mock response.
+
+        Args:
+            content: Response content string
+            terminated: Whether the conversation should end
+            info: Optional info dict (can include usage, etc.)
+            use_msg: If True, use singular 'msg' instead of 'msgs' list
+        """
+        from unittest.mock import Mock
+
+        mock_msg = Mock()
+        mock_msg.content = content
+
+        if use_msg:
+            self.msgs = []
+            self.msg = mock_msg
+        else:
+            self.msgs = [mock_msg]
+            self.msg = mock_msg
+
+        self.terminated = terminated
+        self.info = info or {}
+
+
+class MockCamelAgent:
+    """Mock CAMEL ChatAgent for contract testing.
+
+    This class properly tracks messages in memory, which is required for
+    contract tests that verify message history behavior. Use this for
+    contract tests; use create_mock_camel_agent() for simpler unit tests.
+    """
+
+    def __init__(self, responses: Optional[List[str]] = None):
+        self.responses = responses or ["Test response"]
+        self.call_count = 0
+        self.memory = MockCamelMemory()
+        self.system_message = None
+        self.model = None
+        self.tools = None
+
+    def step(self, user_msg):
+        """Process a message and return a response."""
+        # Record user message in memory
+        if hasattr(user_msg, "content"):
+            content = user_msg.content
+        else:
+            content = str(user_msg)
+
+        self.memory.add_message({"role": "user", "content": content})
+
+        # Get response
+        response_content = self.responses[self.call_count % len(self.responses)]
+        self.call_count += 1
+
+        # Record assistant message in memory
+        self.memory.add_message({"role": "assistant", "content": response_content})
+
+        return MockCamelResponse(content=response_content)
+
+
+def create_mock_camel_agent(
+    responses=None,
+    memory_messages=None,
+    system_message=None,
+    model_type=None,
+    tools=None,
+    raise_on_step=None,
+):
+    """Create a mock CAMEL ChatAgent for testing.
+
+    Factory function that creates a Mock object simulating CAMEL ChatAgent
+    behavior. Unlike MockCamelAgent class, this does NOT track messages in
+    memory automatically - use MockCamelAgent for contract tests that need
+    message history tracking.
+
+    Args:
+        responses: List of response contents (cycles through)
+        memory_messages: Initial messages in memory
+        system_message: Optional system message content
+        model_type: Optional model type string
+        tools: Optional list of mock tools
+        raise_on_step: Exception to raise when step() is called
+
+    Returns:
+        Mock object simulating CAMEL ChatAgent
+    """
+    from unittest.mock import Mock
+
+    responses = responses or ["Test response"]
+    call_count = [0]  # Use list for mutable closure
+
+    mock_agent = Mock()
+
+    # Memory
+    mock_agent.memory = MockCamelMemory(memory_messages) if memory_messages else None
+
+    # System message
+    if system_message:
+        mock_sys_msg = Mock()
+        mock_sys_msg.content = system_message
+        mock_agent.system_message = mock_sys_msg
+    else:
+        mock_agent.system_message = None
+
+    # Model - set both model and model_backend
+    if model_type:
+        mock_model = Mock()
+        mock_model.model_type = model_type
+        mock_agent.model = mock_model
+        mock_agent.model_backend = mock_model  # CAMEL uses model_backend in newer versions
+    else:
+        mock_agent.model = None
+        mock_agent.model_backend = None
+
+    # Tools - set both tools and tool_list
+    if tools:
+        mock_agent.tools = tools
+        mock_agent.tool_list = tools  # CAMEL uses tool_list in newer versions
+    else:
+        mock_agent.tools = None
+        mock_agent.tool_list = None
+
+    # Step method
+    def step_impl(user_msg):
+        if raise_on_step:
+            raise raise_on_step
+        response_content = responses[call_count[0] % len(responses)]
+        call_count[0] += 1
+        return MockCamelResponse(content=response_content)
+
+    mock_agent.step = Mock(side_effect=step_impl)
+
+    return mock_agent
+
+
 class DummyAgentAdapter(AgentAdapter):
     """Test agent adapter that populates message history."""
 
@@ -130,49 +380,55 @@ class DummyEnvironment(Environment):
     def setup_state(self, task_data: dict) -> Any:
         return task_data.copy()
 
-    def create_tools(self) -> list:
-        return []
+    def create_tools(self) -> dict:
+        return {}
 
 
-class DummyUser(User):
-    """Minimal user simulator for testing."""
+class DummyUser(LLMUser):
+    """Minimal user simulator for testing.
+
+    Properly inherits from LLMUser base class, allowing tests to verify base class
+    behavior. The simulator is replaced with a mock to avoid LLM calls.
+
+    Supports all base class features:
+    - max_turns / stop_token for multi-turn interaction
+    - is_done() / respond() / get_initial_query()
+    - messages (MessageHistory) for conversation tracking
+    """
 
     def __init__(self, name: str, model: ModelAdapter, **kwargs):
-        # Initialize with minimal requirements
-        self.name = name
-        self.model = model
-        self.user_profile = kwargs.get("user_profile", {})
-        self.scenario = kwargs.get("scenario", "test scenario")
-        self.history = MessageHistory([{"role": "user", "content": kwargs.get("initial_prompt", "Hello")}])
-        # Don't initialize simulator to avoid LLM calls in tests
+        """Initialize DummyUser with proper base class inheritance.
+
+        Args:
+            name: User name
+            model: ModelAdapter instance
+            **kwargs: Forwarded to LLMUser base class:
+                - user_profile: Dict of user attributes
+                - scenario: Scenario description
+                - initial_query: Optional initial message
+                - max_turns: Max interaction turns (default: 1)
+                - stop_tokens: Early termination tokens (default: None)
+                - early_stopping_condition: Description of when to stop (default: None)
+        """
+        super().__init__(
+            name=name,
+            model=model,
+            user_profile=kwargs.get("user_profile", {}),
+            scenario=kwargs.get("scenario", "test scenario"),
+            initial_query=kwargs.get("initial_query"),
+            max_turns=kwargs.get("max_turns", 1),
+            stop_tokens=kwargs.get("stop_tokens"),
+            early_stopping_condition=kwargs.get("early_stopping_condition"),
+        )
+        # Replace simulator with a mock to avoid LLM calls
+        # Tests can set simulator.return_value or side_effect as needed
+        from unittest.mock import MagicMock
+
+        self.simulator = MagicMock(return_value="Mock user response")
 
     def get_tool(self) -> Any:
         """Return a dummy tool for testing."""
         return None
-
-    def gather_traces(self) -> dict:
-        """Return minimal traces for testing."""
-        from datetime import datetime
-
-        return {
-            "type": self.__class__.__name__,
-            "gathered_at": datetime.now().isoformat(),
-            "name": self.name,
-            "message_count": len(self.history),
-            "history": self.history.to_list(),
-        }
-
-    def gather_config(self) -> dict:
-        """Return minimal config for testing."""
-        from datetime import datetime
-
-        return {
-            "type": self.__class__.__name__,
-            "gathered_at": datetime.now().isoformat(),
-            "name": self.name,
-            "user_profile": self.user_profile,
-            "scenario": self.scenario,
-        }
 
 
 class DummyEvaluator(Evaluator):
@@ -184,7 +440,11 @@ class DummyEvaluator(Evaluator):
         self.environment = environment
         self.user = user
 
-    def __call__(self, trace: MessageHistory) -> Dict[str, Any]:
+    def filter_traces(self, traces: Dict[str, Any]) -> Dict[str, Any]:
+        """Return traces as-is for testing."""
+        return traces
+
+    def __call__(self, traces: Dict[str, Any], final_answer: Optional[str] = None) -> Dict[str, Any]:
         return {"score": 1.0, "passed": True}
 
 
@@ -200,16 +460,31 @@ class DummyBenchmark(Benchmark):
         self.run_agents_calls = []
         self.evaluate_calls = []
 
-    def setup_environment(self, agent_data: Dict[str, Any], task: Task) -> Environment:
+    def get_model_adapter(self, model_id: str, **kwargs):
+        """Create a dummy model adapter for testing."""
+        return DummyModelAdapter(model_id=model_id)
+
+    def setup_environment(self, agent_data: Dict[str, Any], task: Task, seed_generator: SeedGenerator) -> Environment:
         self.setup_environment_calls.append((agent_data, task))
         return DummyEnvironment(task.environment_data)
 
-    def setup_user(self, agent_data: Dict[str, Any], environment: Environment, task: Task) -> Optional[User]:
+    def setup_user(
+        self,
+        agent_data: Dict[str, Any],
+        environment: Environment,
+        task: Task,
+        seed_generator: SeedGenerator,
+    ) -> Optional[User]:
         self.setup_user_calls.append((agent_data, environment, task))
         return None
 
     def setup_agents(
-        self, agent_data: Dict[str, Any], environment: Environment, task: Task, user: Optional[User]
+        self,
+        agent_data: Dict[str, Any],
+        environment: Environment,
+        task: Task,
+        user: Optional[User],
+        seed_generator: SeedGenerator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         self.setup_agents_calls.append((agent_data, environment, task, user))
         agent = DummyAgent()
@@ -217,25 +492,32 @@ class DummyBenchmark(Benchmark):
         return [agent_adapter], {"test_agent": agent_adapter}
 
     def setup_evaluators(
-        self, environment: Environment, task: Task, agents: Sequence[AgentAdapter], user: Optional[User]
+        self,
+        environment: Environment,
+        task: Task,
+        agents: Sequence[AgentAdapter],
+        user: Optional[User],
+        seed_generator: SeedGenerator,
     ) -> Sequence[Evaluator]:
         self.setup_evaluators_calls.append((environment, task, agents, user))
         return [DummyEvaluator(task, environment, user)]
 
-    def run_agents(self, agents: Sequence[AgentAdapter], task: Task, environment: Environment) -> Any:
-        self.run_agents_calls.append((agents, task, environment))
+    def run_agents(self, agents: Sequence[AgentAdapter], task: Task, environment: Environment, query: str) -> Any:
+        self.run_agents_calls.append((agents, task, environment, query))
         # Run the first agent and return final answer
-        return agents[0].run(task.query)
+        return agents[0].run(query)
 
     def evaluate(
         self, evaluators: Sequence[Evaluator], agents: Dict[str, AgentAdapter], final_answer: Any, traces: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         self.evaluate_calls.append((evaluators, agents, final_answer, traces))
-        # Get first agent's messages (works with any agent name)
-        first_agent = next(iter(agents.values())) if agents else None
-        if first_agent:
-            return [evaluator(first_agent.get_messages()) for evaluator in evaluators]
-        return [{"passed": True, "score": 1.0} for _ in evaluators]
+        # Call evaluators with new API signature: filter_traces first, then call with filtered traces and final_answer
+        results = []
+        for evaluator in evaluators:
+            filtered_traces = evaluator.filter_traces(traces)
+            result = evaluator(filtered_traces, final_answer)
+            results.append(result)
+        return results
 
 
 # ==================== Fixtures ====================
@@ -267,13 +549,14 @@ def dummy_environment():
 
 @pytest.fixture
 def dummy_user(dummy_model):
-    """Create a dummy user."""
+    """Create a dummy user with an initial query."""
     return DummyUser(
         name="test_user",
         model=dummy_model,
         user_profile={"role": "tester"},
         scenario="test scenario",
-        initial_prompt="Hello",
+        initial_query="Hello",
+        max_turns=2,  # Allow at least one respond() call after initial query
     )
 
 
@@ -289,9 +572,9 @@ def dummy_task():
 
 
 @pytest.fixture
-def dummy_task_collection():
+def dummy_task_queue():
     """Create a collection of dummy tasks."""
-    return TaskCollection.from_list(
+    return TaskQueue.from_list(
         [
             {"query": "Query 1", "environment_data": {"task": 1}},
             {"query": "Query 2", "environment_data": {"task": 2}},
@@ -301,14 +584,15 @@ def dummy_task_collection():
 
 
 @pytest.fixture
-def simple_benchmark(dummy_task_collection):
-    """Create a simple benchmark instance with tasks.
+def simple_benchmark(dummy_task_queue):
+    """Create a simple benchmark instance with tasks and agent_data.
 
     Returns:
-        tuple: (benchmark, tasks) - Call as benchmark.run(tasks)
+        tuple: (benchmark, tasks, agent_data) - Call as benchmark.run(tasks, agent_data=agent_data)
     """
-    benchmark = DummyBenchmark(agent_data={"model": "test"})
-    return benchmark, dummy_task_collection
+    benchmark = DummyBenchmark()
+    agent_data = {"model": "test"}
+    return benchmark, dummy_task_queue, agent_data
 
 
 @pytest.fixture

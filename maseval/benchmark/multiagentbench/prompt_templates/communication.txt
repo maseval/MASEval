@@ -1,0 +1,15 @@
+Evaluate the communication between agents for the following task.
+
+Task: {task}
+
+Communication Log:
+{communications}
+
+Rate the communication quality on a scale of 1-5:
+1 - Poor: Irrelevant or confusing communication
+2 - Below Average: Some relevant communication but lacks clarity
+3 - Average: Adequate communication that addresses the task
+4 - Good: Clear and relevant communication with good coordination
+5 - Excellent: Highly effective communication with perfect coordination
+
+Respond with a JSON object: {{"rating": <score>}}

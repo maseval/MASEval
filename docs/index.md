@@ -16,6 +16,47 @@ pip install maseval
 
 More details in the [Quickstart](getting-started/quickstart.md)
 
+## Why MASEval?
+
+Compare multi-agent evaluation frameworks across key capabilities.
+
+| Library           | Multi-Agent | System Evaluation | Agent-Agnostic | Benchmarks | Multi-turn User | No Lock-In | BYO | State-Action Eval | Error Attr | Lightweight | Project Maturity | Sandboxed Environment |
+| ----------------- | :---------: | :---------------: | :------------: | :--------: | :-------------: | :--------: | :-: | :---------------: | :--------: | :---------: | :--------------: | :-------------------: |
+| **MASEval**       |     ✅      |        ✅         |       ✅       |     ✅     |       ✅        |     ✅     | 🟢  |        ✅         |     ✅     |     ✅      |        ✅        |          🟢           |
+| **HAL Harness**   |     🟡      |        ✅         |       ✅       |     ✅     |       🟡        |     ✅     | 🟡  |        🟡         |     ❌     |     ✅      |        🟡        |          ✅           |
+| **AnyAgent**      |     🟡      |        ✅         |       ✅       |     ❌     |       🟡        |     ✅     | 🟢  |        🟡         |     ❌     |     ✅      |        ✅        |          ❌           |
+| **Inspect-AI**    |     🟡      |        ✅         |       🟡       |     ✅     |       🟡        |     ✅     | 🟡  |        🟡         |     ❌     |     🟡      |        ✅        |          ✅           |
+| **MLflow GenAI**  |     🟡      |        🟡         |       🟢       |     ❌     |       🟡        |     ✅     | 🟢  |        ✅         |     ❌     |     🟡      |        ✅        |          🟡           |
+| **LangSmith**     |     🟡      |        🟡         |       🟡       |     ❌     |       ✅        |     ❌     | 🟡  |        ✅         |     ❌     |     ✅      |        ✅        |          ❌           |
+| **OpenCompass**   |     ❌      |        🟡         |       ❌       |     ✅     |       🟡        |     ✅     | 🟡  |        🟡         |     ❌     |     ❌      |        ✅        |          🟡           |
+| **AgentGym**      |     ❌      |        ❌         |       ❌       |     ✅     |       🟡        |     ✅     | 🟢  |        🟡         |     ❌     |     ❌      |        🟡        |          🟡           |
+| **Arize Phoenix** |     🟡      |        ❌         |       🟡       |     ❌     |       ❌        |     🟡     | 🟢  |        ✅         |     ❌     |     🟡      |        ✅        |          ❌           |
+| **MARBLE**        |     ✅      |        ❌         |       ❌       |     ✅     |       ❌        |     ✅     | ❌  |        🟡         |     ?      |     🟡      |        🟡        |          🟡           |
+| **TruLens**       |     🟡      |        ❌         |       🟡       |     ❌     |       ❌        |     ✅     | 🟡  |        🟢         |     ❌     |     🟡      |        ✅        |          ❌           |
+| **AgentBeats**    |     🟡      |        ❌         |       🟡       |     ❌     |       ❌        |     🟡     | 🟡  |        🟡         |     ?      |     ✅      |        🟡        |          🟡           |
+| **DeepEval**      |     🟡      |        ❌         |       🟡       |     ❌     |       🟡        |     🟡     | 🟡  |        🟡         |     ❌     |     🟡      |        ✅        |          ❌           |
+| **MCPEval**       |     ❌      |        ❌         |       ❌       |     ✅     |       ❌        |     ✅     | 🟡  |        🟡         |     ❌     |     🟡      |        🟡        |          ❌           |
+| **Galileo**       |     🟡      |        ❌         |       🟡       |     ❌     |       ❌        |     ❌     | 🟡  |        🟡         |     ❌     |     🟡      |        ✅        |          ❌           |
+
+**✅** Full/Native · **🟢** Flexible for BYO · **🟡** Partial/Limited · **❌** Not possible
+
+??? info "Column Explanation"
+
+    | Column                | Feature                      | One-Liner                                                                                                          |
+    | --------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+    | **Multi-Agent**       | Multi-Agent Native           | Native orchestration with per-agent tracing, independent message histories, and explicit coordination patterns.    |
+    | **System Evaluation** | System-Level Comparison      | Compare different framework implementations on the same benchmark (not just swapping LLMs).                        |
+    | **Agent Agnostic**    | Agent Framework Agnostic     | Evaluate agents from any framework via thin adapters without requiring protocol adoption or code recreation.       |
+    | **Benchmarks**        | Pre-Implemented Benchmarks   | Ships complete, ready-to-run benchmarks with environments, tools, and evaluators (not just templates).             |
+    | **Multi-turn User**   | User-Agent Multi-turn        | First-class user simulation with personas, stop tokens, and tool access for realistic multi-turn conversations.    |
+    | **No Lock-In**        | No Vendor Lock-In            | Fully open-source, works offline, permissive license (MIT/Apache), no mandatory cloud services or telemetry.       |
+    | **BYO**               | BYO Philosophy               | Bring your own logging, agents, environments, and tools — flexibility over opinionated defaults.                   |
+    | **State-Action Eval** | Trace-First Evaluation       | Evaluate intermediate steps and tool usage patterns via trace filtering, not just final output scoring.            |
+    | **Error Attr**        | Structured Error Attribution | Structured exceptions distinguish between different failure for fair scoring (`AgentError` vs `EnvironmentError`). |
+    | **Lightweight**       | Lightweight                  | Minimal dependencies, small codebase (~20k LOC), quick time to first evaluation (~5-15 min).                       |
+    | **Project Maturity**  | Professional Tooling         | Published on PyPI, CI/CD, good test coverage, structured logging, active maintenance, excellent docs.              |
+    | **Sandbox**           | Sandboxed Execution          | Built-in Docker/K8s/VM isolation for safe code execution (or BYO sandbox via abstract Environment).                |
+
 ## Core Principles
 
 - **Evaluation, Not Implementation:** MASEval provides the evaluation infrastructure—you bring your agent implementation. Whether you've built agents with AutoGen, LangChain, custom code, or direct LLM calls, MASEval wraps them via simple adapters and runs them through standardized benchmarks.
@@ -33,20 +74,6 @@ More details in the [Quickstart](getting-started/quickstart.md)
 - **Extensible Benchmark Suite:** Researchers can implement new benchmarks by inheriting from base classes and focusing on task construction and evaluation logic, while leveraging built-in evaluation infrastructure.
 
 - **Abstract Base Classes:** The library provides abstract base classes for core components (Task, Benchmark, Environment, Evaluator) with optional default implementations, giving users flexibility to customize while maintaining interface consistency.
-
-## Quickstart
-
-Install the package from PyPI:
-
-```bash
-pip install maseval
-```
-
-Run the example script shipped with the repository:
-
-```bash
-python examples/smolagents_research.py
-```
 
 ## API
 

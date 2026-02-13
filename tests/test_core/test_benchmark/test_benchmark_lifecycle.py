@@ -6,7 +6,7 @@ registration/cleanup between task repetitions.
 """
 
 import pytest
-from maseval import TaskCollection
+from maseval import TaskQueue
 
 
 @pytest.mark.core
@@ -15,13 +15,13 @@ class TestBenchmarkLifecycle:
 
     def test_benchmark_complete_run_single_task(self, simple_benchmark):
         """Test that a benchmark completes successfully with a single task."""
-        benchmark, tasks = simple_benchmark
+        benchmark, tasks, agent_data = simple_benchmark
 
         # Run benchmark
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data=agent_data)
 
         # Verify we got one report
-        assert len(reports) == 3  # 3 tasks in dummy_task_collection
+        assert len(reports) == 3  # 3 tasks in dummy_task_queue
 
         # Verify report structure
         report = reports[0]
@@ -43,16 +43,16 @@ class TestBenchmarkLifecycle:
         """Test that a benchmark handles multiple tasks correctly."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list(
+        tasks = TaskQueue.from_list(
             [
                 {"query": "Task 1", "environment_data": {}},
                 {"query": "Task 2", "environment_data": {}},
                 {"query": "Task 3", "environment_data": {}},
             ]
         )
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        benchmark = DummyBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
 
         # Should have 3 reports (one per task)
         assert len(reports) == 3
@@ -61,18 +61,18 @@ class TestBenchmarkLifecycle:
         task_ids = [r["task_id"] for r in reports]
         assert len(set(task_ids)) == 3
 
-        # Verify queries match - call format is (agents, task, environment)
-        queries = [call[1].query for call in benchmark.run_agents_calls]
+        # Verify queries match - call format is (agents, task, environment, query)
+        queries = [call[3] for call in benchmark.run_agents_calls]
         assert queries == ["Task 1", "Task 2", "Task 3"]
 
     def test_benchmark_task_repetitions(self):
         """Test that task repetitions work correctly."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test query", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"}, n_task_repeats=3)
+        tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
+        benchmark = DummyBenchmark(n_task_repeats=3)
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
 
         # Should have 3 reports (one per repetition)
         assert len(reports) == 3
@@ -116,19 +116,18 @@ class TestBenchmarkLifecycle:
             def on_run_end(self, benchmark, results):
                 invocations.append("on_run_end")
 
-        tasks = TaskCollection.from_list(
+        tasks = TaskQueue.from_list(
             [
                 {"query": "Task1", "environment_data": {}},
                 {"query": "Task2", "environment_data": {}},
             ]
         )
         benchmark = DummyBenchmark(
-            agent_data={"model": "test"},
             n_task_repeats=2,
             callbacks=[OrderTrackingCallback()],
         )
 
-        benchmark.run(tasks)
+        benchmark.run(tasks, agent_data={"model": "test"})
 
         # Verify order
         expected = [
@@ -156,7 +155,7 @@ class TestBenchmarkLifecycle:
         from conftest import DummyBenchmark
         from maseval import BenchmarkCallback
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
 
         # Track registry size after each repetition
         registry_sizes = []
@@ -171,14 +170,13 @@ class TestBenchmarkLifecycle:
                 # At start of new repeat, registry should be empty (except for callbacks)
                 if repeat_idx > 0:
                     # After first repeat, registry should have been cleared
-                    registry_sizes.append(len(benchmark._trace_registry))
+                    registry_sizes.append(len(benchmark._registry._trace_registry))
 
         benchmark = DummyBenchmark(
-            agent_data={"model": "test"},
             n_task_repeats=2,
             callbacks=[RegistryTracker()],
         )
-        benchmark.run(tasks)
+        benchmark.run(tasks, agent_data={"model": "test"})
 
         # After first repetition completes and second starts, registry should be cleared
         # Note: This test verifies cleanup happens between repeats
@@ -187,27 +185,27 @@ class TestBenchmarkLifecycle:
         """Test that registry is properly cleared after each task repetition."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"}, n_task_repeats=1)
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = DummyBenchmark(n_task_repeats=1)
 
         # Before run, registry should be empty
-        assert len(benchmark._trace_registry) == 0
-        assert len(benchmark._config_registry) == 0
+        assert len(benchmark._registry._trace_registry) == 0
+        assert len(benchmark._registry._config_registry) == 0
 
-        benchmark.run(tasks)
+        benchmark.run(tasks, agent_data={"model": "test"})
 
         # After run completes, registry should be cleared
-        assert len(benchmark._trace_registry) == 0
-        assert len(benchmark._config_registry) == 0
+        assert len(benchmark._registry._trace_registry) == 0
+        assert len(benchmark._registry._config_registry) == 0
 
     def test_benchmark_reports_structure(self):
         """Test that benchmark reports have the correct structure."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = DummyBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
 
         assert len(reports) == 1
         report = reports[0]
@@ -239,7 +237,7 @@ class TestBenchmarkLifecycle:
         """Test that different agent_data can be provided per task."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list(
+        tasks = TaskQueue.from_list(
             [
                 {"query": "Task1", "environment_data": {}},
                 {"query": "Task2", "environment_data": {}},
@@ -252,9 +250,9 @@ class TestBenchmarkLifecycle:
             {"model": "model-2", "temp": 0.9},
         ]
 
-        benchmark = DummyBenchmark(agent_data=agent_data_list)
+        benchmark = DummyBenchmark()
 
-        benchmark.run(tasks)
+        benchmark.run(tasks, agent_data=agent_data_list)
 
         # Verify each task received its specific agent_data
         assert len(benchmark.setup_agents_calls) == 2
@@ -267,7 +265,7 @@ class TestBenchmarkLifecycle:
         """Test that providing wrong number of agent_data items raises error."""
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list(
+        tasks = TaskQueue.from_list(
             [
                 {"query": "Task1", "environment_data": {}},
                 {"query": "Task2", "environment_data": {}},
@@ -281,15 +279,15 @@ class TestBenchmarkLifecycle:
             ValueError,
             match="must either be a single dict or an iterable matching the number of tasks",
         ):
-            benchmark = DummyBenchmark(agent_data=agent_data_list)
-            benchmark.run(tasks)
+            benchmark = DummyBenchmark()
+            benchmark.run(tasks, agent_data=agent_data_list)
 
     def test_benchmark_n_task_repeats_validation(self):
         """Test that n_task_repeats must be at least 1."""
         from conftest import DummyBenchmark
 
         with pytest.raises(ValueError, match="n_task_repeats must be at least 1"):
-            DummyBenchmark(agent_data={"model": "test"}, n_task_repeats=0)
+            DummyBenchmark(n_task_repeats=0)
 
 
 @pytest.mark.core
@@ -316,22 +314,23 @@ class TestFailureSafeExecution:
                 return self.agent.run(query)
 
         class TaskFailureBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 agent = FailingAgent()
                 agent_adapter = FailingAgentAdapter(agent, "failing_agent")
                 return [agent_adapter], {"failing_agent": agent_adapter}
 
-        tasks = TaskCollection.from_list([{"query": "Test query", "environment_data": {}}])
+        tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
         benchmark = TaskFailureBenchmark(
-            agent_data={"model": "test"},
             fail_on_task_error=False,
         )
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
 
         assert len(reports) == 1
         report = reports[0]
-        assert report["status"] == TaskExecutionStatus.TASK_EXECUTION_FAILED.value
+        # RuntimeError from agent framework is classified as UNKNOWN_EXECUTION_ERROR
+        # (we can't determine if it's agent's fault or infrastructure failure)
+        assert report["status"] == TaskExecutionStatus.UNKNOWN_EXECUTION_ERROR.value
         assert "error" in report
         assert report["error"]["error_type"] == "RuntimeError"
         assert "Agent execution failed!" in report["error"]["error_message"]
@@ -352,40 +351,41 @@ class TestFailureSafeExecution:
                 return self.agent.run(query)
 
         class TaskFailureBenchmark(DummyBenchmark):
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 agent = FailingAgent()
                 agent_adapter = FailingAgentAdapter(agent, "failing_agent")
                 return [agent_adapter], {"failing_agent": agent_adapter}
 
-        tasks = TaskCollection.from_list([{"query": "Test query", "environment_data": {}}])
+        tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
         benchmark = TaskFailureBenchmark(
-            agent_data={"model": "test"},
             fail_on_task_error=True,
         )
 
         with pytest.raises(RuntimeError, match="Agent execution failed!"):
-            benchmark.run(tasks)
+            benchmark.run(tasks, agent_data={"model": "test"})
 
     def test_evaluation_failure_graceful(self):
         """Test that evaluation failures are caught and recorded when fail_on_evaluation_error=False."""
-        from maseval import TaskExecutionStatus, Evaluator, MessageHistory
+        from maseval import TaskExecutionStatus, Evaluator
         from conftest import DummyBenchmark
 
         class FailingEvaluator(Evaluator):
-            def __call__(self, trace: MessageHistory):
+            def filter_traces(self, traces):
+                return traces
+
+            def __call__(self, traces, final_answer=None):
                 raise ValueError("Evaluation failed!")
 
         class EvaluationFailureBenchmark(DummyBenchmark):
-            def setup_evaluators(self, environment, task, agents, user):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator):
                 return [FailingEvaluator(task, environment, user)]
 
-        tasks = TaskCollection.from_list([{"query": "Test query", "environment_data": {}}])
+        tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
         benchmark = EvaluationFailureBenchmark(
-            agent_data={"model": "test"},
             fail_on_evaluation_error=False,
         )
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
 
         assert len(reports) == 1
         report = reports[0]
@@ -397,25 +397,67 @@ class TestFailureSafeExecution:
 
     def test_evaluation_failure_strict(self):
         """Test that evaluation failures raise when fail_on_evaluation_error=True."""
-        from maseval import Evaluator, MessageHistory
+        from maseval import Evaluator
         from conftest import DummyBenchmark
 
         class FailingEvaluator(Evaluator):
-            def __call__(self, trace: MessageHistory):
+            def filter_traces(self, traces):
+                return traces
+
+            def __call__(self, traces, final_answer=None):
                 raise ValueError("Evaluation failed!")
 
         class EvaluationFailureBenchmark(DummyBenchmark):
-            def setup_evaluators(self, environment, task, agents, user):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator):
                 return [FailingEvaluator(task, environment, user)]
 
-        tasks = TaskCollection.from_list([{"query": "Test query", "environment_data": {}}])
+        tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
         benchmark = EvaluationFailureBenchmark(
-            agent_data={"model": "test"},
             fail_on_evaluation_error=True,
         )
 
         with pytest.raises(ValueError, match="Evaluation failed!"):
-            benchmark.run(tasks)
+            benchmark.run(tasks, agent_data={"model": "test"})
+
+    def test_setup_failure_graceful(self):
+        """Test that setup failures are caught and recorded when fail_on_setup_error=False."""
+        from maseval import TaskExecutionStatus
+        from conftest import DummyBenchmark
+
+        class SetupFailureBenchmark(DummyBenchmark):
+            def setup_environment(self, agent_data, task, seed_generator):
+                raise RuntimeError("Environment setup failed!")
+
+        tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
+        benchmark = SetupFailureBenchmark(
+            fail_on_setup_error=False,
+        )
+
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
+
+        assert len(reports) == 1
+        report = reports[0]
+        assert report["status"] == TaskExecutionStatus.SETUP_FAILED.value
+        assert "error" in report
+        assert report["error"]["error_type"] == "RuntimeError"
+        assert "Environment setup failed!" in report["error"]["error_message"]
+        assert report["eval"] is None
+
+    def test_setup_failure_strict(self):
+        """Test that setup failures raise when fail_on_setup_error=True."""
+        from conftest import DummyBenchmark
+
+        class SetupFailureBenchmark(DummyBenchmark):
+            def setup_environment(self, agent_data, task, seed_generator):
+                raise RuntimeError("Environment setup failed!")
+
+        tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
+        benchmark = SetupFailureBenchmark(
+            fail_on_setup_error=True,
+        )
+
+        with pytest.raises(RuntimeError, match="Environment setup failed!"):
+            benchmark.run(tasks, agent_data={"model": "test"})
 
     def test_get_failed_tasks(self):
         """Test get_failed_tasks() method."""
@@ -437,7 +479,7 @@ class TestFailureSafeExecution:
                 super().__init__(*args, **kwargs)
                 self.task_counter = 0
 
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 if self.task_counter == 1:  # Fail second task
                     agent = FailingAgent()
                     agent_adapter = FailingAgentAdapter(agent, "failing")
@@ -448,15 +490,15 @@ class TestFailureSafeExecution:
                 self.task_counter += 1
                 return [agent_adapter], {agent_adapter.name: agent_adapter}
 
-        tasks = TaskCollection.from_list(
+        tasks = TaskQueue.from_list(
             [
                 {"query": "Task 1", "environment_data": {}},
                 {"query": "Task 2", "environment_data": {}},
                 {"query": "Task 3", "environment_data": {}},
             ]
         )
-        benchmark = MixedBenchmark(agent_data={"model": "test"})
-        reports = benchmark.run(tasks)
+        benchmark = MixedBenchmark()
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
 
         # Test using internal state
         failed = benchmark.get_failed_tasks()
@@ -467,12 +509,13 @@ class TestFailureSafeExecution:
         assert len(failed_external) == 1
         assert [t.id for t in failed] == [t.id for t in failed_external]
 
-        # Get only task execution failures
-        exec_failed = benchmark.get_failed_tasks(TaskExecutionStatus.TASK_EXECUTION_FAILED)
+        # RuntimeError from agent framework is classified as UNKNOWN_EXECUTION_ERROR
+        # (we can't determine if it's agent's fault or infrastructure failure)
+        exec_failed = benchmark.get_failed_tasks(TaskExecutionStatus.UNKNOWN_EXECUTION_ERROR)
         assert len(exec_failed) == 1
 
         # External reports version
-        exec_failed_external = benchmark.get_failed_tasks(TaskExecutionStatus.TASK_EXECUTION_FAILED, reports=reports)
+        exec_failed_external = benchmark.get_failed_tasks(TaskExecutionStatus.UNKNOWN_EXECUTION_ERROR, reports=reports)
         assert len(exec_failed_external) == 1
 
         # No evaluation failures in this test
@@ -484,7 +527,7 @@ class TestFailureSafeExecution:
         reports_copy.append(
             {
                 "task_id": "fake-task",
-                "status": TaskExecutionStatus.TASK_EXECUTION_FAILED.value,
+                "status": TaskExecutionStatus.UNKNOWN_EXECUTION_ERROR.value,
                 "error": "Fake error",
             }
         )
@@ -502,7 +545,7 @@ class TestFailureSafeExecution:
         """Test that get_failed_tasks() raises if called before run()."""
         from conftest import DummyBenchmark
 
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        benchmark = DummyBenchmark()
 
         with pytest.raises(RuntimeError, match="must be called after run"):
             benchmark.get_failed_tasks()
@@ -512,10 +555,10 @@ class TestFailureSafeExecution:
         from maseval import TaskExecutionStatus
         from conftest import DummyBenchmark
 
-        tasks = TaskCollection.from_list([{"query": "Test query", "environment_data": {}}])
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        tasks = TaskQueue.from_list([{"query": "Test query", "environment_data": {}}])
+        benchmark = DummyBenchmark()
 
-        reports = benchmark.run(tasks)
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
 
         assert len(reports) == 1
         assert reports[0]["status"] == TaskExecutionStatus.SUCCESS.value
@@ -526,8 +569,9 @@ class TestFailureSafeExecution:
         """Test that failure flags default to False (graceful handling)."""
         from conftest import DummyBenchmark
 
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        benchmark = DummyBenchmark()
 
+        assert benchmark.fail_on_setup_error is False
         assert benchmark.fail_on_task_error is False
         assert benchmark.fail_on_evaluation_error is False
 
@@ -542,10 +586,10 @@ class TestFailureSafeExecution:
         from conftest import DummyBenchmark
 
         # Create benchmark
-        benchmark = DummyBenchmark(agent_data={"model": "test"})
+        benchmark = DummyBenchmark()
 
         # First run with 3 tasks
-        tasks1 = TaskCollection.from_list(
+        tasks1 = TaskQueue.from_list(
             [
                 {"query": "Task 1", "environment_data": {}},
                 {"query": "Task 2", "environment_data": {}},
@@ -553,19 +597,19 @@ class TestFailureSafeExecution:
             ]
         )
 
-        reports1 = benchmark.run(tasks=tasks1)
+        reports1 = benchmark.run(tasks=tasks1, agent_data={"model": "test"})
         assert len(reports1) == 3
         assert len(benchmark.reports) == 3
 
         # Second run with 2 different tasks
-        tasks2 = TaskCollection.from_list(
+        tasks2 = TaskQueue.from_list(
             [
                 {"query": "Task A", "environment_data": {}},
                 {"query": "Task B", "environment_data": {}},
             ]
         )
 
-        reports2 = benchmark.run(tasks=tasks2)
+        reports2 = benchmark.run(tasks=tasks2, agent_data={"model": "test"})
         assert len(reports2) == 2
         # Verify reports were cleared from first run
         assert len(benchmark.reports) == 2
@@ -577,13 +621,13 @@ class TestFailureSafeExecution:
 
         # Third run - retry pattern (simulating failed tasks)
         # Use one task from tasks1
-        retry_tasks = TaskCollection([list(tasks1)[0]])
-        reports3 = benchmark.run(tasks=retry_tasks)
+        retry_tasks = TaskQueue([list(tasks1)[0]])
+        reports3 = benchmark.run(tasks=retry_tasks, agent_data={"model": "test"})
         assert len(reports3) == 1
         assert len(benchmark.reports) == 1
 
     def test_retry_failed_tasks_pattern(self):
-        """Test the intended use case: benchmark.run(benchmark.get_failed_tasks()).
+        """Test the intended use case: benchmark.run(benchmark.get_failed_tasks(, agent_data={"model": "test"})).
 
         This verifies that failed tasks can be retried by passing them back to run().
         This includes returning tasks that failed using the correct format that run() expects.
@@ -607,7 +651,7 @@ class TestFailureSafeExecution:
                 self.task_counter = 0
                 self.fail_on_first_run = True
 
-            def setup_agents(self, agent_data, environment, task, user):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
                 # Fail second task on first run only
                 if self.task_counter == 1 and self.fail_on_first_run:
                     agent = FailingAgent()
@@ -619,7 +663,7 @@ class TestFailureSafeExecution:
                 self.task_counter += 1
                 return [agent_adapter], {agent_adapter.name: agent_adapter}
 
-        tasks = TaskCollection.from_list(
+        tasks = TaskQueue.from_list(
             [
                 {"query": "Task 1", "environment_data": {}},
                 {"query": "Task 2", "environment_data": {}},
@@ -627,10 +671,10 @@ class TestFailureSafeExecution:
             ]
         )
 
-        benchmark = ConditionalFailureBenchmark(agent_data={"model": "test"})
+        benchmark = ConditionalFailureBenchmark()
 
         # First run - one task will fail
-        reports = benchmark.run(tasks=tasks)
+        reports = benchmark.run(tasks=tasks, agent_data={"model": "test"})
         assert len(reports) == 3
 
         # Get failed tasks - should have 1 failure
@@ -641,7 +685,7 @@ class TestFailureSafeExecution:
         # Retry the failed tasks (simulate fixing the issue)
         benchmark.fail_on_first_run = False
         benchmark.task_counter = 0  # Reset counter
-        retry_reports = benchmark.run(tasks=failed)
+        retry_reports = benchmark.run(tasks=failed, agent_data={"model": "test"})
 
         # Should have 1 report for the retried task
         assert len(retry_reports) == 1

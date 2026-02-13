@@ -15,10 +15,10 @@ pytestmark = [pytest.mark.interface, pytest.mark.langgraph]
 
 def test_langgraph_adapter_import():
     """Test that LangGraphAgentAdapter can be imported when langgraph is installed."""
-    from maseval.interface.agents.langgraph import LangGraphAgentAdapter, LangGraphUser
+    from maseval.interface.agents.langgraph import LangGraphAgentAdapter, LangGraphLLMUser
 
     assert LangGraphAgentAdapter is not None
-    assert LangGraphUser is not None
+    assert LangGraphLLMUser is not None
 
 
 def test_langgraph_in_agents_all():
@@ -26,7 +26,7 @@ def test_langgraph_in_agents_all():
     import maseval.interface.agents
 
     assert "LangGraphAgentAdapter" in maseval.interface.agents.__all__
-    assert "LangGraphUser" in maseval.interface.agents.__all__
+    assert "LangGraphLLMUser" in maseval.interface.agents.__all__
 
 
 def test_check_langgraph_installed_function():
@@ -74,7 +74,7 @@ def test_langgraph_adapter_logs_after_run():
         )
         return {"messages": messages + [response]}
 
-    graph = StateGraph(State)
+    graph = StateGraph(State)  # type: ignore[arg-type]  # TypedDict in function scope
     graph.add_node("agent", agent_node)
     graph.set_entry_point("agent")
     graph.add_edge("agent", END)
@@ -143,7 +143,7 @@ def test_langgraph_adapter_logs_multiple_runs():
         response = AIMessage(content="Response")
         return {"messages": messages + [response]}
 
-    graph = StateGraph(State)
+    graph = StateGraph(State)  # type: ignore[arg-type]  # TypedDict in function scope
     graph.add_node("agent", agent_node)
     graph.set_entry_point("agent")
     graph.add_edge("agent", END)
@@ -177,7 +177,7 @@ def test_langgraph_adapter_logs_error_handling():
     def failing_node(state: State) -> State:
         raise ValueError("Intentional test error")
 
-    graph = StateGraph(State)
+    graph = StateGraph(State)  # type: ignore[arg-type]  # TypedDict in function scope
     graph.add_node("agent", failing_node)
     graph.set_entry_point("agent")
     graph.add_edge("agent", END)
@@ -222,7 +222,7 @@ def test_langgraph_adapter_logs_without_token_metadata():
         response = AIMessage(content="Test response")
         return {"messages": messages + [response]}
 
-    graph = StateGraph(State)
+    graph = StateGraph(State)  # type: ignore[arg-type]  # TypedDict in function scope
     graph.add_node("agent", agent_node)
     graph.set_entry_point("agent")
     graph.add_edge("agent", END)

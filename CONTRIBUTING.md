@@ -85,6 +85,18 @@ ruff check . --fix
 
 If you haven't activated your virtual environment, you can use `uv run ruff format .` and `uv run ruff check . --fix` instead.
 
+For convenience, you can enable **pre-commit hooks** to automatically format and lint code on every commit:
+
+```bash
+uv run pre-commit install
+```
+
+This is optional—CI will catch any issues regardless. But if enabled, the hooks will:
+- **Format** code with `ruff format` (using project settings from `pyproject.toml`)
+- **Lint and auto-fix** issues with `ruff check --fix`
+
+> **Note**: The pre-commit hooks intentionally skip removing unused imports (`F401`) and unused variables (`F841`) to avoid disrupting work-in-progress code. Run `uv run ruff check . --fix` manually before opening a PR to clean these up.
+
 ### 3. Dependency Management
 
 Dependencies are defined in `pyproject.toml` and locked in `uv.lock`. Understanding the different dependency types is important:
@@ -147,6 +159,18 @@ mkdocs serve
 
 > **Tip**: You can also use `uv run mkdocs build --strict` and `uv run mkdocs serve` if you prefer not to activate the environment.
 
+#### View Source Code Links
+
+API reference pages should include links to source files on GitHub. Use the following pattern:
+
+```markdown
+[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/path/to/YOUR_NEW_CLASS.py){ .md-source-file align=right }
+
+::: maseval.path.to.YOUR_NEW_CLASS
+```
+
+This renders a right-aligned GitHub link above the auto-generated API documentation. See `docs/reference/agent.md` for a complete example.
+
 #### Including Jupyter Notebooks in Documentation
 
 You may include jupyter notebook examples directly into the documentation. We use the `mkdocs-jupyter` plugin to render Jupyter notebooks in the documentation. To avoid duplicating notebook files, we use **symbolic links**.
@@ -187,11 +211,14 @@ When you open a Pull Request, a series of automated checks will run using **GitH
 The pipeline automatically performs the following tasks:
 
 - **Linting and Formatting**: Verifies that your code adheres to our style guide using `ruff`.
-- **Testing**: Runs the entire test suite across different Python versions and operating systems. This includes tests for both the core package and the optional integrations.
+- **Testing** (tiered):
+  - *Fast tests* (every PR, Python 3.10–3.14): core, benchmark, and all default-suite tests. No API keys needed.
+  - *Slow tests* (every PR, Python 3.12): data download and integrity validation.
+  - *Credentialed tests* (every PR, Python 3.12): live API tests. Requires maintainer approval to run — secrets are only exposed after approval.
 - **Type Checking**: Validates type annotations using `ty`.
 - **Documentation**: Ensures documentation builds without errors using `mkdocs`.
 
-**All checks must pass** before your Pull Request can be merged. You can view the progress and logs of these checks directly on your Pull Request page in GitHub.
+**All checks must pass** before your Pull Request can be merged. Contributors don't need API keys — the default and slow test suites run without them. See `tests/README.md` for how markers work and for the recommended benchmark testing pattern (offline structural tests vs. real-data tests).
 
 > **Note:** You don't need to run all these checks locally - CI will catch issues. However, running `uv run ruff format && uv run ruff check` before pushing can save you time.
 

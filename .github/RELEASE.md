@@ -2,10 +2,18 @@
 
 ## Creating a Release
 
+1. Update `CHANGELOG.md`:
+   - Rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`
+   - Add new empty `[Unreleased]` section with subheaders
+   - Update comparison links at the bottom
+
+2. Bump version and push:
 ```bash
 python scripts/bump_version.py patch  # or: minor, major
 git push && git push --tags
 ```
+
+The script automatically stages `CHANGELOG.md` along with `pyproject.toml`.
 
 Automation handles the rest: https://github.com/parameterlab/maseval/actions
 

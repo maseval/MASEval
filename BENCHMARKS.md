@@ -4,7 +4,7 @@ This document provides detailed information, sources, and licensing for all benc
 
 ---
 
-## 1. AWS Multi-Agent Collaboration Scenario
+## 1. Multi-Agent Collaboration Scenario Benchmark (MACS Benchmark)
 
 This benchmark is designed to test and evaluate the collaborative problem-solving capabilities of multi-agent systems. The implementation in this library provides the necessary code to set up and run these scenarios.
 
@@ -27,13 +27,50 @@ $\tau^2$-bench is a benchmark for evaluating agentic systems in realistic, multi
 
 ---
 
-## 3. [Name of Next Benchmark]
+## 3. MultiAgentBench (MARBLE)
 
-(Description for the third benchmark...)
+MultiAgentBench is a comprehensive benchmark suite for evaluating multi-agent collaboration and competition in LLM-based systems. It includes diverse scenarios across multiple domains including research collaboration, negotiation, coding tasks, and more.
+
+### Source and License
+
+- **Original Repository:** [https://github.com/ulab-uiuc/MARBLE](https://github.com/ulab-uiuc/MARBLE)
+- **Paper:** [MultiAgentBench: Evaluating the Collaboration and Competition of LLM agents](https://arxiv.org/abs/2503.01935)
+- **Code License:** MIT
+- **Data License:** MIT
+
+---
+
+## 4. GAIA2
+
+Gaia2 is a benchmark for evaluating LLM-based agents on dynamic, multi-step scenarios using Meta's ARE (Agent Research Environments) platform. It tests agents across 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, and noise.
+
+### Source and License
+
+- **Original Repository:** [https://github.com/facebookresearch/meta-agents-research-environments](https://github.com/facebookresearch/meta-agents-research-environments)
+- **Dataset:** [https://huggingface.co/datasets/meta-agents-research-environments/gaia2](https://huggingface.co/datasets/meta-agents-research-environments/gaia2)
+- **Code License:** MIT
+- **Data License:** Subject to Meta's data usage terms (see HuggingFace dataset page)
+
+---
+
+## 5. CONVERSE
+
+CONVERSE evaluates contextual safety in agent-to-agent conversations. It focuses on adversarial interactions where an external service-provider agent attempts privacy extraction or unauthorized action induction over multiple turns.
+
+### Source and License
+
+- **Original Repository:** [https://github.com/amrgomaaelhady/ConVerse](https://github.com/amrgomaaelhady/ConVerse)
+- **Paper:** [ConVerse: Contextual Safety in Agent-to-Agent Conversations](https://arxiv.org/abs/2506.15753)
+- **Code License:** MIT (as provided by the upstream repository)
+- **Data License:** Refer to the upstream repository's dataset and license terms
+
+---
+
+## 6. [Name of Next Benchmark]
+
+(Description for the next benchmark...)
 
 ### Source and License
 
 - **Original Repository:** [Link](Link)
 - **Data License:** Data License.
-
----
