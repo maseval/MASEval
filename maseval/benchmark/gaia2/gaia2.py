@@ -874,15 +874,20 @@ class DefaultGaia2Agent:
             Final text response
         """
         while self._iteration_count < self.max_iterations and not self._terminated:
-            # Pre-step: poll for notifications (matching ARE's pre-step)
-            # ARE agents/default_agent/steps/are_simulation.py:26-62
-            self._pull_notifications()
-
-            # Check for environment stop message
+            # Check for environment stop BEFORE draining notifications.
+            # ARE's execute_agent_loop checks termination_condition (which peeks
+            # via has_environment_stop_message) in the while-condition, THEN runs
+            # pre_step (which drains via get_by_timestamp). Reversing this order
+            # causes the drain to consume ENVIRONMENT_STOP before the peek sees it.
             # ARE agents/default_agent/termination_methods/are_simulation.py:105-107
+            # ARE agents/default_agent/base_agent.py:776-799
             if self._check_environment_stop():
                 self._terminated = True
                 break
+
+            # Pre-step: poll for notifications (matching ARE's pre-step)
+            # ARE agents/default_agent/steps/are_simulation.py:26-62
+            self._pull_notifications()
 
             try:
                 # Build messages for LLM
