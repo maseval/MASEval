@@ -393,7 +393,7 @@ _STOP_SEQUENCES = ["<end_action>", "Observation:"]
 # Termination tool names — agent terminates when these are called.
 # wait_for_notification is NOT a termination tool: it pauses the agent while
 # the ARE environment processes events and advances simulation time, then the
-# agent resumes by polling notifications.  See Gaia2Benchmark docstring for
+# agent resumes by polling notifications. See Gaia2Benchmark docstring for
 # the full multi-turn contract.
 _TERMINATION_TOOLS = frozenset(
     {
