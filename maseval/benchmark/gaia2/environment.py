@@ -265,7 +265,11 @@ class Gaia2Environment(Environment):
 
             from are.simulation.notification_system import MessageType  # type: ignore[import-not-found]
 
-            timestamp = datetime.now(tz=timezone.utc)
+            # Use simulation time, not wall-clock time. Notifications are timestamped
+            # with simulation time (via TimeManager), so querying with wall-clock would
+            # drain all messages prematurely. Matches ARE agents/default_agent/steps/are_simulation.py:30-32.
+            sim_time = self.get_simulation_time()
+            timestamp = datetime.fromtimestamp(sim_time, tz=timezone.utc)
             unhandled = notification_system.message_queue.get_by_timestamp(timestamp=timestamp)
 
             if not unhandled:
