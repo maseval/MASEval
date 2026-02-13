@@ -112,6 +112,7 @@ class TestMultiAgentBenchEnvironmentRealMarble:
             sys.modules.update(marble_modules)
 
     @pytest.mark.live
+    @pytest.mark.slow
     def test_marble_env_type_in_state(self, sample_research_task_data: Dict[str, Any]):
         """setup_state should include MARBLE env type (needs real marble)."""
         env = MultiAgentBenchEnvironment(task_data=sample_research_task_data)

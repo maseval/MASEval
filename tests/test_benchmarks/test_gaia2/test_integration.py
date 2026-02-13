@@ -259,6 +259,6 @@ class TestGaia2PipelineSmoke:
             "task_timeout",
             "unknown_execution_error",
             "evaluation_failed",
-            "setup_error",
+            "setup_failed",
         }
         assert result["status"] in known_statuses, f"Unexpected status '{result['status']}'. Known: {known_statuses}"

@@ -479,7 +479,11 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             task: Task with relationship data
             marble_env: MARBLE environment
         """
-        from marble.graph.agent_graph import AgentGraph  # type: ignore[import-untyped]
+        ensure_marble_on_path()
+        try:
+            from marble.graph.agent_graph import AgentGraph  # type: ignore[import-untyped]
+        except ImportError as e:
+            raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 
         # Extract MARBLE agents from adapters
         marble_agents = [adapter.marble_agent for adapter in agents_dict.values()]
