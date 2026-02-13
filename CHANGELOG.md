@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed GAIA2 default agent failing on reasoning models (o1, o3, GPT-5) that reject `stop` and `temperature` parameters. Client-side stop-token truncation (matching ARE's reference implementation) is now always applied, and `llm_args` values set to `None` are omitted from API calls (PR: #PR_NUMBER_PLACEHOLDER)
 - Fixed GAIA2 multi-turn notification loop: `wait_for_notification()` no longer terminates the agent prematurely, enabling correct behavior for `time` and `adaptability` scenarios that require the agent to wait for simulation events and resume (PR: #PR_NUMBER_PLACEHOLDER)
 - Added `Gaia2Environment.poll_notifications()` convenience method for custom agent implementations to drain the notification queue without needing ARE-internal imports (PR: #PR_NUMBER_PLACEHOLDER)
 

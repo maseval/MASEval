@@ -147,6 +147,23 @@ if has_stop:
 
 See `DefaultGaia2Agent` source for the canonical single-loop implementation.
 
+## Reasoning Models (o1, o3, GPT-5)
+
+Reasoning models do not support several standard LLM parameters (`stop`, `temperature`, `top_p`). The default agent always applies client-side stop-token truncation (matching ARE's reference implementation), so action parsing works correctly even without API-level stop sequences.
+
+To use reasoning models, disable unsupported parameters via `llm_args`:
+
+```python
+benchmark = MyDefaultGaia2Benchmark(
+    agent_data={
+        "model_id": "gpt-5",
+        "llm_args": {"stop": None, "temperature": None},
+    },
+)
+```
+
+Parameters set to `None` are omitted from the API call. All other parameters pass through to the model provider as-is — if a parameter is unsupported, the provider will raise an error.
+
 ## Key Differences from Tau2
 
 | Aspect           | Gaia2                                    | Tau2                              |

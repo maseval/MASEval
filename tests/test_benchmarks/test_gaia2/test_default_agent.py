@@ -111,6 +111,62 @@ Action:
 
 
 @pytest.mark.benchmark
+class TestApplyStopTruncation:
+    """Tests for _apply_stop_truncation helper function.
+
+    Matches ARE's LiteLLMEngine client-side truncation (litellm_engine.py:126-127).
+    """
+
+    def test_truncates_on_end_action(self):
+        """Test truncation at `<end_action>` stop token."""
+        from maseval.benchmark.gaia2.gaia2 import _apply_stop_truncation
+
+        text = 'Thought: checking.\n\nAction:\n{"action": "test", "action_input": {}}<end_action>extra stuff'
+        result = _apply_stop_truncation(text, ["<end_action>", "Observation:"])
+
+        assert result == 'Thought: checking.\n\nAction:\n{"action": "test", "action_input": {}}'
+        assert "<end_action>" not in result
+        assert "extra stuff" not in result
+
+    def test_truncates_on_observation(self):
+        """Test truncation at ``Observation:`` stop token."""
+        from maseval.benchmark.gaia2.gaia2 import _apply_stop_truncation
+
+        text = 'Thought: checking.\n\nAction:\n{"action": "test", "action_input": {}}Observation: some output'
+        result = _apply_stop_truncation(text, ["<end_action>", "Observation:"])
+
+        assert "Observation:" not in result
+        assert "some output" not in result
+
+    def test_no_stop_token_returns_unchanged(self):
+        """Test that text without stop tokens passes through unchanged."""
+        from maseval.benchmark.gaia2.gaia2 import _apply_stop_truncation
+
+        text = 'Thought: checking.\n\nAction:\n{"action": "test", "action_input": {}}'
+        result = _apply_stop_truncation(text, ["<end_action>", "Observation:"])
+
+        assert result == text
+
+    def test_truncates_on_first_occurrence(self):
+        """Test that only content before the first stop token is kept."""
+        from maseval.benchmark.gaia2.gaia2 import _apply_stop_truncation
+
+        text = "before<end_action>middle<end_action>after"
+        result = _apply_stop_truncation(text, ["<end_action>"])
+
+        assert result == "before"
+
+    def test_empty_stop_sequences(self):
+        """Test with empty stop sequences list."""
+        from maseval.benchmark.gaia2.gaia2 import _apply_stop_truncation
+
+        text = "some text<end_action>more"
+        result = _apply_stop_truncation(text, [])
+
+        assert result == text
+
+
+@pytest.mark.benchmark
 class TestBuildToolDescriptions:
     """Tests for _build_tool_descriptions helper function."""
 
@@ -259,6 +315,27 @@ class TestDefaultGaia2AgentInit:
         assert agent.invalid_format_retries == 5
         assert agent.llm_args["temperature"] == 0.7
         assert agent.verbose == 2
+
+    def test_none_llm_args_override_defaults(self, sample_tools_dict, gaia2_model_react):
+        """Test that llm_args with None values override defaults.
+
+        Reasoning models (o1, o3, GPT-5) don't support stop, temperature, etc.
+        Setting them to None omits them from the API call while client-side
+        stop-token truncation still works.
+        """
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        agent = DefaultGaia2Agent(
+            tools=sample_tools_dict,
+            model=gaia2_model_react,
+            llm_args={"stop": None, "temperature": None},
+        )
+
+        # None values stored in llm_args (filtered out at call time)
+        assert agent.llm_args["stop"] is None
+        assert agent.llm_args["temperature"] is None
+        # max_tokens retains default
+        assert agent.llm_args["max_tokens"] == 16384
 
     def test_builds_system_prompt_with_tools(self, sample_tools_dict, gaia2_model_react):
         """Test that system prompt includes tool descriptions."""

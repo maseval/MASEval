@@ -681,6 +681,28 @@ def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any
     return (thought, tool_name, tool_args)
 
 
+def _apply_stop_truncation(text: str, stop_sequences: List[str]) -> str:
+    """Apply client-side stop-sequence truncation.
+
+    Removes the first occurrence of any stop sequence and everything after it.
+    This matches ARE's LiteLLMEngine behavior (litellm_engine.py:126-127) and
+    serves as a universal fallback when stop sequences are not supported at the
+    API level (e.g., reasoning models like o1/o3/GPT-5).
+
+    Always applied regardless of whether API-level ``stop`` is also used.
+
+    Args:
+        text: Raw LLM response text.
+        stop_sequences: Tokens to truncate on.
+
+    Returns:
+        Text truncated at the first matching stop sequence.
+    """
+    for stop_token in stop_sequences:
+        text = text.split(stop_token)[0]
+    return text
+
+
 class DefaultGaia2Agent:
     """Default agent implementation for Gaia2 benchmark.
 
@@ -723,6 +745,16 @@ class DefaultGaia2Agent:
             environment: Optional Gaia2Environment for notification polling
             llm_args: Additional arguments for model calls. Defaults are applied
                 for temperature (0.5), max_tokens (16384), and stop sequences.
+                Parameters set to ``None`` are omitted from the API call. Use
+                this for models that don't support certain parameters (e.g.,
+                reasoning models like o1/o3/GPT-5 that reject ``stop`` and
+                ``temperature``)::
+
+                    llm_args={"stop": None, "temperature": None}
+
+                Client-side stop-token truncation (matching ARE's behavior) is
+                always applied regardless of the ``stop`` setting, so action
+                parsing works correctly even without API-level stop sequences.
             max_iterations: Maximum iterations before stopping. Default 80.
             invalid_format_retries: Max retries for invalid format. Default 10.
             simulated_generation_time_config: Optional config for simulated generation
@@ -1037,9 +1069,16 @@ class DefaultGaia2Agent:
                 messages = [{"role": "system", "content": self.system_prompt}] + self._messages
 
             call_start = time.monotonic()
-            response = self.model.chat(messages=messages, **self.llm_args)  # type: ignore[arg-type]
+            # Filter None values: allows users to disable params (e.g., stop=None for reasoning models)
+            active_args = {k: v for k, v in self.llm_args.items() if v is not None}
+            response = self.model.chat(messages=messages, **active_args)  # type: ignore[arg-type]
             completion_duration = time.monotonic() - call_start
             content = response.content or ""
+
+            # Client-side stop-token truncation (ARE litellm_engine.py:126-127).
+            # Always applied as a universal fallback — works even when API-level
+            # stop sequences are disabled (stop=None) for reasoning models.
+            content = _apply_stop_truncation(content, _STOP_SEQUENCES)
 
             if self.verbose >= 2:
                 print(f"[Iteration {self._iteration_count}, format try {format_try_count}] LLM output:\n{content}\n")
