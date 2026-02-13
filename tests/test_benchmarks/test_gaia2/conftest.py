@@ -59,60 +59,63 @@ class MockARETool:
     """Mock for ARE's AppTool class.
 
     Simulates an ARE tool for testing Gaia2GenericTool and Gaia2Environment.
-    Includes ARE's actual attributes (_public_description, function_description, args).
+    Matches ARE's AppTool dataclass (tool_utils.py:56-78) with attributes:
+    name, app_name, _public_name, _public_description, function_description,
+    args (list of AppToolArg), return_type.
     """
 
     def __init__(
         self,
         name: str = "mock_tool",
         description: str = "A mock tool for testing",
-        inputs: Optional[Dict[str, Any]] = None,
+        app_name: str = "MockApp",
+        return_type: Any = str,
+        args: Optional[List[Any]] = None,
         return_value: Any = "mock result",
     ):
+        # ARE AppTool core attributes (tool_utils.py:56-69)
         self.name = name
+        self.app_name = app_name
+        self._public_name = name
+        self._public_description = description
+        self.function_description = description
+        self.return_type = return_type
 
-        # ARE's actual attributes (used by Gaia2GenericTool)
-        self._public_description = description  # ARE uses this
-        self.function_description = description  # ARE fallback
-
-        # Create args list from inputs schema (ARE format)
-        self.args = self._create_args_from_inputs(
-            inputs
-            or {
-                "properties": {"arg1": {"type": "string", "description": "First argument"}},
-                "required": ["arg1"],
-            }
-        )
-
-        # Keep old attributes for backward compatibility with tests
-        self.description = description
-        self.inputs = inputs or {
-            "properties": {"arg1": {"type": "string", "description": "First argument"}},
-            "required": ["arg1"],
-        }
+        # ARE AppTool args (list of AppToolArg)
+        self.args = args if args is not None else self._default_args()
 
         self._return_value = return_value
         self._calls: List[Dict[str, Any]] = []
 
     @staticmethod
-    def _create_args_from_inputs(inputs: Dict[str, Any]) -> List[Any]:
-        """Convert inputs schema to ARE's args format."""
+    def _default_args() -> List[Any]:
+        """Create default args matching ARE's AppToolArg format (tool_utils.py:38-52)."""
         from types import SimpleNamespace
 
-        args = []
-        properties = inputs.get("properties", {})
-        required_set = set(inputs.get("required", []))
+        return [
+            SimpleNamespace(
+                name="arg1",
+                arg_type="str",
+                description="First argument",
+                has_default=False,
+            ),
+        ]
 
-        for param_name, param_info in properties.items():
-            arg = SimpleNamespace(
-                name=param_name,
-                arg_type=param_info.get("type", "string"),  # ARE uses arg_type, not type
-                description=param_info.get("description", ""),
-                has_default=param_name not in required_set,  # ARE uses has_default, not required
-            )
-            args.append(arg)
+    @staticmethod
+    def make_arg(
+        name: str,
+        arg_type: str = "str",
+        description: str = "",
+        has_default: bool = False,
+        default: Any = None,
+    ) -> Any:
+        """Create a mock AppToolArg matching ARE's format (tool_utils.py:38-52)."""
+        from types import SimpleNamespace
 
-        return args
+        arg = SimpleNamespace(name=name, arg_type=arg_type, description=description, has_default=has_default)
+        if has_default:
+            arg.default = default
+        return arg
 
     def __call__(self, **kwargs) -> Any:
         self._calls.append(kwargs)
@@ -161,11 +164,11 @@ class MockAREEnvironment:
         current_time: float = 0.0,
     ):
         default_tools = tools or [
-            MockARETool("Calendar__get_events", "Get calendar events"),
-            MockARETool("Email__send", "Send an email"),
-            MockARETool("SystemApp__get_current_time", "Get current time", return_value="2024-01-15T10:00:00"),
-            MockARETool("SystemApp__wait_for_notification", "Wait for notification", return_value="No notifications"),
-            MockARETool("AgentUserInterface__send_message_to_user", "Send message to user"),
+            MockARETool("Calendar__get_events", "Get calendar events", app_name="Calendar"),
+            MockARETool("Email__send", "Send an email", app_name="Email"),
+            MockARETool("SystemApp__get_current_time", "Get current time", app_name="SystemApp", return_value="2024-01-15T10:00:00"),
+            MockARETool("SystemApp__wait_for_notification", "Wait for notification", app_name="SystemApp", return_value="No notifications"),
+            MockARETool("AgentUserInterface__send_message_to_user", "Send message to user", app_name="AgentUserInterface"),
         ]
         # Group tools by app name (part before __) to match real ARE structure
         apps_dict: Dict[str, List[MockARETool]] = {}
@@ -330,17 +333,16 @@ class ConcreteGaia2Benchmark:
 
 @pytest.fixture
 def mock_are_tool() -> MockARETool:
-    """Create a single mock ARE tool."""
+    """Create a single mock ARE tool matching ARE's AppTool format."""
     return MockARETool(
         name="TestTool__do_something",
         description="A test tool that does something",
-        inputs={
-            "properties": {
-                "param1": {"type": "string", "description": "First parameter"},
-                "param2": {"type": "integer", "description": "Second parameter"},
-            },
-            "required": ["param1"],
-        },
+        app_name="TestTool",
+        return_type=str,
+        args=[
+            MockARETool.make_arg("param1", arg_type="str", description="First parameter"),
+            MockARETool.make_arg("param2", arg_type="int", description="Second parameter", has_default=True, default=0),
+        ],
         return_value="Tool executed successfully",
     )
 
@@ -349,15 +351,17 @@ def mock_are_tool() -> MockARETool:
 def mock_are_tools() -> List[MockARETool]:
     """Create a set of mock ARE tools matching GAIA2 apps."""
     return [
-        MockARETool("Calendar__get_events", "Get calendar events", return_value=[]),
-        MockARETool("Calendar__create_event", "Create calendar event", return_value={"id": "evt_123"}),
-        MockARETool("Email__send", "Send an email", return_value={"status": "sent"}),
-        MockARETool("Email__read", "Read emails", return_value=[]),
-        MockARETool("Messaging__send", "Send a message", return_value={"status": "sent"}),
-        MockARETool("Contacts__search", "Search contacts", return_value=[]),
-        MockARETool("SystemApp__get_current_time", "Get current time", return_value="2024-01-15T10:00:00Z"),
-        MockARETool("SystemApp__wait_for_notification", "Wait for notification", return_value="No notifications"),
-        MockARETool("AgentUserInterface__send_message_to_user", "Send message to user", return_value="Message sent"),
+        MockARETool("Calendar__get_events", "Get calendar events", app_name="Calendar", return_value=[]),
+        MockARETool("Calendar__create_event", "Create calendar event", app_name="Calendar", return_value={"id": "evt_123"}),
+        MockARETool("Email__send", "Send an email", app_name="Email", return_value={"status": "sent"}),
+        MockARETool("Email__read", "Read emails", app_name="Email", return_value=[]),
+        MockARETool("Messaging__send", "Send a message", app_name="Messaging", return_value={"status": "sent"}),
+        MockARETool("Contacts__search", "Search contacts", app_name="Contacts", return_value=[]),
+        MockARETool("SystemApp__get_current_time", "Get current time", app_name="SystemApp", return_value="2024-01-15T10:00:00Z"),
+        MockARETool("SystemApp__wait_for_notification", "Wait for notification", app_name="SystemApp", return_value="No notifications"),
+        MockARETool(
+            "AgentUserInterface__send_message_to_user", "Send message to user", app_name="AgentUserInterface", return_value="Message sent"
+        ),
     ]
 
 

@@ -17,7 +17,7 @@ FUNDAMENTAL RULES FOR TASK EXECUTION:
 5. INFORMATION: Use available tools to gather missing information before asking user.
 6. AMBIGUITY: Execute all clear and unambiguous parts of a request immediately. When you encounter ambiguities, contradictions, or impossible elements, finish unambiguous subtasks and then stop and explicitly ask the user for clarification before proceeding with those specific parts.
 
-
+{environment_hints}
 
 <<notification_system_description>>
 

@@ -511,10 +511,9 @@ def _get_current_time_description(environment: Optional[Any]) -> str:
     try:
         from datetime import datetime, timezone
 
-        start_time = environment.get_start_time()
-        if start_time is None:
-            return ""
-
+        # ARE are_simulation_main.py:157: `scenario.start_time or 0`
+        # Defaults to Unix epoch (1970-01-01 00) when start_time is None
+        start_time = environment.get_start_time() or 0
         date_str = datetime.fromtimestamp(start_time, tz=timezone.utc).strftime("%Y-%m-%d %H")
         return f"Today's date in 'YYYY-MM-DD HH' format is {date_str}"
     except Exception:
@@ -529,6 +528,7 @@ def _build_system_prompt(tools: Dict[str, Callable], environment: Optional[Any] 
     - Dynamic notification system policy from ARE's notification_system.py
     - Current time from scenario start_time (ARE are_simulation_main.py:156-164)
     - Empty agent_reminder_description (ARE are_simulation_main.py:166-171)
+    - Scenario additional_system_prompt appended (ARE are_simulation_main.py:138-145)
 
     Args:
         tools: Dict of tool name -> callable
@@ -546,8 +546,9 @@ def _build_system_prompt(tools: Dict[str, Callable], environment: Optional[Any] 
     # Build tool descriptions in ARE's format
     tool_descriptions = _build_tool_descriptions(tools)
 
-    # Format environment instructions with tool descriptions
-    environment_formatted = environment_template.format(tool_descriptions=tool_descriptions)
+    # Format environment instructions with tool descriptions and environment hints
+    # ARE system_prompt.py:187-189: environment_hints is always "" for default JSON agent
+    environment_formatted = environment_template.format(tool_descriptions=tool_descriptions, environment_hints="")
 
     # Replace dynamic placeholders (matching ARE's are_simulation_main.py:138-171)
     # 1. Notification system description
@@ -564,11 +565,24 @@ def _build_system_prompt(tools: Dict[str, Callable], environment: Optional[Any] 
     environment_formatted = environment_formatted.replace("<<curent_time_description>>", time_description)
 
     # Assemble full prompt
-    return template.format(
+    prompt = template.format(
         general_instructions=general,
         agent_instructions=agent,
         environment_instructions=environment_formatted,
     )
+
+    # Append scenario's additional_system_prompt if present
+    # ARE are_simulation_main.py:138-145
+    if environment is not None:
+        try:
+            scenario = environment.get_scenario()
+            additional = getattr(scenario, "additional_system_prompt", None)
+            if additional is not None:
+                prompt += "\n\n" + additional
+        except Exception:
+            pass
+
+    return prompt
 
 
 def _parse_json_blob(json_blob: str) -> Dict[str, Any]:

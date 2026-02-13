@@ -18,7 +18,7 @@ class TestGaia2GenericToolInit:
     """Tests for Gaia2GenericTool initialization."""
 
     def test_extracts_name_from_are_tool(self, mock_are_tool):
-        """Test wrapper extracts name from ARE tool."""
+        """Test wrapper extracts _public_name from ARE tool (tool_utils.py:546)."""
         from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
         mock_env = MagicMock()
@@ -26,10 +26,10 @@ class TestGaia2GenericToolInit:
 
         wrapper = Gaia2GenericTool(mock_are_tool, mock_env)
 
-        assert wrapper.name == mock_are_tool.name
+        assert wrapper.name == mock_are_tool._public_name
 
     def test_extracts_description_from_are_tool(self, mock_are_tool):
-        """Test wrapper extracts description from ARE tool."""
+        """Test wrapper builds full description with app prefix and return type suffix."""
         from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
         mock_env = MagicMock()
@@ -37,10 +37,12 @@ class TestGaia2GenericToolInit:
 
         wrapper = Gaia2GenericTool(mock_are_tool, mock_env)
 
-        assert wrapper.description == mock_are_tool.description
+        # ARE tool_utils.py:550,581-582: "Acts on app {app_name}: {desc} Returns: {type}"
+        assert wrapper.description.startswith(f"Acts on app {mock_are_tool.app_name}: ")
+        assert mock_are_tool._public_description in wrapper.description
 
-    def test_extracts_inputs_schema(self, mock_are_tool):
-        """Test wrapper extracts inputs schema."""
+    def test_extracts_inputs_flat_dict(self, mock_are_tool):
+        """Test wrapper extracts inputs as flat dict matching ARE's AppToolAdapter format."""
         from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
         mock_env = MagicMock()
@@ -48,7 +50,13 @@ class TestGaia2GenericToolInit:
 
         wrapper = Gaia2GenericTool(mock_are_tool, mock_env)
 
-        assert "properties" in wrapper.inputs
+        # ARE tool_utils.py:572-578 — flat dict keyed by arg name
+        assert "param1" in wrapper.inputs
+        assert wrapper.inputs["param1"]["type"] == "string"
+        assert "param2" in wrapper.inputs
+        assert wrapper.inputs["param2"]["type"] == "integer"
+        # param2 has a default
+        assert wrapper.inputs["param2"]["default"] == 0
 
     def test_initializes_empty_history(self, mock_are_tool):
         """Test wrapper initializes with empty history."""
@@ -185,8 +193,8 @@ class TestGaia2GenericToolTracing:
 
         config = wrapper.gather_config()
 
-        assert config["name"] == mock_are_tool.name
-        assert config["description"] == mock_are_tool.description
+        assert config["name"] == mock_are_tool._public_name
+        assert "Acts on app TestTool:" in config["description"]
         assert "input_schema" in config
 
 
@@ -195,7 +203,7 @@ class TestGaia2GenericToolSchemaExtraction:
     """Tests for schema extraction from ARE's args attribute."""
 
     def test_extracts_from_are_args_attribute(self, mock_are_tool):
-        """Test extraction from ARE's 'args' attribute (correct behavior)."""
+        """Test extraction from ARE's 'args' attribute produces flat inputs dict."""
         from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
         mock_env = MagicMock()
@@ -203,14 +211,17 @@ class TestGaia2GenericToolSchemaExtraction:
 
         wrapper = Gaia2GenericTool(mock_are_tool, mock_env)
 
-        # Should have extracted from args attribute
-        assert "properties" in wrapper.inputs
-        assert "param1" in wrapper.inputs["properties"]
-        assert wrapper.inputs["properties"]["param1"]["type"] == "string"
-        assert "param1" in wrapper.inputs["required"]
+        # inputs is flat dict (ARE tool_utils.py:572-578)
+        assert "param1" in wrapper.inputs
+        assert wrapper.inputs["param1"]["type"] == "string"
+        assert wrapper.inputs["param1"]["description"] == "First parameter"
 
-    def test_extracts_description_from_are_attributes(self, mock_are_tool):
-        """Test extraction from ARE's _public_description or function_description."""
+        # input_schema keeps JSON schema format for tracing
+        assert "properties" in wrapper.input_schema
+        assert "param1" in wrapper.input_schema["properties"]
+
+    def test_extracts_description_with_app_prefix(self, mock_are_tool):
+        """Test description includes app name prefix and return type suffix."""
         from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
         mock_env = MagicMock()
@@ -218,24 +229,28 @@ class TestGaia2GenericToolSchemaExtraction:
 
         wrapper = Gaia2GenericTool(mock_are_tool, mock_env)
 
-        # Should have extracted from _public_description or function_description
-        assert wrapper.description == mock_are_tool._public_description
+        # ARE tool_utils.py:550 — prefix with app name
+        assert wrapper.description.startswith("Acts on app TestTool: ")
+        # ARE tool_utils.py:547-548 — includes public description
+        assert "A test tool that does something" in wrapper.description
 
-    def test_handles_missing_args(self):
-        """Test handling when no args attribute is available."""
+    def test_handles_empty_args(self):
+        """Test handling when args list is empty."""
         from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
-        mock_tool = MagicMock(spec=["name", "_public_description", "__call__"])
+        mock_tool = MagicMock(spec=["name", "_public_name", "_public_description", "app_name", "return_type", "args", "__call__"])
         mock_tool.name = "test_tool"
+        mock_tool._public_name = "test_tool"
         mock_tool._public_description = "Test"
-        mock_tool.args = None
+        mock_tool.app_name = "TestApp"
+        mock_tool.return_type = None
+        mock_tool.args = []
 
         mock_env = MagicMock()
         mock_env.get_simulation_time.return_value = 0.0
 
         wrapper = Gaia2GenericTool(mock_tool, mock_env)
 
-        # Should return empty dict when no args attribute
         assert wrapper.inputs == {}
 
 

@@ -134,16 +134,23 @@ class TestGaia2EnvironmentCreateTools:
         """Test create_tools returns wrapped ARE tools."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
         from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
+        from types import SimpleNamespace
 
         mock_are, modules = _make_are_mock()
         mock_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_env_instance
 
-        # Create mock app and tool
-        mock_tool = MagicMock()
-        mock_tool.name = "TestTool__do_something"
-        mock_tool.description = "Test tool"
-        mock_tool.inputs = {}
+        # Create mock tool matching ARE's AppTool interface (required by AppToolAdapter)
+        mock_tool = SimpleNamespace(
+            name="TestTool__do_something",
+            _public_name="TestTool__do_something",
+            _public_description="Test tool",
+            function_description="Test tool",
+            app_name="TestTool",
+            return_type=str,
+            args=[SimpleNamespace(name="arg1", arg_type="str", description="An argument", has_default=False)],
+        )
+        mock_tool.__call__ = lambda **kw: "result"
 
         mock_app = MagicMock()
         mock_app.get_tools.return_value = [mock_tool]

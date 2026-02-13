@@ -9,6 +9,8 @@ Reference Paper: "GAIA-2: A Controllable Multi-Turn Conversational Benchmark for
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from are.simulation.tool_utils import AppToolAdapter
+
 from maseval.core.tracing import TraceableMixin
 from maseval.core.config import ConfigurableMixin
 from maseval.core.history import ToolInvocationHistory
@@ -57,46 +59,22 @@ class Gaia2GenericTool(TraceableMixin, ConfigurableMixin):
         self._are_tool = are_tool
         self._environment = environment
 
-        # Extract metadata from ARE tool using correct attributes
-        self.name: str = getattr(are_tool, "name", str(are_tool))
-        self.description: str = self._extract_description(are_tool)
+        # Delegate metadata extraction to ARE's AppToolAdapter (tool_utils.py:544-584).
+        # This is the source of truth for tool name, description, inputs, and output_type.
+        adapter = AppToolAdapter(are_tool)
+        self.name: str = adapter.name
+        self.description: str = adapter.description
+        self.inputs: Dict[str, Any] = adapter.inputs
+        self.output_type: str = adapter.output_type
+        self.actual_return_type: Optional[str] = adapter.actual_return_type
         self.input_schema: Dict[str, Any] = self._extract_schema(are_tool)
-        self.inputs: Dict[str, Any] = self._extract_inputs(are_tool)
-        self.output_type: str = "string"
 
         # Initialize invocation history
         self.history = ToolInvocationHistory()
 
     @staticmethod
-    def _extract_description(are_tool: Any) -> str:
-        """Extract description from ARE's actual attributes.
-
-        ARE's AppTool class has _public_description or function_description,
-        NOT description.
-
-        Args:
-            are_tool: ARE AppTool instance
-
-        Returns:
-            Tool description string
-        """
-        # Try _public_description first (preferred)
-        desc = getattr(are_tool, "_public_description", None)
-        if desc:
-            return desc
-
-        # Fall back to function_description
-        desc = getattr(are_tool, "function_description", None)
-        if desc:
-            return desc
-
-        return ""
-
-    @staticmethod
     def _extract_schema(are_tool: Any) -> Dict[str, Any]:
-        """Convert ARE's args list to JSON schema format.
-
-        ARE's AppTool class has args: list[AppToolArg], NOT inputs or parameters.
+        """Convert ARE's args list to JSON schema format for tracing/config.
 
         Args:
             are_tool: ARE AppTool instance
@@ -126,26 +104,8 @@ class Gaia2GenericTool(TraceableMixin, ConfigurableMixin):
 
         return {"properties": properties, "required": required}
 
-    @staticmethod
-    def _extract_inputs(are_tool: Any) -> Dict[str, Any]:
-        """Convert ARE tool schema to inputs format for framework compatibility.
-
-        For backward compatibility with existing code, this returns the same
-        schema format as input_schema (with "properties" and "required" keys).
-
-        Args:
-            are_tool: ARE AppTool instance
-
-        Returns:
-            Dictionary with properties and required fields (same as input_schema)
-        """
-        return Gaia2GenericTool._extract_schema(are_tool)
-
     def __call__(self, **kwargs: Any) -> Any:
         """Execute tool and record invocation.
-
-        Preserves exact behavior of original AREToolWrapper to ensure
-        reproducibility of results.
 
         Args:
             **kwargs: Tool arguments
