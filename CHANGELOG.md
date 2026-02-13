@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- GAIA2 default agent now uses ARE's `parse_json_tool_call` and `get_offset_from_time_config_mode` directly instead of reimplementing them locally, reducing code duplication and ensuring correctness as ARE evolves (PR: #PR_NUMBER_PLACEHOLDER)
+
 ### Fixed
 
 - Fixed GAIA2 default agent failing on reasoning models (o1, o3, GPT-5) that reject `stop` and `temperature` parameters. Client-side stop-token truncation (matching ARE's reference implementation) is now always applied, and `llm_args` values set to `None` are omitted from API calls (PR: #PR_NUMBER_PLACEHOLDER)

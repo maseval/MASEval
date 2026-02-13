@@ -45,12 +45,11 @@ Default Agent Implementation:
     results = benchmark.run(tasks)
 """
 
-import json
 import re
 import time
 from abc import abstractmethod
-from dataclasses import dataclass
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
@@ -364,29 +363,6 @@ class Gaia2SimulatedGenerationTimeConfig:
                 raise ValueError("When mode is 'fixed', seconds must be provided and cannot be None.")
 
 
-def _get_offset_from_time_config_mode(
-    time_config: Gaia2SimulatedGenerationTimeConfig,
-    completion_duration: float,
-) -> float:
-    """Determine the time offset based on the config mode.
-
-    Matches ARE's ``get_offset_from_time_config_mode`` (base_agent.py:990-1006).
-
-    Args:
-        time_config: Simulated generation time configuration
-        completion_duration: Actual wall-clock LLM generation time in seconds
-
-    Returns:
-        Time offset in seconds to advance the simulation clock
-    """
-    if time_config.mode == "fixed" and time_config.seconds is not None:
-        return time_config.seconds
-    elif time_config.mode == "measured":
-        return completion_duration
-    else:
-        raise ValueError(f"Invalid simulated_generation_time_config: {time_config}")
-
-
 # Stop sequences for text-based action parsing
 _STOP_SEQUENCES = ["<end_action>", "Observation:"]
 
@@ -603,60 +579,11 @@ def _build_system_prompt(tools: Dict[str, Callable], environment: Optional[Any] 
     return prompt
 
 
-def _parse_json_blob(json_blob: str) -> Dict[str, Any]:
-    """Parse JSON blob matching ARE's ``parse_json_blob()``.
-
-    ARE agents/default_agent/tools/json_action_executor.py:33-57.
-    Finds the first '{' and last '}' to handle nested JSON. Raises on failure
-    (no lenient fallbacks — matching ARE's error propagation).
-
-    Args:
-        json_blob: String potentially containing JSON
-
-    Returns:
-        Parsed dict
-
-    Raises:
-        ValueError: If JSON parsing fails
-    """
-    try:
-        first_brace = json_blob.find("{")
-        last_brace_positions = [m.start() for m in re.finditer(r"}", json_blob)]
-        if first_brace == -1 or not last_brace_positions:
-            raise ValueError(f"No JSON object found in: {json_blob[:200]}")
-
-        last_brace = last_brace_positions[-1]
-        json_str = json_blob[first_brace : last_brace + 1]
-
-        # Handle escaped quotes (ARE json_action_executor.py:38)
-        json_str = json_str.replace('\\"', "'")
-
-        # Handle triple quotes (ARE json_action_executor.py:42)
-        json_str = re.sub(r'"""(.*?)"""', r"'\1'", json_str, flags=re.DOTALL)
-
-        return json.loads(json_str, strict=False)
-    except json.JSONDecodeError as e:
-        # ARE json_action_executor.py:45-55: raises JsonParsingAgentError
-        place = e.pos or 0
-        if json_str[place - 1 : place + 2] == "},\n":
-            raise ValueError(
-                "JSON is invalid: you probably tried to provide multiple tool calls in one action. PROVIDE ONLY ONE TOOL CALL."
-            ) from e
-        raise ValueError(
-            f"The JSON blob you used is invalid due to the following error: {e}.\n"
-            f"JSON blob was: {json_str}, decoding failed on that specific part of the blob:\n"
-            f"'{json_str[place - 4 : place + 5]}'."
-        ) from e
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"Error in parsing the JSON blob: {e}") from e
-
-
 def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any] | str]]:
     """Parse Thought and Action from LLM text output.
 
-    Matches ARE's ``JsonActionExecutor.extract_action()`` and ``parse_json_tool_call()``.
+    Uses ARE's ``parse_json_tool_call()`` for JSON parsing and action extraction.
+    The outer text parsing (Thought/Action section extraction) is custom.
 
     Expected format::
 
@@ -674,6 +601,10 @@ def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any
     Returns:
         Tuple of (thought, tool_name, tool_args) or None if parsing fails
     """
+    from are.simulation.agents.default_agent.tools.json_action_executor import (  # type: ignore[import-not-found]
+        parse_json_tool_call,
+    )
+
     # Extract thought (everything before "Action:")
     thought = ""
     if "Thought:" in text:
@@ -693,24 +624,14 @@ def _parse_action_from_text(text: str) -> Optional[Tuple[str, str, Dict[str, Any
     if end_action_pos != -1:
         action_text = action_text[:end_action_pos]
 
-    # Remove markdown code fences (ARE json_action_executor.py:61)
-    action_text = action_text.replace("```json", "").replace("```", "")
-
-    # Parse JSON (raises ValueError on failure, matching ARE)
+    # Parse JSON tool call using ARE's parser
+    # ARE handles: code fence removal, JSON extraction, action/action_input extraction
+    # Raises JsonParsingAgentError (not ValueError) on failure
     try:
-        action_data = _parse_json_blob(action_text)
-    except ValueError:
+        tool_name, tool_args = parse_json_tool_call(action_text)
+        return (thought, str(tool_name), tool_args)
+    except Exception:
         return None
-
-    tool_name = action_data.get("action")
-    if tool_name is None:
-        return None
-    tool_name = str(tool_name)
-
-    # ARE json_action_executor.py:70: missing action_input defaults to ""
-    tool_args = action_data.get("action_input", "")
-
-    return (thought, tool_name, tool_args)
 
 
 def _apply_stop_truncation(text: str, stop_sequences: List[str]) -> str:
@@ -977,7 +898,11 @@ class DefaultGaia2Agent:
                 # Resume environment after LLM generation with time offset
                 # ARE base_agent.py:680-689
                 if self.simulated_generation_time_config is not None:
-                    offset = _get_offset_from_time_config_mode(
+                    from are.simulation.agents.default_agent.base_agent import (  # type: ignore[import-not-found]
+                        get_offset_from_time_config_mode,
+                    )
+
+                    offset = get_offset_from_time_config_mode(
                         time_config=self.simulated_generation_time_config,
                         completion_duration=completion_duration,
                     )

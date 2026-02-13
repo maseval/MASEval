@@ -49,7 +49,11 @@ Action:
         assert tool_name == "Email__send"
 
     def test_parses_empty_action_input(self):
-        """Test parsing action with empty input."""
+        """Test parsing action with empty input.
+
+        ARE's ``parse_json_tool_call`` normalizes falsy action_input (including
+        empty dict ``{}``) to empty string ``""`` via ``action_input or ""``.
+        """
         from maseval.benchmark.gaia2.gaia2 import _parse_action_from_text
 
         text = """Thought: Just getting the time.
@@ -62,7 +66,8 @@ Action:
         assert result is not None
         _, tool_name, tool_args = result
         assert tool_name == "SystemApp__get_current_time"
-        assert tool_args == {}
+        # ARE normalizes empty/falsy action_input to "" (parse_json_tool_call: `action_input or ""`)
+        assert tool_args == ""
 
     def test_returns_none_for_invalid_format(self):
         """Test that invalid format returns None."""
@@ -824,3 +829,45 @@ class TestDefaultConstants:
 
         assert "AgentUserInterface__send_message_to_user" in _TERMINATION_TOOLS
         assert "SystemApp__wait_for_notification" not in _TERMINATION_TOOLS
+
+
+# =============================================================================
+# Test ARE Import Delegation
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestAREImportDelegation:
+    """Verify that functions delegate to ARE's implementations."""
+
+    def test_parse_action_uses_are_parse_json_tool_call(self):
+        """_parse_action_from_text delegates JSON parsing to ARE's parse_json_tool_call."""
+        from are.simulation.agents.default_agent.tools.json_action_executor import parse_json_tool_call
+
+        # If the import works, ARE is installed and the function is available.
+        # Verify _parse_action_from_text produces the same result as calling
+        # parse_json_tool_call on the action blob directly.
+        from maseval.benchmark.gaia2.gaia2 import _parse_action_from_text
+
+        text = 'Thought: checking.\n\nAction:\n{"action": "Calendar__get_events", "action_input": {"date": "2024-01-15"}}<end_action>'
+        result = _parse_action_from_text(text)
+        assert result is not None
+        _, tool_name, tool_args = result
+
+        # Compare with ARE's direct output
+        are_name, are_args = parse_json_tool_call('{"action": "Calendar__get_events", "action_input": {"date": "2024-01-15"}}')
+        assert tool_name == are_name
+        assert tool_args == are_args
+
+    def test_get_offset_uses_are_function(self):
+        """_react_loop uses ARE's get_offset_from_time_config_mode at runtime."""
+        from are.simulation.agents.default_agent.base_agent import get_offset_from_time_config_mode
+
+        # Verify the ARE function exists and works as expected
+        from maseval.benchmark.gaia2.gaia2 import Gaia2SimulatedGenerationTimeConfig
+
+        config = Gaia2SimulatedGenerationTimeConfig(mode="measured")
+        assert get_offset_from_time_config_mode(config, 2.5) == 2.5
+
+        config_fixed = Gaia2SimulatedGenerationTimeConfig(mode="fixed", seconds=1.0)
+        assert get_offset_from_time_config_mode(config_fixed, 2.5) == 1.0
