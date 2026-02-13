@@ -93,7 +93,7 @@ all = [
 
 [dependency-groups]
 # Dependencies needed for development (linting, testing)
-dev = ["pytest>=8.4.2", "pytest-cov>=7.0.0", "ruff>=0.13.0", "ty>=0.0.1a20"]
+dev = ["pytest>=8.4.2", "pytest-cov>=7.0.0", "coverage>=7.0.0", "ruff>=0.13.0", "ty>=0.0.1a20"]
 
 
 # Dependencies needed to build the documentation
