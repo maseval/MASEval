@@ -308,8 +308,12 @@ class TestDefaultGaia2AgentRun:
         assert agent._terminated
         assert "ready to help" in result.lower()
 
-    def test_terminates_on_wait_for_notification(self, sample_tools_dict, gaia2_model_wait_notification):
-        """Test agent terminates when calling wait_for_notification."""
+    def test_continues_after_wait_for_notification(self, sample_tools_dict, gaia2_model_wait_notification):
+        """Test agent does NOT terminate on wait_for_notification.
+
+        wait_for_notification is a pause, not a termination signal.  The agent
+        must continue its loop and eventually terminate via send_message_to_user.
+        """
         from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
 
         agent = DefaultGaia2Agent(
@@ -320,7 +324,10 @@ class TestDefaultGaia2AgentRun:
         result = agent.run("Wait for updates")
 
         assert agent._terminated
-        assert "notification" in result.lower()
+        # Agent continued past wait_for_notification and terminated via send_message_to_user
+        assert "finished waiting" in result.lower()
+        # At least 2 iterations: one for wait, one for send_message_to_user
+        assert agent.iteration_count >= 2
 
     def test_retries_on_invalid_format(self, sample_tools_dict, gaia2_model_invalid_format):
         """Test agent retries when format is invalid then hits max iterations."""
@@ -408,6 +415,52 @@ class TestDefaultGaia2AgentRun:
         messages = agent.get_messages()
         error_observed = any("error" in str(m.get("content", "")).lower() for m in messages)
         assert error_observed
+
+    def test_wait_for_notification_executes_tool_and_continues(self):
+        """Test wait_for_notification executes the tool and records observation.
+
+        Verifies the multi-turn notification loop: the agent calls
+        wait_for_notification, the tool executes (advancing simulation
+        time), the observation is added to messages, and the agent
+        continues to call more tools before terminating.
+        """
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        wait_called = []
+
+        def mock_wait(**kwargs):
+            wait_called.append(kwargs)
+            return "No notifications"
+
+        tools = {
+            "Calendar__get_events": lambda **kwargs: "[]",
+            "SystemApp__wait_for_notification": mock_wait,
+            "AgentUserInterface__send_message_to_user": lambda **kwargs: "sent",
+        }
+
+        model = DummyModelAdapter(
+            responses=[
+                # Step 1: wait for notification
+                'Thought: Need to wait.\n\nAction:\n{"action": "SystemApp__wait_for_notification", "action_input": {"timeout": 240}}<end_action>',
+                # Step 2: check calendar (agent continued!)
+                'Thought: Check calendar after wait.\n\nAction:\n{"action": "Calendar__get_events", "action_input": {}}<end_action>',
+                # Step 3: terminate
+                'Thought: Done.\n\nAction:\n{"action": "AgentUserInterface__send_message_to_user", "action_input": {"content": "All done."}}<end_action>',
+            ]
+        )
+
+        agent = DefaultGaia2Agent(tools=tools, model=model)
+        result = agent.run("Multi-turn task")
+
+        # wait_for_notification was actually executed as a tool
+        assert len(wait_called) == 1
+        # Agent continued past wait and executed more tools
+        assert agent.iteration_count == 3
+        assert result == "All done."
+        # Observation from wait is in messages
+        messages = agent.get_messages()
+        wait_observation = [m for m in messages if "No notifications" in str(m.get("content", ""))]
+        assert len(wait_observation) > 0
 
 
 @pytest.mark.benchmark
@@ -570,8 +623,12 @@ class TestDefaultConstants:
         assert "Observation:" in _STOP_SEQUENCES
 
     def test_termination_tools_include_expected(self):
-        """Test TERMINATION_TOOLS include expected tool names."""
+        """Test TERMINATION_TOOLS contains only send_message_to_user.
+
+        wait_for_notification is NOT a termination tool — it pauses the
+        agent while ARE processes events, then the agent resumes.
+        """
         from maseval.benchmark.gaia2.gaia2 import _TERMINATION_TOOLS
 
         assert "AgentUserInterface__send_message_to_user" in _TERMINATION_TOOLS
-        assert "SystemApp__wait_for_notification" in _TERMINATION_TOOLS
+        assert "SystemApp__wait_for_notification" not in _TERMINATION_TOOLS

@@ -480,3 +480,74 @@ class TestGaia2EnvironmentJudgeEngineConfig:
 
             # GraphPerEventJudgeConfig should be created with the custom engine
             mock_judge_config_cls.assert_called_once_with(engine=mock_engine)
+
+
+# =============================================================================
+# Test poll_notifications
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestPollNotifications:
+    """Tests for Gaia2Environment.poll_notifications()."""
+
+    def test_returns_empty_when_no_are_env(self):
+        """poll_notifications returns empty when ARE environment is not set up."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        # Create env without triggering setup_state (no ARE)
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = None
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        user_msgs, env_notifs, has_stop = env.poll_notifications()
+
+        assert user_msgs == []
+        assert env_notifs == []
+        assert has_stop is False
+
+    def test_returns_empty_when_no_notification_system(self):
+        """poll_notifications returns empty when notification_system is None."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        # Use a bare mock without notification_system attribute
+        mock_env = MagicMock(spec=[])
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = mock_env
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        user_msgs, env_notifs, has_stop = env.poll_notifications()
+
+        assert user_msgs == []
+        assert env_notifs == []
+        assert has_stop is False
+
+    def test_returns_empty_when_queue_empty(self):
+        """poll_notifications returns empty when queue has no messages."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        mock_ns = MagicMock()
+        mock_ns.message_queue.get_by_timestamp.return_value = []
+
+        mock_env = MagicMock()
+        mock_env.notification_system = mock_ns
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = mock_env
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        user_msgs, env_notifs, has_stop = env.poll_notifications()
+
+        assert user_msgs == []
+        assert env_notifs == []
+        assert has_stop is False

@@ -73,14 +73,49 @@ class Gaia2Benchmark(Benchmark):
     MASEval orchestration, tracing, and agent flexibility.
 
     The ARE simulation runs internally; agents interact purely via tool calls.
-    Time control happens through SystemApp.wait_for_notification().
+    Time control happens through ``SystemApp__wait_for_notification``.
 
     Subclasses must implement:
-        - setup_agents(): Create agents for the task
-        - get_model_adapter(): Provide model adapters
+
+    - ``setup_agents()`` — Create agents for the task
+    - ``get_model_adapter()`` — Provide model adapters
+
+    Multi-Turn Notification Loop:
+        GAIA2 uses an **event-driven** multi-turn architecture, not user-turn
+        interaction.  The benchmark invokes the agent **once**; the agent
+        handles multi-turn internally via the notification loop described below.
+
+        **How it works:**
+
+        1. The agent calls ``SystemApp__wait_for_notification(timeout=N)`` as
+           a normal tool.  This triggers ``ARE.Environment.wait_for_next_notification()``
+           synchronously: the simulation processes scheduled events, advances
+           time, and queues any resulting notifications.
+        2. The tool returns an observation (the agent's loop continues).
+        3. **Before the next LLM call**, the agent must poll the notification
+           queue to retrieve messages that arrived during the wait.
+        4. The agent injects those messages into its context and continues
+           reasoning.
+        5. Eventually the agent calls ``AgentUserInterface__send_message_to_user``
+           which is the **only** termination signal.
+
+        **What custom agents must do:**
+
+        - **Do NOT terminate** when ``wait_for_notification`` returns.  Treat
+          it as a regular tool call whose observation is added to context.
+        - **Poll notifications** between steps by calling
+          ``environment.poll_notifications()``, which returns pre-formatted
+          ``(user_messages, env_notifications, has_stop_message)`` without
+          requiring any ARE imports.
+        - **Terminate only** on ``AgentUserInterface__send_message_to_user``.
+
+        See the default agent implementation for the canonical single-loop
+        approach, and ``Gaia2Environment.poll_notifications()`` for the
+        polling API.
     """
 
-    # Single-turn by default (ARE handles time internally via tools)
+    # The benchmark invokes the agent once; multi-turn is the agent's
+    # responsibility (see "Multi-Turn Notification Loop" above).
     MAX_INVOCATIONS = 1
 
     def __init__(
@@ -355,11 +390,14 @@ def _get_offset_from_time_config_mode(
 # Stop sequences for text-based action parsing
 _STOP_SEQUENCES = ["<end_action>", "Observation:"]
 
-# Termination tool names - agent terminates when these are called
+# Termination tool names — agent terminates when these are called.
+# wait_for_notification is NOT a termination tool: it pauses the agent while
+# the ARE environment processes events and advances simulation time, then the
+# agent resumes by polling notifications.  See Gaia2Benchmark docstring for
+# the full multi-turn contract.
 _TERMINATION_TOOLS = frozenset(
     {
         "AgentUserInterface__send_message_to_user",
-        "SystemApp__wait_for_notification",
     }
 )
 
@@ -659,7 +697,9 @@ class DefaultGaia2Agent:
     - Default max_iterations: 80 (ARE are_simulation_agent_config.py:36)
     - Invalid format retry: up to 10 times (ARE base_agent.py:347)
     - Iteration counter incremented EVERY loop (including errors) (ARE base_agent.py:849)
-    - Terminates on send_message_to_user or wait_for_notification
+    - Terminates on send_message_to_user only
+    - wait_for_notification pauses: ARE processes events, then agent polls
+      notifications and continues the loop
     - Max-iterations sends message to user via tool (ARE are_simulation.py:109-116)
     - Pre-step notification polling (ARE steps/are_simulation.py:26-62)
     """
@@ -751,58 +791,35 @@ class DefaultGaia2Agent:
     def _pull_notifications(self) -> None:
         """Pull messages from the ARE notification system.
 
+        Delegates to ``Gaia2Environment.poll_notifications()`` which drains
+        the notification queue and returns pre-formatted strings.
+
         Matches ARE's pre-step notification polling behavior.
         ARE agents/default_agent/steps/are_simulation.py:26-62
         """
         if self.environment is None:
             return
 
-        notification_system = self.environment.get_notification_system()
-        if notification_system is None:
-            return
+        user_messages, env_notifications, _ = self.environment.poll_notifications()
 
-        try:
-            from datetime import datetime, timezone
+        # Inject into message history matching ARE's format
+        # ARE base_agent.py:107: "User messages updates:\n***\n{content}\n***\n"
+        if user_messages:
+            content = "\n".join(user_messages)
+            self._messages.append({"role": "user", "content": f"User messages updates:\n***\n{content}\n***\n"})
 
-            timestamp = datetime.now(tz=timezone.utc)
-            unhandled = notification_system.message_queue.get_by_timestamp(timestamp=timestamp)
-
-            if not unhandled:
-                return
-
-            # Separate user messages from environment notifications
-            # ARE steps/are_simulation.py:34-61
-            user_messages = []
-            env_notifications = []
-            for notif in unhandled:
-                msg_type = getattr(notif, "message_type", None)
-                if msg_type is not None:
-                    # Import MessageType at call time to avoid import errors
-                    from are.simulation.notification_system import MessageType  # type: ignore[import-not-found]
-
-                    if msg_type == MessageType.USER_MESSAGE:
-                        user_messages.append(notif.message)
-                    elif msg_type == MessageType.ENVIRONMENT_NOTIFICATION:
-                        ts = notif.timestamp.strftime("%Y-%m-%d %H:%M:%S") if notif.timestamp else ""
-                        env_notifications.append(f"[{ts}] {notif.message}")
-
-            # Inject into message history matching ARE's format
-            # ARE base_agent.py:107: "User messages updates:\n***\n{content}\n***\n"
-            if user_messages:
-                content = "\n".join(user_messages)
-                self._messages.append({"role": "user", "content": f"User messages updates:\n***\n{content}\n***\n"})
-
-            # ARE base_agent.py:110-112: "Environment notifications updates:\n***\n{content}\n***\n"
-            if env_notifications:
-                content = "\n".join(env_notifications)
-                self._messages.append({"role": "user", "content": f"Environment notifications updates:\n***\n{content}\n***\n"})
-        except Exception:
-            pass  # Notification polling is best-effort
+        # ARE base_agent.py:110-112: "Environment notifications updates:\n***\n{content}\n***\n"
+        if env_notifications:
+            content = "\n".join(env_notifications)
+            self._messages.append({"role": "user", "content": f"Environment notifications updates:\n***\n{content}\n***\n"})
 
     def _check_environment_stop(self) -> bool:
         """Check if the environment has sent a stop message.
 
-        Matches ARE's termination_condition_are_simulation check.
+        Uses a lightweight peek via the ARE notification system's
+        ``has_environment_stop_message()`` when available, falling back to
+        ``poll_notifications()``.
+
         ARE agents/default_agent/termination_methods/are_simulation.py:105-107
 
         Returns:
@@ -811,14 +828,15 @@ class DefaultGaia2Agent:
         if self.environment is None:
             return False
 
+        # Prefer the non-draining peek when available
         notification_system = self.environment.get_notification_system()
-        if notification_system is None:
-            return False
+        if notification_system is not None:
+            try:
+                return notification_system.message_queue.has_environment_stop_message()
+            except Exception:
+                pass
 
-        try:
-            return notification_system.message_queue.has_environment_stop_message()
-        except Exception:
-            return False
+        return False
 
     def _pause_env(self) -> None:
         """Pause the ARE environment before LLM generation.
@@ -919,23 +937,18 @@ class DefaultGaia2Agent:
                 if self.verbose >= 1:
                     print(f"[Iteration {self._iteration_count}] Tool: {tool_name}")
 
-                # Check for termination tools
+                # Check for termination tool (send_message_to_user)
                 # ARE agents/default_agent/termination_methods/are_simulation.py:76-118
                 if tool_name in _TERMINATION_TOOLS:
                     self._terminated = True
-
-                    # Execute the termination tool
                     observation = self._execute_tool(tool_name, tool_args)
+                    self._final_message = tool_args.get("content", str(observation)) if isinstance(tool_args, dict) else str(observation)
+                    return self._final_message
 
-                    # For send_message_to_user, capture the message
-                    if tool_name == "AgentUserInterface__send_message_to_user":
-                        self._final_message = tool_args.get("content", str(observation)) if isinstance(tool_args, dict) else str(observation)
-                        return self._final_message
-
-                    # For wait_for_notification, return the observation
-                    return str(observation)
-
-                # Execute tool
+                # Execute tool (includes wait_for_notification, which pauses
+                # the agent while ARE processes events and advances time;
+                # the next iteration's _pull_notifications() picks up any
+                # new messages that arrived during the wait)
                 observation = self._execute_tool(tool_name, tool_args)
 
                 # Add observation in ARE's format

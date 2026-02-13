@@ -468,11 +468,17 @@ def gaia2_model_termination() -> DummyModelAdapter:
 
 @pytest.fixture
 def gaia2_model_wait_notification() -> DummyModelAdapter:
-    """Create a model that waits for notification."""
+    """Create a model that waits for notification then terminates.
+
+    wait_for_notification is NOT a termination signal — the agent must
+    continue its loop. This fixture provides two responses: the wait call
+    followed by the real termination call (send_message_to_user).
+    """
     return DummyModelAdapter(
         model_id="test-wait-model",
         responses=[
             'Thought: I need to wait for a notification.\n\nAction:\n{"action": "SystemApp__wait_for_notification", "action_input": {"timeout_seconds": 30}}<end_action>',
+            'Thought: Done waiting, reporting back.\n\nAction:\n{"action": "AgentUserInterface__send_message_to_user", "action_input": {"content": "Finished waiting for notification."}}<end_action>',
         ],
     )
 

@@ -5,7 +5,7 @@ MASEval Environment wrapping ARE's simulation.
 Reference Paper: "GAIA-2: A Controllable Multi-Turn Conversational Benchmark for Agents"
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from maseval import Environment
 
@@ -228,6 +228,64 @@ class Gaia2Environment(Environment):
         if self._are_env is None:
             return None
         return getattr(self._are_env, "notification_system", None)
+
+    def poll_notifications(self) -> Tuple[List[str], List[str], bool]:
+        """Poll pending notifications from the ARE notification system.
+
+        Drains all pending messages from the notification queue and returns
+        them as pre-formatted strings. Call this between agent steps to
+        receive messages that arrived during ``wait_for_notification()`` or
+        from background simulation events.
+
+        GAIA2 uses an event-driven multi-turn architecture.  When the agent
+        calls ``SystemApp__wait_for_notification``, the ARE environment
+        processes scheduled events, advances simulation time, and queues
+        notifications.  After the tool returns, call this method to retrieve
+        those notifications and inject them into the agent's context before
+        the next LLM call.
+
+        ARE agents/default_agent/steps/are_simulation.py:26-62
+
+        Returns:
+            Tuple of ``(user_messages, env_notifications, has_stop_message)``.
+            ``user_messages`` and ``env_notifications`` contain pre-formatted
+            strings ready to inject into agent context. ``has_stop_message``
+            is True when the environment has signalled the simulation is over.
+        """
+        notification_system = self.get_notification_system()
+        if notification_system is None:
+            return [], [], False
+
+        try:
+            from datetime import datetime, timezone
+
+            from are.simulation.notification_system import MessageType  # type: ignore[import-not-found]
+
+            timestamp = datetime.now(tz=timezone.utc)
+            unhandled = notification_system.message_queue.get_by_timestamp(timestamp=timestamp)
+
+            if not unhandled:
+                return [], [], False
+
+            # Separate by message type, matching ARE steps/are_simulation.py:34-61
+            user_messages: List[str] = []
+            env_notifications: List[str] = []
+            has_stop = False
+
+            for notif in unhandled:
+                msg_type = getattr(notif, "message_type", None)
+                if msg_type == MessageType.USER_MESSAGE:
+                    user_messages.append(notif.message)
+                elif msg_type == MessageType.ENVIRONMENT_NOTIFICATION:
+                    ts = notif.timestamp.strftime("%Y-%m-%d %H:%M:%S") if notif.timestamp else ""
+                    env_notifications.append(f"[{ts}] {notif.message}")
+                elif msg_type == MessageType.ENVIRONMENT_STOP:
+                    has_stop = True
+
+            return user_messages, env_notifications, has_stop
+
+        except Exception:
+            return [], [], False
 
     def get_start_time(self) -> Optional[float]:
         """Get the scenario start time.

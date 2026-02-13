@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed GAIA2 multi-turn notification loop: `wait_for_notification()` no longer terminates the agent prematurely, enabling correct behavior for `time` and `adaptability` scenarios that require the agent to wait for simulation events and resume (PR: #PR_NUMBER_PLACEHOLDER)
+- Added `Gaia2Environment.poll_notifications()` convenience method for custom agent implementations to drain the notification queue without needing ARE-internal imports (PR: #PR_NUMBER_PLACEHOLDER)
+
 ### Added
 
 **Benchmarks**
