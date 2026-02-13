@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed GAIA2 multi-turn notification loop: `wait_for_notification()` no longer terminates the agent prematurely, enabling correct behavior for `time` and `adaptability` scenarios that require the agent to wait for simulation events and resume (PR: #PR_NUMBER_PLACEHOLDER)
 - Fixed GAIA2 environment using wrong simulation clock: `start_time` and `time_increment_in_seconds` from the scenario are now passed to ARE's `EnvironmentConfig`, matching ARE's `scenario_runner.py`. Previously the agent environment started at epoch (1970-01-01), causing failures in time-dependent capabilities like `adaptability` and `time` (PR: #PR_NUMBER_PLACEHOLDER)
 - Added `Gaia2Environment.poll_notifications()` convenience method for custom agent implementations to drain the notification queue without needing ARE-internal imports (PR: #PR_NUMBER_PLACEHOLDER)
+- Fixed GAIA2 environment exposing 4 extra AgentUserInterface tools (`get_last_message_from_user`, `get_last_message_from_agent`, `get_last_unread_messages`, `get_all_messages`) that ARE filters out in `remove_aui_irrelevant_tools()`. These tools are now excluded, and `wait_for_user_response` is set to `False` on the AUI app, matching ARE's reference behavior (PR: #PR_NUMBER_PLACEHOLDER)
 
 ### Added
 

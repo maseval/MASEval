@@ -160,16 +160,29 @@ class Gaia2Environment(Environment):
             "start_time": getattr(scenario, "start_time", None),
         }
 
+    # Tools removed by ARE's remove_aui_irrelevant_tools()
+    # ARE agents/default_agent/are_simulation_main.py:206-228
+    # User messages are delivered via the notification system, not via these tools.
+    _AUI_TOOLS_TO_REMOVE = {
+        "AgentUserInterface__get_last_message_from_user",
+        "AgentUserInterface__get_last_message_from_agent",
+        "AgentUserInterface__get_last_unread_messages",
+        "AgentUserInterface__get_all_messages",
+    }
+
     def create_tools(self) -> Dict[str, Gaia2GenericTool]:
-        """Wrap all ARE app tools for MASEval tracing.
+        """Wrap ARE app tools for MASEval tracing.
 
         Creates framework-agnostic Gaia2GenericTool instances that provide
         clean API with built-in tracing.
 
-        Includes critical tools:
-            - SystemApp.get_current_time(): Query simulation time
-            - SystemApp.wait_for_notification(timeout): Advance simulation time
-            - All domain app tools (calendar, email, messaging, etc.)
+        Filters out AgentUserInterface message-retrieval tools that ARE removes
+        in ``remove_aui_irrelevant_tools()``, and sets ``wait_for_user_response``
+        to ``False`` so the AUI does not block waiting for a response when the
+        agent sends a message. User messages are delivered via the notification
+        system instead.
+
+        ARE agents/default_agent/are_simulation_main.py:206-228
 
         Returns:
             Dict mapping tool names to Gaia2GenericTool instances
@@ -179,9 +192,17 @@ class Gaia2Environment(Environment):
         if self._are_env is None:
             return tools
 
-        # Get all tools from all apps in the ARE environment
+        # Get all tools from all apps, filtering out AUI message-retrieval tools
+        # ARE agents/default_agent/are_simulation_main.py:221-227
         for app in self._are_env.apps.values():
+            # Set wait_for_user_response=False on AUI so it doesn't block
+            # ARE agents/default_agent/are_simulation_main.py:216
+            if hasattr(app, "wait_for_user_response"):
+                app.wait_for_user_response = False
+
             for tool in app.get_tools():
+                if tool.name in self._AUI_TOOLS_TO_REMOVE:
+                    continue
                 wrapper = Gaia2GenericTool(tool, self)
                 tools[tool.name] = wrapper
                 self._tool_wrappers[tool.name] = wrapper

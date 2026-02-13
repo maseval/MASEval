@@ -168,6 +168,97 @@ class TestGaia2EnvironmentCreateTools:
             assert "TestTool__do_something" in tools
             assert isinstance(tools["TestTool__do_something"], Gaia2GenericTool)
 
+    def test_create_tools_filters_aui_tools(self):
+        """Test create_tools filters out AUI message-retrieval tools."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+        from types import SimpleNamespace
+
+        mock_are, modules = _make_are_mock()
+        mock_env_instance = MagicMock()
+        mock_are.simulation.environment.Environment.return_value = mock_env_instance
+
+        def _make_tool(name, app_name="TestApp"):
+            t = SimpleNamespace(
+                name=name,
+                _public_name=name,
+                _public_description=f"Desc for {name}",
+                function_description=f"Desc for {name}",
+                app_name=app_name,
+                return_type=str,
+                args=[],
+            )
+            t.__call__ = lambda **kw: "result"
+            return t
+
+        # Create tools including the 4 AUI tools that should be filtered
+        kept_tool = _make_tool("AgentUserInterface__send_message_to_user", "AgentUserInterface")
+        filtered_tools = [
+            _make_tool("AgentUserInterface__get_last_message_from_user", "AgentUserInterface"),
+            _make_tool("AgentUserInterface__get_last_message_from_agent", "AgentUserInterface"),
+            _make_tool("AgentUserInterface__get_last_unread_messages", "AgentUserInterface"),
+            _make_tool("AgentUserInterface__get_all_messages", "AgentUserInterface"),
+        ]
+        other_tool = _make_tool("Calendar__create_event", "Calendar")
+
+        mock_aui_app = MagicMock()
+        mock_aui_app.get_tools.return_value = [kept_tool] + filtered_tools
+        mock_calendar_app = MagicMock()
+        mock_calendar_app.get_tools.return_value = [other_tool]
+        mock_env_instance.apps = {"AgentUserInterface": mock_aui_app, "Calendar": mock_calendar_app}
+
+        mock_scenario = MagicMock()
+        mock_scenario.duration = 86400
+        mock_scenario.events = []
+        mock_scenario.scenario_id = "test"
+
+        with patch.dict(sys.modules, modules):
+            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            tools = env.create_tools()
+
+            # Kept tools should be present
+            assert "AgentUserInterface__send_message_to_user" in tools
+            assert "Calendar__create_event" in tools
+
+            # Filtered tools should NOT be present
+            for ft in filtered_tools:
+                assert ft.name not in tools, f"{ft.name} should have been filtered out"
+
+    def test_create_tools_sets_wait_for_user_response_false(self):
+        """Test create_tools sets wait_for_user_response=False on AUI app."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+        from types import SimpleNamespace
+
+        mock_are, modules = _make_are_mock()
+        mock_env_instance = MagicMock()
+        mock_are.simulation.environment.Environment.return_value = mock_env_instance
+
+        mock_tool = SimpleNamespace(
+            name="AgentUserInterface__send_message_to_user",
+            _public_name="AgentUserInterface__send_message_to_user",
+            _public_description="Send message",
+            function_description="Send message",
+            app_name="AgentUserInterface",
+            return_type=str,
+            args=[],
+        )
+        mock_tool.__call__ = lambda **kw: "result"
+
+        mock_aui_app = MagicMock()
+        mock_aui_app.wait_for_user_response = True
+        mock_aui_app.get_tools.return_value = [mock_tool]
+        mock_env_instance.apps = {"AgentUserInterface": mock_aui_app}
+
+        mock_scenario = MagicMock()
+        mock_scenario.duration = 86400
+        mock_scenario.events = []
+        mock_scenario.scenario_id = "test"
+
+        with patch.dict(sys.modules, modules):
+            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env.create_tools()
+
+            assert mock_aui_app.wait_for_user_response is False
+
     def test_create_tools_returns_empty_when_no_are_env(self):
         """Test create_tools returns empty dict when ARE env is None."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
