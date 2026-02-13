@@ -444,7 +444,12 @@ class TestDefaultGaia2AgentRun:
         assert agent.iteration_count == 3
 
     def test_handles_tool_not_found(self, sample_tools_dict, gaia2_model_react):
-        """Test agent handles unknown tool gracefully."""
+        """Test agent handles unknown tool gracefully.
+
+        ARE json_action_executor.py:210-212: raises UnavailableToolAgentError
+        with message "Error: unknown tool {name}, should be instead one of ...".
+        Error appears as ERROR: message (not Observation:) in agent context.
+        """
         from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
 
         model = DummyModelAdapter(
@@ -461,20 +466,36 @@ class TestDefaultGaia2AgentRun:
 
         agent.run("Try unknown tool")
 
-        # Should have continued after error
+        # Should have continued after error and terminated
+        assert agent._terminated
         messages = agent.get_messages()
-        error_found = any("not found" in str(m.get("content", "")).lower() for m in messages)
-        assert error_found or agent._terminated
+        # Error is formatted as ERROR: (not Observation:) matching ARE
+        error_msgs = [m for m in messages if "ERROR:" in str(m.get("content", ""))]
+        assert len(error_msgs) >= 1
+        # ARE error format: "Error: unknown tool {name}, should be instead one of ..."
+        error_content = str(error_msgs[0].get("content", ""))
+        assert "unknown tool" in error_content.lower()
+        assert "should be instead one of" in error_content.lower()
 
     def test_handles_tool_execution_error(self):
-        """Test agent handles tool execution errors gracefully."""
+        """Test agent handles tool execution errors as ERROR: messages.
+
+        ARE json_action_executor.py:224-227: raises JsonExecutionAgentError with
+        error details and tool description reminder. Errors appear as ERROR:
+        messages (not Observation:) in agent context.
+        """
         from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
 
-        def failing_tool(**kwargs):
-            raise ValueError("Tool failed!")
+        class FailingTool:
+            description = "A tool that fails"
+            inputs = {"param": {"type": "string", "description": "A parameter"}}
+            output_type = "string"
+
+            def __call__(self, **kwargs):
+                raise ValueError("Tool failed!")
 
         tools = {
-            "Failing__tool": failing_tool,
+            "Failing__tool": FailingTool(),
             "AgentUserInterface__send_message_to_user": lambda **kwargs: "sent",
         }
 
@@ -488,10 +509,104 @@ class TestDefaultGaia2AgentRun:
         agent = DefaultGaia2Agent(tools=tools, model=model)
         agent.run("Test error handling")
 
-        # Should have error in observation
+        # Error appears as ERROR: message (not Observation:)
         messages = agent.get_messages()
-        error_observed = any("error" in str(m.get("content", "")).lower() for m in messages)
-        assert error_observed
+        error_msgs = [m for m in messages if "ERROR:" in str(m.get("content", ""))]
+        assert len(error_msgs) >= 1
+        error_content = str(error_msgs[0].get("content", ""))
+        # ARE format: includes "Error in tool call execution:" and tool description reminder
+        assert "Error in tool call execution" in error_content
+        assert "As a reminder, this tool's description is the following" in error_content
+        # No Observation: message for the error
+        error_observations = [m for m in messages if "Observation:" in str(m.get("content", "")) and "Tool failed" in str(m.get("content", ""))]
+        assert len(error_observations) == 0
+
+    def test_step_counter_increments_on_errors(self):
+        """Test step counter increments for errors, not just observations.
+
+        ARE base_agent.py:450-451: id_output_step incremented for BOTH
+        "observation" and "error" roles. Each output gets a unique step number.
+        """
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        def failing_tool(**kwargs):
+            raise ValueError("Tool failed!")
+
+        tools = {
+            "Failing__tool": failing_tool,
+            "Calendar__get_events": lambda **kwargs: "[]",
+            "AgentUserInterface__send_message_to_user": lambda **kwargs: "sent",
+        }
+
+        model = DummyModelAdapter(
+            responses=[
+                # Step 1: call failing tool -> ERROR at step 1
+                'Thought: Try failing.\n\nAction:\n{"action": "Failing__tool", "action_input": {}}<end_action>',
+                # Step 2: call working tool -> Observation at step 2
+                'Thought: Try calendar.\n\nAction:\n{"action": "Calendar__get_events", "action_input": {}}<end_action>',
+                # Step 3: terminate
+                'Thought: Done.\n\nAction:\n{"action": "AgentUserInterface__send_message_to_user", "action_input": {"content": "Done"}}<end_action>',
+            ]
+        )
+
+        agent = DefaultGaia2Agent(tools=tools, model=model)
+        agent.run("Test step counting")
+
+        messages = agent.get_messages()
+        # Find all OUTPUT OF STEP messages
+        step_msgs = [m for m in messages if "[OUTPUT OF STEP" in str(m.get("content", ""))]
+        assert len(step_msgs) >= 2
+
+        # Extract step numbers
+        import re
+
+        step_numbers = []
+        for m in step_msgs:
+            match = re.search(r"\[OUTPUT OF STEP (\d+)\]", str(m.get("content", "")))
+            if match:
+                step_numbers.append(int(match.group(1)))
+
+        # All step numbers should be unique (no duplicates from error path)
+        assert len(step_numbers) == len(set(step_numbers)), f"Duplicate step numbers: {step_numbers}"
+        # Steps should be sequential
+        assert step_numbers == sorted(step_numbers), f"Steps not sequential: {step_numbers}"
+
+    def test_unknown_tool_step_counter_increments(self):
+        """Test that calling an unknown tool increments the step counter.
+
+        Ensures no duplicate step numbers when error is followed by success.
+        """
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        tools = {
+            "Calendar__get_events": lambda **kwargs: "[]",
+            "AgentUserInterface__send_message_to_user": lambda **kwargs: "sent",
+        }
+
+        model = DummyModelAdapter(
+            responses=[
+                # Step 1: unknown tool -> ERROR at step 1
+                'Thought: Try unknown.\n\nAction:\n{"action": "NonExistent__tool", "action_input": {}}<end_action>',
+                # Step 2: valid tool -> Observation at step 2
+                'Thought: Try calendar.\n\nAction:\n{"action": "Calendar__get_events", "action_input": {}}<end_action>',
+                # Step 3: terminate
+                'Thought: Done.\n\nAction:\n{"action": "AgentUserInterface__send_message_to_user", "action_input": {"content": "Done"}}<end_action>',
+            ]
+        )
+
+        agent = DefaultGaia2Agent(tools=tools, model=model)
+        agent.run("Test unknown tool step counting")
+
+        messages = agent.get_messages()
+        import re
+
+        step_numbers = []
+        for m in messages:
+            match = re.search(r"\[OUTPUT OF STEP (\d+)\]", str(m.get("content", "")))
+            if match:
+                step_numbers.append(int(match.group(1)))
+
+        assert len(step_numbers) == len(set(step_numbers)), f"Duplicate step numbers: {step_numbers}"
 
     def test_wait_for_notification_executes_tool_and_continues(self):
         """Test wait_for_notification executes the tool and records observation.

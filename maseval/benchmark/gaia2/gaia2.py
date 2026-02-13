@@ -415,6 +415,24 @@ def _load_prompt_template(name: str) -> str:
     return path.read_text()
 
 
+def _get_tool_description_with_args(name: str, tool: Callable) -> str:
+    """Build a single tool's description with args, matching ARE's format.
+
+    ARE tool_box.py:16-20 ``DEFAULT_TOOL_DESCRIPTION_TEMPLATE``.
+
+    Args:
+        name: Tool name
+        tool: Callable with optional description/inputs/output_type attributes
+
+    Returns:
+        Formatted tool description string
+    """
+    desc = getattr(tool, "description", "") or ""
+    inputs = getattr(tool, "inputs", {}) or {}
+    output_type = getattr(tool, "output_type", "string") or "string"
+    return f"- {name}: {desc}\n    Takes inputs: {inputs}\n    Returns an output of type: {output_type}"
+
+
 def _build_tool_descriptions(tools: Dict[str, Callable]) -> str:
     """Build tool descriptions matching ARE's Jinja2 template format.
 
@@ -810,7 +828,7 @@ class DefaultGaia2Agent:
         self._format_retry_count = 0
         self._terminated = False
         self._final_message: Optional[str] = None
-        self._step_count = 0  # Counts successful tool executions (for observation formatting)
+        self._step_count = 0  # Counts all outputs: observations AND errors (ARE base_agent.py:450-451)
 
     def reset(self) -> None:
         """Reset agent state."""
@@ -975,6 +993,8 @@ class DefaultGaia2Agent:
                     # This shouldn't happen after format retry, but handle it
                     self._messages.append({"role": "assistant", "content": content})
                     error_msg = f"The LLM output was not formatted correctly: {content}"
+                    # ARE base_agent.py:450-451: increment step for errors too
+                    self._step_count += 1
                     self._messages.append(
                         {
                             "role": "user",
@@ -1022,6 +1042,8 @@ class DefaultGaia2Agent:
             except Exception as e:
                 # Match ARE error handling: log error, add to messages, continue
                 # ARE base_agent.py:839-840, base_agent.py:105-106
+                # ARE base_agent.py:450-451: increment step for errors too
+                self._step_count += 1
                 error_msg = str(e)
                 self._messages.append(
                     {
@@ -1076,6 +1098,8 @@ class DefaultGaia2Agent:
             if content is not None:
                 # Invalid format - add error and retry
                 # ARE base_agent.py:642-650
+                # ARE base_agent.py:450-451: increment step for errors too
+                self._step_count += 1
                 error_msg = f"The LLM output was not formatted correctly: {content}"
                 self._messages.append(
                     {
@@ -1096,6 +1120,11 @@ class DefaultGaia2Agent:
             response = self.model.chat(messages=messages, **active_args)  # type: ignore[arg-type]
             completion_duration = time.monotonic() - call_start
             content = response.content or ""
+
+            # Boolean replacement (ARE litellm_engine.py:125, hf_engine.py:152).
+            # LLMs frequently output Python-style True/False in JSON blobs;
+            # ARE normalizes to JSON-valid true/false before any parsing.
+            content = content.replace("False", "false").replace("True", "true")
 
             # Client-side stop-token truncation (ARE litellm_engine.py:126-127).
             # Always applied as a universal fallback — works even when API-level
@@ -1119,15 +1148,23 @@ class DefaultGaia2Agent:
     def _execute_tool(self, tool_name: str, tool_args: Dict[str, Any] | str) -> str:
         """Execute a tool call.
 
+        Raises on errors (matching ARE's json_action_executor.py:197-227).
+        Errors propagate to `_react_loop()` which formats them as ``ERROR:``
+        messages, distinct from ``Observation:`` messages.
+
         Args:
             tool_name: Name of the tool to call
             tool_args: Arguments for the tool (dict or string)
 
         Returns:
             Tool execution result as string
+
+        Raises:
+            RuntimeError: If tool is not found or execution fails
         """
+        # ARE json_action_executor.py:210-212: raises UnavailableToolAgentError
         if tool_name not in self.tools:
-            return f"Error: Tool '{tool_name}' not found. Available tools: {list(self.tools.keys())}"
+            raise RuntimeError(f"Error: unknown tool {tool_name}, should be instead one of {list(self.tools.keys())}.")
 
         try:
             # Match original ARE behavior: string args passed as positional argument
@@ -1137,7 +1174,16 @@ class DefaultGaia2Agent:
                 result = self.tools[tool_name](**tool_args)
             return str(result)
         except Exception as e:
-            return f"Error executing tool '{tool_name}': {e}"
+            # ARE json_action_executor.py:224-227: raises JsonExecutionAgentError
+            # with full tool description as a reminder
+            tool = self.tools[tool_name]
+            tool_desc = _get_tool_description_with_args(tool_name, tool)
+            raise RuntimeError(
+                f"Error in tool call execution: {e}\n"
+                f"You should only use this tool with a correct input.\n"
+                f"As a reminder, this tool's description is the following:\n"
+                f"{tool_desc}"
+            ) from e
 
     def get_messages(self) -> List[Dict[str, Any]]:
         """Get message history.
