@@ -743,18 +743,26 @@ class DefaultGaia2Agent:
             tools: Dict of tool name -> callable
             model: ModelAdapter for LLM interactions
             environment: Optional Gaia2Environment for notification polling
-            llm_args: Additional arguments for model calls. Defaults are applied
-                for temperature (0.5), max_tokens (16384), and stop sequences.
-                Parameters set to ``None`` are omitted from the API call. Use
-                this for models that don't support certain parameters (e.g.,
-                reasoning models like o1/o3/GPT-5 that reject ``stop`` and
-                ``temperature``)::
+            llm_args: Additional arguments for model calls, passed as kwargs
+                to ``model.chat()``. Defaults (from ARE source):
+
+                - ``temperature``: 0.5 (ARE llm_engine.py:17)
+                - ``max_tokens``: 16384 (ARE llm_engine.py:16)
+                - ``stop``: ``["<end_action>", "Observation:"]``
+
+                **Stop-token handling:** Client-side stop-token truncation
+                (ARE litellm_engine.py:126-127) is always applied to the
+                response, regardless of whether ``stop`` is also passed to
+                the API. When ``stop`` is passed, the API enforces it for
+                efficiency (saves tokens, precise cutoff). When ``stop`` is
+                ``None``, only client-side truncation runs — action parsing
+                still works correctly.
+
+                **None filtering:** Parameters set to ``None`` are omitted
+                from the API call entirely. Use this to disable parameters
+                the model provider rejects::
 
                     llm_args={"stop": None, "temperature": None}
-
-                Client-side stop-token truncation (matching ARE's behavior) is
-                always applied regardless of the ``stop`` setting, so action
-                parsing works correctly even without API-level stop sequences.
             max_iterations: Maximum iterations before stopping. Default 80.
             invalid_format_retries: Max retries for invalid format. Default 10.
             simulated_generation_time_config: Optional config for simulated generation
