@@ -28,8 +28,9 @@ SCOREABLE_STATUSES = frozenset(
 class Gaia2Evaluator(Evaluator):
     """Evaluates Gaia2 scenarios using ARE's judge system.
 
-    Uses ARE's GraphPerEventJudge for deterministic evaluation based on
-    the event DAG. Supports optional LLM-based judge for complex assertions.
+    Uses ARE's ``GraphPerEventJudge`` which combines deterministic hard checks
+    (exact value matching) with LLM-based soft checks (semantic comparison of
+    content like email bodies and calendar descriptions).
 
     The evaluator compares completed events in the simulation against
     oracle (expected) events to compute Goal Success Rate (GSR).
@@ -143,8 +144,24 @@ class Gaia2Evaluator(Evaluator):
                 # Fallback: create judge if not available on scenario
                 from are.simulation.validation import GraphPerEventJudgeConfig, JudgeFactory  # type: ignore[import-not-found]
 
-                judge_config = GraphPerEventJudgeConfig()
-                judge = JudgeFactory()(judge_config)
+                judge_engine_config = self.task.evaluation_data.get("judge_engine_config")
+                if judge_engine_config is not None:
+                    from are.simulation.agents.are_simulation_agent_config import (  # type: ignore[import-not-found]
+                        LLMEngineConfig,
+                    )
+                    from are.simulation.validation.configs import create_judge_engine  # type: ignore[import-not-found]
+
+                    llm_engine_config = LLMEngineConfig(
+                        model_name=judge_engine_config.model_name,
+                        provider=judge_engine_config.provider,
+                        endpoint=judge_engine_config.endpoint,
+                    )
+                    engine = create_judge_engine(llm_engine_config)
+                    judge_cfg = GraphPerEventJudgeConfig(engine=engine)
+                else:
+                    judge_cfg = GraphPerEventJudgeConfig()
+
+                judge = JudgeFactory()(judge_cfg)
                 judge.initialize_state(scenario)
 
             # Ensure intermediate turns are judged before final validation.

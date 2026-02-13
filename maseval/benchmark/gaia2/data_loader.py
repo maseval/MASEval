@@ -3,7 +3,7 @@
 This module provides functions to:
 1. Load Gaia2 scenarios from HuggingFace
 2. Convert scenarios to MASEval Task objects
-3. Configure model IDs for benchmark components
+3. Configure model IDs and judge engine for benchmark components
 
 Reference Paper: "GAIA-2: A Controllable Multi-Turn Conversational Benchmark for Agents"
 Data: https://huggingface.co/datasets/meta-agents-research-environments/gaia2
@@ -11,10 +11,62 @@ Data: https://huggingface.co/datasets/meta-agents-research-environments/gaia2
 No side effects on import. Data download/processing must be explicitly called.
 """
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from maseval import Task, TaskQueue
 from maseval.core.task import TaskProtocol
+
+
+# =============================================================================
+# Judge Engine Configuration
+# =============================================================================
+
+
+@dataclass
+class Gaia2JudgeEngineConfig:
+    """Configuration for the ARE judge's LLM engine used in semantic comparison.
+
+    ARE's ``GraphPerEventJudge`` uses an LLM to semantically compare tool arguments
+    (e.g., email content, calendar event descriptions) between agent actions and oracle
+    (expected) actions. This config controls which model and provider the judge uses.
+
+    Defaults match ARE's built-in defaults.
+
+    ARE's ``LLMEngineConfig`` only supports ``model_name``, ``provider``, and
+    ``endpoint``. Provider-specific parameters (e.g., OpenRouter's ``fallbacks``
+    or ``route``) are not supported by ARE's engine pipeline.
+
+    ARE ``validation/configs.py:28-29``
+
+    Attributes:
+        model_name: LLM model identifier for the judge engine.
+        provider: LLM provider name (e.g., ``"huggingface"``, ``"openrouter"``, ``"openai"``).
+            Passed to LiteLLM as ``custom_llm_provider``.
+        endpoint: Optional custom API endpoint URL.
+
+    Example::
+
+        from maseval.benchmark.gaia2 import (
+            load_tasks, configure_model_ids, Gaia2JudgeEngineConfig,
+        )
+
+        tasks = load_tasks(capability="execution", limit=5)
+
+        # Use OpenRouter instead of HuggingFace for judge LLM
+        configure_model_ids(
+            tasks,
+            judge_engine_config=Gaia2JudgeEngineConfig(
+                provider="openrouter",
+            ),
+        )
+    """
+
+    # ARE validation/configs.py:28
+    model_name: str = "meta-llama/Meta-Llama-3.3-70B-Instruct"
+    # ARE validation/configs.py:29
+    provider: str = "huggingface"
+    endpoint: Optional[str] = None
 
 
 # =============================================================================
@@ -231,27 +283,36 @@ def configure_model_ids(
     tasks: Union[TaskQueue, List[Task]],
     *,
     evaluator_model_id: Optional[str] = None,
+    judge_engine_config: Optional[Gaia2JudgeEngineConfig] = None,
 ) -> Union[TaskQueue, List[Task]]:
-    """Configure model IDs for benchmark components in task data.
+    """Configure model IDs and judge engine for benchmark components.
 
-    Gaia2 uses ARE's deterministic judge by default, but can optionally
-    use an LLM-based judge for complex assertions.
+    Gaia2's ``GraphPerEventJudge`` uses an LLM for semantic comparison of tool
+    arguments (email content, calendar descriptions, etc.). By default it uses
+    ARE's built-in defaults (``meta-llama/Meta-Llama-3.3-70B-Instruct`` via
+    HuggingFace). Pass ``judge_engine_config`` to override the model/provider.
 
     Note: Unlike Tau2, Gaia2 doesn't have a user simulator (interactions
     happen through scheduled events), so there's no user_model_id.
 
     Args:
-        tasks: TaskQueue or list of Tasks to configure
-        evaluator_model_id: Optional model ID for LLM-based evaluation
+        tasks: TaskQueue or list of Tasks to configure.
+        evaluator_model_id: Optional model ID for LLM-based evaluation.
+        judge_engine_config: Optional judge engine configuration. Controls
+            which LLM model and provider the ARE judge uses for semantic
+            comparison. When ``None``, ARE's defaults are used.
 
     Returns:
-        The same collection (mutated in place for convenience)
+        The same collection (mutated in place for convenience).
 
-    Example:
+    Example::
+
         >>> tasks = load_tasks(capability="execution", limit=5)
         >>> configure_model_ids(
         ...     tasks,
-        ...     evaluator_model_id="gpt-4o",  # Optional, for LLM-based judge
+        ...     judge_engine_config=Gaia2JudgeEngineConfig(
+        ...         provider="openrouter",
+        ...     ),
         ... )
     """
     for task in tasks:
@@ -263,6 +324,10 @@ def configure_model_ids(
                     f"set to '{task.evaluation_data['model_id']}', cannot override with '{evaluator_model_id}'"
                 )
             task.evaluation_data["model_id"] = evaluator_model_id
+
+        # Evaluation data: judge engine configuration (optional)
+        if judge_engine_config is not None:
+            task.evaluation_data["judge_engine_config"] = judge_engine_config
 
     return tasks
 

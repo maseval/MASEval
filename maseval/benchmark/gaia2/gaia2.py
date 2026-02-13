@@ -140,7 +140,8 @@ class Gaia2Benchmark(Benchmark):
         Returns:
             Gaia2Environment instance
         """
-        return Gaia2Environment(task_data=task.environment_data)
+        judge_engine_config = task.evaluation_data.get("judge_engine_config")
+        return Gaia2Environment(task_data=task.environment_data, judge_engine_config=judge_engine_config)
 
     def setup_user(  # type: ignore[override]
         self,

@@ -71,10 +71,11 @@ from maseval.benchmark.gaia2.tool_wrapper import (
     wrap_are_tools,
 )
 
-# Data loading
+# Data loading and configuration
 from maseval.benchmark.gaia2.data_loader import (
     load_tasks,
     configure_model_ids,
+    Gaia2JudgeEngineConfig,
     VALID_CAPABILITIES,
     VALID_SPLITS,
     HF_DATASET_ID,
@@ -98,9 +99,10 @@ __all__ = [
     # Tool wrapper
     "Gaia2GenericTool",
     "wrap_are_tools",
-    # Data loading
+    # Data loading and configuration
     "load_tasks",
     "configure_model_ids",
+    "Gaia2JudgeEngineConfig",
     "VALID_CAPABILITIES",
     "VALID_SPLITS",
     "HF_DATASET_ID",

@@ -33,6 +33,7 @@ class Gaia2Environment(Environment):
         self,
         task_data: Dict[str, Any],
         callbacks: Optional[List[Any]] = None,
+        judge_engine_config: Optional[Any] = None,
     ):
         """Initialize Gaia2 environment.
 
@@ -42,8 +43,12 @@ class Gaia2Environment(Environment):
                 - capability: Capability type (execution, search, etc.)
                 - universe_id: Universe identifier
             callbacks: Optional callbacks
+            judge_engine_config: Optional :class:`Gaia2JudgeEngineConfig` controlling
+                which LLM model and provider the ARE judge uses for semantic comparison.
+                Passed explicitly from ``setup_environment()`` (lives in ``evaluation_data``).
         """
         self._scenario = task_data.get("scenario")
+        self._judge_engine_config = judge_engine_config
         self._are_env: Any = None
         self._tool_wrappers: Dict[str, Gaia2GenericTool] = {}
 
@@ -103,9 +108,29 @@ class Gaia2Environment(Environment):
         # This handles: SystemApp insertion, duration setting, scenario initialization,
         # oracle run, soft reset, judge creation, turn initialization with trigger
         # conditions, and judge state initialization.
-        # Passing GraphPerEventJudgeConfig() creates a deterministic judge (no LLM).
+        # GraphPerEventJudge uses an LLM for semantic comparison of tool arguments
+        # (email content, calendar descriptions, etc.) via soft checkers.
         # ARE scenarios/scenario_imported_from_json/utils.py:43-157
-        judge_config = GraphPerEventJudgeConfig()
+        if self._judge_engine_config is not None:
+            # User provided custom judge engine config — create engine explicitly
+            # ARE validation/configs.py:32-59
+            from are.simulation.agents.are_simulation_agent_config import (  # type: ignore[import-not-found]
+                LLMEngineConfig,
+            )
+            from are.simulation.validation.configs import create_judge_engine  # type: ignore[import-not-found]
+
+            llm_engine_config = LLMEngineConfig(
+                model_name=self._judge_engine_config.model_name,
+                provider=self._judge_engine_config.provider,
+                endpoint=self._judge_engine_config.endpoint,
+            )
+            engine = create_judge_engine(llm_engine_config)
+            judge_config = GraphPerEventJudgeConfig(engine=engine)
+        else:
+            # Default: use ARE's built-in defaults (Llama 3.3 70B via HuggingFace)
+            # ARE validation/configs.py:28-29, 149
+            judge_config = GraphPerEventJudgeConfig()
+
         preprocess_scenario(
             scenario=scenario,
             judge_config=judge_config,

@@ -377,6 +377,90 @@ class TestGaia2EvaluatorCall:
         assert "error" in result
         assert result["status"] == "no_validation"
 
+    def test_fallback_judge_respects_judge_engine_config(self):
+        """Test evaluator fallback judge creation respects judge_engine_config."""
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from maseval import Task
+        from maseval.benchmark.gaia2.data_loader import Gaia2JudgeEngineConfig
+        from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
+
+        judge_engine_config = Gaia2JudgeEngineConfig(
+            model_name="openai/gpt-4o",
+            provider="openrouter",
+        )
+
+        task = Task(
+            id="test_fallback",
+            query="",
+            environment_data={
+                "scenario": MagicMock(scenario_id="test"),
+                "capability": "execution",
+            },
+            evaluation_data={
+                "judge_type": "graph_per_event",
+                "judge_engine_config": judge_engine_config,
+            },
+        )
+
+        # Scenario without a judge (triggers fallback)
+        mock_scenario = MagicMock(spec=[])
+        del mock_scenario.judge  # Ensure getattr returns None
+
+        mock_env = MagicMock()
+        mock_are_env = MagicMock()
+        mock_env.get_are_environment.return_value = mock_are_env
+        mock_env.get_scenario.return_value = mock_scenario
+
+        # Mock ARE imports
+        mock_llm_config_cls = MagicMock()
+        mock_create_engine = MagicMock()
+        mock_engine = MagicMock()
+        mock_create_engine.return_value = mock_engine
+
+        mock_judge_config_cls = MagicMock()
+        mock_judge = MagicMock()
+        mock_judge.state = SimpleNamespace(nb_turns=1, turn_idx=-1)
+        mock_validate_result = MagicMock()
+        mock_validate_result.success = True
+        mock_validate_result.rationale = None
+        mock_judge.validate.return_value = mock_validate_result
+
+        mock_factory = MagicMock()
+        mock_factory.return_value.return_value = mock_judge
+
+        mock_validation = MagicMock()
+        mock_validation.GraphPerEventJudgeConfig = mock_judge_config_cls
+        mock_validation.JudgeFactory = mock_factory
+
+        mock_are = MagicMock()
+        modules = {
+            "are": mock_are,
+            "are.simulation": mock_are.simulation,
+            "are.simulation.validation": mock_validation,
+            "are.simulation.validation.configs": MagicMock(create_judge_engine=mock_create_engine),
+            "are.simulation.agents": mock_are.simulation.agents,
+            "are.simulation.agents.are_simulation_agent_config": MagicMock(LLMEngineConfig=mock_llm_config_cls),
+        }
+
+        evaluator = Gaia2Evaluator(task=task, environment=mock_env)
+
+        with patch.dict(sys.modules, modules):
+            evaluator({}, None)
+
+        # Verify LLMEngineConfig was created with custom values
+        mock_llm_config_cls.assert_called_once_with(
+            model_name="openai/gpt-4o",
+            provider="openrouter",
+            endpoint=None,
+        )
+        # Verify create_judge_engine was called
+        mock_create_engine.assert_called_once()
+        # Verify GraphPerEventJudgeConfig was created with the custom engine
+        mock_judge_config_cls.assert_called_once_with(engine=mock_engine)
+
 
 # =============================================================================
 # Test compute_gaia2_metrics

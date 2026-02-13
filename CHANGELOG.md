@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DefaultAgentGaia2Benchmark` with ReAct-style agent for direct comparison with ARE reference implementation (PR: #26)
   - Tool wrapper (`AREToolWrapper`) for MASEval tracing of ARE tools with simulation time tracking (PR: #26)
   - Data loading utilities: `load_tasks()`, `configure_model_ids()` for loading scenarios from HuggingFace (PR: #26)
+  - `Gaia2JudgeEngineConfig` for configuring the judge's LLM model and provider (e.g., switching from HuggingFace to OpenRouter) via `configure_model_ids(tasks, judge_engine_config=...)` (PR: #PR_NUMBER_PLACEHOLDER)
   - Metrics: `compute_gaia2_metrics()` for GSR (Goal Success Rate) computation by capability type (PR: #26)
   - Support for 5 capability dimensions: execution, search, adaptability, time, ambiguity (PR: #26)
   - Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #26)

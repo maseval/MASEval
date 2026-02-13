@@ -384,3 +384,99 @@ class TestGaia2EnvironmentTracing:
 
             assert "type" in config
             assert config["type"] == "Gaia2Environment"
+
+
+# =============================================================================
+# Test Gaia2Environment Judge Engine Config
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestGaia2EnvironmentJudgeEngineConfig:
+    """Tests for judge engine configuration in Gaia2Environment."""
+
+    def test_default_judge_config_when_no_engine_config(self):
+        """Test default GraphPerEventJudgeConfig is used when no judge_engine_config."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        mock_are, modules = _make_are_mock()
+        mock_env_instance = MagicMock()
+        mock_are.simulation.environment.Environment.return_value = mock_env_instance
+        mock_env_instance.apps = {}
+
+        # Track calls to GraphPerEventJudgeConfig
+        mock_judge_config_cls = MagicMock()
+        mock_judge_config_instance = MagicMock()
+        mock_judge_config_cls.return_value = mock_judge_config_instance
+        mock_are.simulation.validation.GraphPerEventJudgeConfig = mock_judge_config_cls
+
+        mock_scenario = MagicMock()
+        mock_scenario.duration = 86400
+        mock_scenario.events = []
+
+        with patch.dict(sys.modules, modules):
+            Gaia2Environment(task_data={"scenario": mock_scenario})
+
+            # Default: GraphPerEventJudgeConfig() called with no arguments
+            mock_judge_config_cls.assert_called_once_with()
+
+    def test_custom_judge_engine_config_creates_engine(self):
+        """Test custom judge_engine_config creates engine via create_judge_engine."""
+        from maseval.benchmark.gaia2.data_loader import Gaia2JudgeEngineConfig
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        mock_are, modules = _make_are_mock()
+        mock_env_instance = MagicMock()
+        mock_are.simulation.environment.Environment.return_value = mock_env_instance
+        mock_env_instance.apps = {}
+
+        # Mock LLMEngineConfig
+        mock_llm_config_cls = MagicMock()
+        mock_llm_config_instance = MagicMock()
+        mock_llm_config_cls.return_value = mock_llm_config_instance
+
+        # Mock create_judge_engine
+        mock_create_engine = MagicMock()
+        mock_engine = MagicMock()
+        mock_create_engine.return_value = mock_engine
+
+        # Mock GraphPerEventJudgeConfig
+        mock_judge_config_cls = MagicMock()
+        mock_judge_config_instance = MagicMock()
+        mock_judge_config_cls.return_value = mock_judge_config_instance
+
+        mock_are.simulation.validation.GraphPerEventJudgeConfig = mock_judge_config_cls
+
+        # Add the extra ARE modules that get imported when judge_engine_config is set
+        modules["are.simulation.agents"] = mock_are.simulation.agents
+        modules["are.simulation.agents.are_simulation_agent_config"] = MagicMock(LLMEngineConfig=mock_llm_config_cls)
+        modules["are.simulation.validation.configs"] = MagicMock(create_judge_engine=mock_create_engine)
+
+        mock_scenario = MagicMock()
+        mock_scenario.duration = 86400
+        mock_scenario.events = []
+
+        judge_engine_config = Gaia2JudgeEngineConfig(
+            model_name="openai/gpt-4o",
+            provider="openrouter",
+            endpoint="https://openrouter.ai/api/v1",
+        )
+
+        with patch.dict(sys.modules, modules):
+            Gaia2Environment(
+                task_data={"scenario": mock_scenario},
+                judge_engine_config=judge_engine_config,
+            )
+
+            # LLMEngineConfig should be created with the custom values
+            mock_llm_config_cls.assert_called_once_with(
+                model_name="openai/gpt-4o",
+                provider="openrouter",
+                endpoint="https://openrouter.ai/api/v1",
+            )
+
+            # create_judge_engine should be called with the LLMEngineConfig
+            mock_create_engine.assert_called_once_with(mock_llm_config_instance)
+
+            # GraphPerEventJudgeConfig should be created with the custom engine
+            mock_judge_config_cls.assert_called_once_with(engine=mock_engine)
