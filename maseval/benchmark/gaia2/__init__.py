@@ -50,7 +50,6 @@ Usage:
 # Main benchmark components
 from maseval.benchmark.gaia2.gaia2 import (
     Gaia2Benchmark,
-    Gaia2SimulatedGenerationTimeConfig,
     DefaultGaia2Agent,
     DefaultGaia2AgentAdapter,
     DefaultAgentGaia2Benchmark,
@@ -87,7 +86,6 @@ __all__ = [
     # Benchmark
     "Gaia2Benchmark",
     # Default agent implementation
-    "Gaia2SimulatedGenerationTimeConfig",
     "DefaultGaia2Agent",
     "DefaultGaia2AgentAdapter",
     "DefaultAgentGaia2Benchmark",

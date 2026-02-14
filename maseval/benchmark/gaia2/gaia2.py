@@ -49,8 +49,7 @@ import re
 import time
 from abc import abstractmethod
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
 from maseval.core.callback import BenchmarkCallback
@@ -58,6 +57,9 @@ from maseval.core.seeding import SeedGenerator
 
 from maseval.benchmark.gaia2.environment import Gaia2Environment
 from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
+
+if TYPE_CHECKING:
+    from are.simulation.agents.default_agent.base_agent import RunningState, SimulatedGenerationTimeConfig
 
 
 # =============================================================================
@@ -330,33 +332,6 @@ _DEFAULT_MAX_TOKENS = 16384
 _DEFAULT_INVALID_FORMAT_RETRIES = 10
 
 
-@dataclass
-class Gaia2SimulatedGenerationTimeConfig:
-    """Configuration for simulating the LLM's generation time.
-
-    Matches ARE's ``SimulatedGenerationTimeConfig`` (ARE types.py:1574-1592).
-
-    In "measured" mode, the simulation clock advances by the actual LLM
-    generation wall-clock time. In "fixed" mode, it advances by a fixed
-    number of seconds.
-
-    Attributes:
-        mode: "measured" uses actual LLM wall-clock time; "fixed" uses ``seconds``.
-        seconds: Fixed offset in seconds. Used when mode is "fixed".
-    """
-
-    # ARE types.py:1586
-    mode: Literal["fixed", "measured"] = "measured"
-    # ARE types.py:1587
-    seconds: Optional[float] = 1.0
-
-    def __post_init__(self) -> None:
-        # ARE types.py:1589-1592
-        if self.mode == "fixed":
-            if self.seconds is None:
-                raise ValueError("When mode is 'fixed', seconds must be provided and cannot be None.")
-
-
 # Stop sequences for text-based action parsing
 _STOP_SEQUENCES = ["<end_action>", "Observation:"]
 
@@ -373,16 +348,6 @@ _TERMINATION_TOOLS = frozenset(
 # PAUSED state (agent is waiting for events; outer turn loop continues).
 # ARE termination_methods/are_simulation.py:34-36, 116-121
 _PAUSE_TOOL = "SystemApp__wait_for_notification"
-
-
-class _RunningState:
-    """Agent running states matching ARE's RunningState enum.
-
-    ARE agents/default_agent/base_agent.py:RunningState
-    """
-
-    TERMINATED = "TERMINATED"
-    PAUSED = "PAUSED"
 
 
 def _load_prompt_template(name: str) -> str:
@@ -704,7 +669,7 @@ class DefaultGaia2Agent:
         llm_args: Optional[Dict[str, Any]] = None,
         max_iterations: int = _DEFAULT_MAX_ITERATIONS,
         invalid_format_retries: int = _DEFAULT_INVALID_FORMAT_RETRIES,
-        simulated_generation_time_config: Optional[Gaia2SimulatedGenerationTimeConfig] = None,
+        simulated_generation_time_config: Optional["SimulatedGenerationTimeConfig"] = None,
         verbose: int = 0,
     ):
         """Initialize the agent.
@@ -886,6 +851,8 @@ class DefaultGaia2Agent:
         """
         import logging
 
+        from are.simulation.agents.default_agent.base_agent import RunningState  # type: ignore[import-not-found]
+
         logger = logging.getLogger(__name__)
 
         turn_count = 0
@@ -923,12 +890,12 @@ class DefaultGaia2Agent:
             # ARE: react_agent.run(task=task, reset=reset) → execute_agent_loop()
             running_state = self._step_loop()
 
-            if running_state == _RunningState.TERMINATED:
+            if running_state == RunningState.TERMINATED:
                 # ARE are_simulation_main.py:297-300: increment turn count
                 turn_count += 1
                 if self._terminated:
                     return self._final_message or ""
-            elif running_state == _RunningState.PAUSED:
+            elif running_state == RunningState.PAUSED:
                 # ARE are_simulation_main.py:301-303: agent called
                 # wait_for_notification, continue outer loop
                 logger.debug("Agent paused (wait_for_notification), continuing outer loop")
@@ -954,7 +921,7 @@ class DefaultGaia2Agent:
         except Exception:
             return None
 
-    def _step_loop(self) -> "_RunningState":
+    def _step_loop(self) -> "RunningState":
         """Inner step loop matching ARE's ``execute_agent_loop()``.
 
         ARE ``base_agent.py:775-854``: iterates over steps within a single
@@ -973,6 +940,8 @@ class DefaultGaia2Agent:
         Returns:
             Running state: TERMINATED or PAUSED
         """
+        from are.simulation.agents.default_agent.base_agent import RunningState  # type: ignore[import-not-found]
+
         while self._iteration_count < self.max_iterations and not self._terminated:
             # Check for environment stop BEFORE draining notifications.
             # ARE's execute_agent_loop checks termination_condition (which peeks
@@ -983,7 +952,7 @@ class DefaultGaia2Agent:
             # ARE agents/default_agent/base_agent.py:776-799
             if self._check_environment_stop():
                 self._terminated = True
-                return _RunningState.TERMINATED
+                return RunningState.TERMINATED
 
             # Pre-step: poll for notifications (matching ARE's pre-step)
             # ARE agents/default_agent/steps/are_simulation.py:26-62
@@ -1056,7 +1025,7 @@ class DefaultGaia2Agent:
                     self._terminated = True
                     observation = self._execute_tool(tool_name, tool_args)
                     self._final_message = tool_args.get("content", str(observation)) if isinstance(tool_args, dict) else str(observation)
-                    return _RunningState.TERMINATED
+                    return RunningState.TERMINATED
 
                 if tool_name == _PAUSE_TOOL:
                     # wait_for_notification → execute tool, add observation, PAUSED
@@ -1068,7 +1037,7 @@ class DefaultGaia2Agent:
                             "content": f"[OUTPUT OF STEP {self._step_count}] Observation:\n***\n{observation}\n***\n",
                         }
                     )
-                    return _RunningState.PAUSED
+                    return RunningState.PAUSED
 
                 # Execute regular tool
                 observation = self._execute_tool(tool_name, tool_args)
@@ -1117,9 +1086,9 @@ class DefaultGaia2Agent:
                 self._execute_tool("AgentUserInterface__send_message_to_user", {"content": max_iter_msg})
             self._terminated = True
             self._final_message = max_iter_msg
-            return _RunningState.TERMINATED
+            return RunningState.TERMINATED
 
-        return _RunningState.TERMINATED
+        return RunningState.TERMINATED
 
     def _call_llm_with_format_retry(self, messages: List[Dict[str, Any]]) -> Tuple[Optional[str], float]:
         """Call LLM with retry for invalid format, matching ARE's behavior.
@@ -1332,7 +1301,7 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
                 - llm_args: Optional model call arguments (temperature, max_tokens, etc.)
                 - max_iterations: Max iterations per task (default: 80)
                 - invalid_format_retries: Max retries for invalid format (default: 10)
-                - simulated_generation_time_config: Optional Gaia2SimulatedGenerationTimeConfig
+                - simulated_generation_time_config: Optional ``SimulatedGenerationTimeConfig``
                     for simulating LLM generation time in the simulation (default: None)
                 - verbose: Verbosity level (default: 0)
             **kwargs: Additional Benchmark arguments

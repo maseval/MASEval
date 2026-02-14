@@ -899,13 +899,14 @@ class TestAREImportDelegation:
 
     def test_get_offset_uses_are_function(self):
         """_react_loop uses ARE's get_offset_from_time_config_mode at runtime."""
-        from are.simulation.agents.default_agent.base_agent import get_offset_from_time_config_mode
+        from are.simulation.agents.default_agent.base_agent import (
+            SimulatedGenerationTimeConfig,
+            get_offset_from_time_config_mode,
+        )
 
-        # Verify the ARE function exists and works as expected
-        from maseval.benchmark.gaia2.gaia2 import Gaia2SimulatedGenerationTimeConfig
-
-        config = Gaia2SimulatedGenerationTimeConfig(mode="measured")
+        # Verify the ARE function exists and works with ARE's own type
+        config = SimulatedGenerationTimeConfig(mode="measured")
         assert get_offset_from_time_config_mode(config, 2.5) == 2.5
 
-        config_fixed = Gaia2SimulatedGenerationTimeConfig(mode="fixed", seconds=1.0)
+        config_fixed = SimulatedGenerationTimeConfig(mode="fixed", seconds=1.0)
         assert get_offset_from_time_config_mode(config_fixed, 2.5) == 1.0
