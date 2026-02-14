@@ -192,7 +192,7 @@ testpaths = ["tests"]
 [tool.coverage.run]
 relative_files = true
 source = ["maseval"]
-omit = ["*/tests/*", "*/examples/*", "*/__pycache__/*"]
+omit = ["*/tests/*", "*/examples/*", "*/__pycache__/*", "maseval/benchmark/multiagentbench/marble/**"]
 branch = true
 
 [tool.coverage.report]
