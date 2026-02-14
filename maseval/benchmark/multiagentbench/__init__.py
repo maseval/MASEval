@@ -8,7 +8,7 @@ Fork Used: https://github.com/cemde/MARBLE (contains bug fixes for MASEval integ
 Paper: "MultiAgentBench: Evaluating the Collaboration and Competition of LLM agents"
        (arXiv:2503.01935)
 
-Note: We use a fork with bug fixes. All credit goes to the MARBLE team (Haofei Yu et al.).
+Note: We use a fork with bug fixes. All credit goes to the MARBLE team (Zhu et al., 2025).
 
 Domains:
     - research: Research idea generation and collaboration

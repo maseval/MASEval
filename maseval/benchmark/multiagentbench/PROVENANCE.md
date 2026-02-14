@@ -13,8 +13,9 @@
 ### Why We Use a Fork
 
 We vendor from https://github.com/cemde/MARBLE rather than the original repository because:
+
 - The fork contains critical bug fixes needed for integration with MASEval
-- All credit for the original work goes to the MARBLE team (Haofei Yu et al.)
+- All credit for the original work goes to the MARBLE team (Zhu et al., 2025)
 - The fork maintains the same MIT license and contains no API changes, only bug fixes
 
 ## Reference
@@ -22,7 +23,7 @@ We vendor from https://github.com/cemde/MARBLE rather than the original reposito
 **Paper**: "MultiAgentBench: Evaluating the Collaboration and Competition of LLM agents"
 
 - arXiv: https://arxiv.org/abs/2503.01935
-- Authors: Haofei Yu et al.
+- Authors: Zhu et al., 2025
 - Publication Date: 2025
 
 ## License Text (MIT)

@@ -10,7 +10,7 @@ Framework-agnostic implementation of the MultiAgentBench benchmark suite from MA
 
 **Fork Used**: https://github.com/cemde/MARBLE (contains bug fixes for MASEval integration)
 
-> **Note**: We use a fork of MARBLE that contains critical bug fixes needed for integration. All credit for the original work goes to the MARBLE team (Haofei Yu et al.).
+> **Note**: We use a fork of MARBLE that contains critical bug fixes needed for integration. All credit for the original work goes to the MARBLE team (Zhu et al., 2025).
 
 ## Setup
 
@@ -139,14 +139,14 @@ for result in results:
 
 MultiAgentBench includes 6 domains with different requirements:
 
-| Domain     | External Dependencies                      | Support     |
-| ---------- | ------------------------------------------ | ----------- |
-| Research   | None                                       | Full        |
-| Bargaining | None                                       | Full        |
-| Coding     | Filesystem access                          | Full        |
-| Werewolf   | None                                       | Full        |
-| Database   | Docker with PostgreSQL image               | Full        |
-| Minecraft  | Minecraft Server 1.19.2, Node.js, npm      | Untested    |
+| Domain     | External Dependencies                 | Support  |
+| ---------- | ------------------------------------- | -------- |
+| Research   | None                                  | Full     |
+| Bargaining | None                                  | Full     |
+| Coding     | Filesystem access                     | Full     |
+| Werewolf   | None                                  | Full     |
+| Database   | Docker with PostgreSQL image          | Full     |
+| Minecraft  | Minecraft Server 1.19.2, Node.js, npm | Untested |
 
 ### Domain-Specific Notes
 

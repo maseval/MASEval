@@ -39,7 +39,7 @@ MultiAgentBench is a comprehensive benchmark suite for evaluating multi-agent co
 - **Code License:** MIT
 - **Data License:** MIT
 
-> **Note**: MASEval uses a fork with bug fixes. All credit for the original work goes to the MARBLE team (Haofei Yu et al.).
+> **Note**: MASEval uses a fork with bug fixes. All credit for the original work goes to the MARBLE team (Zhu et al., 2025).
 
 ---
 
