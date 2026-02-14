@@ -2963,6 +2963,7 @@ wandb = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "coverage" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -3034,6 +3035,7 @@ provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic"
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "coverage", specifier = ">=7.0.0" },
     { name = "pre-commit", specifier = ">=4.0.0" },
     { name = "pytest", specifier = ">=9.0.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
