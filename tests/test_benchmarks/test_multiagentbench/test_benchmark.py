@@ -669,3 +669,68 @@ class TestBenchmarkWithEmptyAgents:
 
         assert len(agents_list) == 0
         assert len(agents_dict) == 0
+
+
+# =============================================================================
+# MarbleAgentAdapter Tests
+# =============================================================================
+
+
+class TestMarbleAgentAdapterTraces:
+    """Tests for MarbleAgentAdapter.gather_traces() structure."""
+
+    def test_gather_traces_includes_all_fields(self):
+        """gather_traces should include all MARBLE-specific trace fields."""
+        from maseval.benchmark.multiagentbench.adapters.marble_adapter import MarbleAgentAdapter
+
+        mock_marble = MagicMock()
+        mock_marble.profile = "Expert in NLP"
+        mock_marble.get_token_usage.return_value = 500
+        mock_marble.relationships = {"agent2": "collaborates"}
+        mock_marble.task_history = [{"task": "research", "result": "done"}]
+        mock_marble.memory = MagicMock()
+        mock_marble.memory.get_memory_str.return_value = "past context"
+
+        adapter = MarbleAgentAdapter(marble_agent=mock_marble, agent_id="nlp_agent")
+        traces = adapter.gather_traces()
+
+        assert traces["agent_id"] == "nlp_agent"
+        assert traces["profile"] == "Expert in NLP"
+        assert traces["token_usage"] == 500
+        assert traces["action_log"] == []
+        assert traces["communication_log"] == []
+        assert traces["memory"] == "past context"
+        assert traces["relationships"] == {"agent2": "collaborates"}
+        assert traces["task_history"] == [{"task": "research", "result": "done"}]
+
+    def test_gather_traces_handles_missing_attributes(self):
+        """gather_traces should handle MARBLE agents with missing optional attributes."""
+        from maseval.benchmark.multiagentbench.adapters.marble_adapter import MarbleAgentAdapter
+
+        # Agent with no optional attributes
+        mock_marble = MagicMock(spec=[])
+        adapter = MarbleAgentAdapter(marble_agent=mock_marble, agent_id="basic_agent")
+        traces = adapter.gather_traces()
+
+        assert traces["agent_id"] == "basic_agent"
+        assert traces["token_usage"] == 0
+        assert traces["memory"] == ""
+        assert traces["relationships"] == {}
+        assert traces["task_history"] == []
+
+    def test_gather_config_includes_all_fields(self):
+        """gather_config should include agent configuration fields."""
+        from maseval.benchmark.multiagentbench.adapters.marble_adapter import MarbleAgentAdapter
+
+        mock_marble = MagicMock()
+        mock_marble.profile = "Data analyst"
+        mock_marble.strategy = "divide_and_conquer"
+        mock_marble.llm = "gpt-4o"
+
+        adapter = MarbleAgentAdapter(marble_agent=mock_marble, agent_id="data_agent")
+        config = adapter.gather_config()
+
+        assert config["agent_id"] == "data_agent"
+        assert config["profile"] == "Data analyst"
+        assert config["strategy"] == "divide_and_conquer"
+        assert config["llm"] == "gpt-4o"

@@ -910,3 +910,180 @@ class TestAREImportDelegation:
 
         config_fixed = SimulatedGenerationTimeConfig(mode="fixed", seconds=1.0)
         assert get_offset_from_time_config_mode(config_fixed, 2.5) == 1.0
+
+
+# =============================================================================
+# Test _check_environment_stop
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestCheckEnvironmentStop:
+    """Tests for DefaultGaia2Agent._check_environment_stop()."""
+
+    def test_returns_false_when_no_environment(self, sample_tools_dict):
+        """_check_environment_stop returns False when environment is None."""
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=None)
+
+        assert agent._check_environment_stop() is False
+
+    def test_returns_true_when_stop_message_present(self, sample_tools_dict):
+        """_check_environment_stop returns True when has_environment_stop_message is True."""
+        from unittest.mock import MagicMock
+
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        mock_env = MagicMock()
+        mock_ns = MagicMock()
+        mock_ns.message_queue.has_environment_stop_message.return_value = True
+        mock_env.get_notification_system.return_value = mock_ns
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=mock_env)
+
+        assert agent._check_environment_stop() is True
+
+    def test_returns_false_when_no_stop_message(self, sample_tools_dict):
+        """_check_environment_stop returns False when no stop message."""
+        from unittest.mock import MagicMock
+
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        mock_env = MagicMock()
+        mock_ns = MagicMock()
+        mock_ns.message_queue.has_environment_stop_message.return_value = False
+        mock_env.get_notification_system.return_value = mock_ns
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=mock_env)
+
+        assert agent._check_environment_stop() is False
+
+    def test_returns_false_on_exception(self, sample_tools_dict):
+        """_check_environment_stop returns False when exception occurs."""
+        from unittest.mock import MagicMock
+
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        mock_env = MagicMock()
+        mock_ns = MagicMock()
+        mock_ns.message_queue.has_environment_stop_message.side_effect = RuntimeError("broken")
+        mock_env.get_notification_system.return_value = mock_ns
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=mock_env)
+
+        assert agent._check_environment_stop() is False
+
+
+# =============================================================================
+# Test _pull_notifications
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestPullNotifications:
+    """Tests for DefaultGaia2Agent._pull_notifications()."""
+
+    def test_noop_when_no_environment(self, sample_tools_dict):
+        """_pull_notifications does nothing when environment is None."""
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=None)
+
+        agent._pull_notifications()
+
+        assert agent._messages == []
+
+    def test_injects_user_messages(self, sample_tools_dict):
+        """_pull_notifications adds user messages to history."""
+        from unittest.mock import MagicMock
+
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        mock_env = MagicMock()
+        mock_env.poll_notifications.return_value = (["Hello from user"], [], False)
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=mock_env)
+
+        agent._pull_notifications()
+
+        assert len(agent._messages) == 1
+        assert agent._messages[0]["role"] == "user"
+        assert "Hello from user" in agent._messages[0]["content"]
+        assert "User messages updates:" in agent._messages[0]["content"]
+
+    def test_injects_env_notifications(self, sample_tools_dict):
+        """_pull_notifications adds env notifications to history."""
+        from unittest.mock import MagicMock
+
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        mock_env = MagicMock()
+        mock_env.poll_notifications.return_value = ([], ["[08:01] New email arrived"], False)
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=mock_env)
+
+        agent._pull_notifications()
+
+        assert len(agent._messages) == 1
+        assert agent._messages[0]["role"] == "user"
+        assert "New email arrived" in agent._messages[0]["content"]
+        assert "Environment notifications updates:" in agent._messages[0]["content"]
+
+
+# =============================================================================
+# Test _get_max_turns
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestGetMaxTurns:
+    """Tests for DefaultGaia2Agent._get_max_turns()."""
+
+    def test_returns_none_when_no_environment(self, sample_tools_dict):
+        """_get_max_turns returns None when environment is None."""
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=None)
+
+        assert agent._get_max_turns() is None
+
+    def test_returns_nb_turns_from_scenario(self, sample_tools_dict):
+        """_get_max_turns returns scenario.nb_turns."""
+        from unittest.mock import MagicMock
+
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        mock_scenario = MagicMock()
+        mock_scenario.nb_turns = 3
+        mock_env = MagicMock()
+        mock_env.get_scenario.return_value = mock_scenario
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=mock_env)
+
+        assert agent._get_max_turns() == 3
+
+    def test_returns_none_when_scenario_has_no_nb_turns(self, sample_tools_dict):
+        """_get_max_turns returns None when scenario has no nb_turns attribute."""
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        mock_scenario = SimpleNamespace()  # No nb_turns attribute
+        mock_env = MagicMock()
+        mock_env.get_scenario.return_value = mock_scenario
+
+        model = DummyModelAdapter(responses=["dummy"])
+        agent = DefaultGaia2Agent(tools=sample_tools_dict, model=model, environment=mock_env)
+
+        assert agent._get_max_turns() is None

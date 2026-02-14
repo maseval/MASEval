@@ -656,3 +656,223 @@ class TestPollNotifications:
         assert user_msgs == []
         assert env_notifs == []
         assert has_stop is False
+
+    def test_separates_message_types(self):
+        """poll_notifications separates USER_MESSAGE, ENVIRONMENT_NOTIFICATION, ENVIRONMENT_STOP."""
+        from datetime import datetime, timezone
+        from enum import Enum
+        from types import SimpleNamespace
+
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        # Local enum matching ARE's MessageType
+        class MockMessageType(Enum):
+            USER_MESSAGE = "user_message"
+            ENVIRONMENT_NOTIFICATION = "environment_notification"
+            ENVIRONMENT_STOP = "environment_stop"
+
+        notifs = [
+            SimpleNamespace(
+                message_type=MockMessageType.USER_MESSAGE,
+                message="Hello from user",
+                timestamp=datetime(2024, 10, 15, 8, 0, tzinfo=timezone.utc),
+            ),
+            SimpleNamespace(
+                message_type=MockMessageType.ENVIRONMENT_NOTIFICATION,
+                message="New email arrived",
+                timestamp=datetime(2024, 10, 15, 8, 1, tzinfo=timezone.utc),
+            ),
+            SimpleNamespace(
+                message_type=MockMessageType.ENVIRONMENT_STOP,
+                message="Simulation ended",
+                timestamp=None,
+            ),
+        ]
+
+        mock_ns = MagicMock()
+        mock_ns.message_queue.get_by_timestamp.return_value = notifs
+        mock_env = MagicMock()
+        mock_env.notification_system = mock_ns
+        mock_env.current_time = 1728979200.0  # 2024-10-15 08:00 UTC
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = mock_env
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        # Patch MessageType so our local enum matches what the code imports
+        mock_are = MagicMock()
+        mock_are.simulation.notification_system.MessageType = MockMessageType
+        modules = {
+            "are": mock_are,
+            "are.simulation": mock_are.simulation,
+            "are.simulation.notification_system": mock_are.simulation.notification_system,
+        }
+        with patch.dict(sys.modules, modules):
+            user_msgs, env_notifs, has_stop = env.poll_notifications()
+
+        assert user_msgs == ["Hello from user"]
+        assert len(env_notifs) == 1
+        assert "New email arrived" in env_notifs[0]
+        assert has_stop is True
+
+
+# =============================================================================
+# Test get_turn_notifications
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestGetTurnNotifications:
+    """Tests for Gaia2Environment.get_turn_notifications()."""
+
+    def test_returns_empty_when_no_notification_system(self):
+        """get_turn_notifications returns empty when notification_system is None."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = None
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        user_msgs, has_env, has_stop = env.get_turn_notifications()
+
+        assert user_msgs == []
+        assert has_env is False
+        assert has_stop is False
+
+    def test_requeues_env_notifications(self):
+        """get_turn_notifications re-queues ENVIRONMENT_NOTIFICATION messages."""
+        from enum import Enum
+        from types import SimpleNamespace
+
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        class MockMessageType(Enum):
+            USER_MESSAGE = "user_message"
+            ENVIRONMENT_NOTIFICATION = "environment_notification"
+            ENVIRONMENT_STOP = "environment_stop"
+
+        env_notif = SimpleNamespace(
+            message_type=MockMessageType.ENVIRONMENT_NOTIFICATION,
+            message="New email arrived",
+            timestamp=None,
+        )
+        user_notif = SimpleNamespace(
+            message_type=MockMessageType.USER_MESSAGE,
+            message="User says hi",
+            timestamp=None,
+        )
+
+        mock_ns = MagicMock()
+        mock_ns.message_queue.get_by_timestamp.return_value = [env_notif, user_notif]
+        mock_env = MagicMock()
+        mock_env.notification_system = mock_ns
+        mock_env.current_time = 1728979200.0
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = mock_env
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        mock_are = MagicMock()
+        mock_are.simulation.notification_system.MessageType = MockMessageType
+        modules = {
+            "are": mock_are,
+            "are.simulation": mock_are.simulation,
+            "are.simulation.notification_system": mock_are.simulation.notification_system,
+        }
+        with patch.dict(sys.modules, modules):
+            user_msgs, has_env, has_stop = env.get_turn_notifications()
+
+        assert user_msgs == ["User says hi"]
+        assert has_env is True
+        assert has_stop is False
+        # Verify the env notification was re-queued
+        mock_ns.message_queue.put.assert_called_once_with(env_notif)
+
+
+# =============================================================================
+# Test pause / resume_with_offset
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestPauseResume:
+    """Tests for Gaia2Environment.pause() and resume_with_offset()."""
+
+    def test_pause_delegates_to_are_env(self):
+        """pause() calls ARE environment's pause method."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = MagicMock()
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        env.pause()
+
+        env._are_env.pause.assert_called_once()
+
+    def test_resume_with_offset_delegates_to_are_env(self):
+        """resume_with_offset() calls ARE environment's resume_with_offset."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = MagicMock()
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        env.resume_with_offset(5.0)
+
+        env._are_env.resume_with_offset.assert_called_once_with(5.0)
+
+    def test_pause_noop_when_no_are_env(self):
+        """pause() is a no-op when ARE environment is not available."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = None
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        env.pause()  # Should not raise
+
+    def test_resume_with_offset_noop_when_no_are_env(self):
+        """resume_with_offset() is a no-op when ARE environment is not available."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = None
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        env.resume_with_offset(5.0)  # Should not raise
+
+    def test_pause_swallows_exception(self):
+        """pause() swallows exceptions from ARE environment."""
+        from maseval.benchmark.gaia2.environment import Gaia2Environment
+
+        env = Gaia2Environment.__new__(Gaia2Environment)
+        env._are_env = MagicMock()
+        env._are_env.pause.side_effect = RuntimeError("pause failed")
+        env._scenario = None
+        env._judge_engine_config = None
+        env._tool_wrappers = {}
+        env.state = {}
+
+        env.pause()  # Should not raise

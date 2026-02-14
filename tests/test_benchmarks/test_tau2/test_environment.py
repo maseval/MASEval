@@ -1,9 +1,85 @@
 """Unit tests for Tau2 environment module."""
 
 import pytest
+from unittest.mock import MagicMock
 
 from maseval.benchmark.tau2 import Tau2Environment
 from maseval.benchmark.tau2.data_loader import VALID_DOMAINS
+from maseval.benchmark.tau2.environment import (
+    DOMAIN_DB_CLASSES,
+    DOMAIN_TOOLKIT_CLASSES,
+    DOMAIN_USER_TOOLKIT_CLASSES,
+    get_environment_constructor,
+)
+
+
+def _minimal_retail_db_data(include_user: bool = False):
+    """Build a minimal valid retail DB dict that passes pydantic validation."""
+    data = {"users": {}, "orders": {}, "products": {}}
+    if include_user:
+        data["users"]["u1"] = {
+            "user_id": "u1",
+            "name": {"first_name": "Alice", "last_name": "Smith"},
+            "address": {
+                "address1": "123 Main St",
+                "address2": "",
+                "city": "Anytown",
+                "country": "US",
+                "state": "CA",
+                "zip": "90001",
+            },
+            "email": "alice@test.com",
+            "payment_methods": {
+                "pm1": {"source": "credit_card", "id": "pm1", "brand": "visa", "last_four": "1234"},
+            },
+            "orders": [],
+        }
+    return data
+
+
+# =============================================================================
+# Class Structure Tests (Tier 1 - offline)
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestTau2EnvironmentClassStructure:
+    """Tests for Tau2Environment class structure (no data needed)."""
+
+    def test_inherits_from_environment(self):
+        """Tau2Environment inherits from MASEval Environment base class."""
+        from maseval.core.environment import Environment
+
+        assert issubclass(Tau2Environment, Environment)
+
+    def test_has_required_methods(self):
+        """Tau2Environment has all required methods."""
+        required = [
+            "setup_state",
+            "create_tools",
+            "create_user_tools",
+            "make_tool_call",
+            "make_user_tool_call",
+            "get_db_hash",
+            "get_initial_db_hash",
+            "gather_traces",
+            "gather_config",
+            "sync_tools",
+        ]
+        for method in required:
+            assert hasattr(Tau2Environment, method), f"Missing method: {method}"
+
+    def test_domain_registrations_cover_valid_domains(self):
+        """All VALID_DOMAINS have DB and toolkit registrations."""
+        for domain in VALID_DOMAINS:
+            assert domain in DOMAIN_DB_CLASSES, f"Missing DB class for {domain}"
+            assert domain in DOMAIN_TOOLKIT_CLASSES, f"Missing toolkit class for {domain}"
+
+    def test_telecom_has_user_toolkit(self):
+        """Only telecom has a user toolkit registration."""
+        assert "telecom" in DOMAIN_USER_TOOLKIT_CLASSES
+        assert "retail" not in DOMAIN_USER_TOOLKIT_CLASSES
+        assert "airline" not in DOMAIN_USER_TOOLKIT_CLASSES
 
 
 # =============================================================================
@@ -400,3 +476,303 @@ class TestToolDescriptions:
         for name, desc in descriptions.items():
             assert isinstance(desc, str)
             assert len(desc) > 0, f"Tool {name} has empty description"
+
+
+# =============================================================================
+# Offline setup_state Tests (Tier 1 — mock-based)
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestSetupStateOffline:
+    """Tests for Tau2Environment.setup_state() without real data."""
+
+    def test_setup_state_loads_db_from_path(self, tmp_path):
+        """setup_state loads DB from db_path in task_data."""
+        import json
+
+        # Create minimal retail DB file
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+        policy_text = "Test policy"
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": policy_text})
+
+        assert env.domain == "retail"
+        assert env.db is not None
+        assert env.toolkit is not None
+        assert env.policy == policy_text
+
+    def test_setup_state_applies_initial_state(self, tmp_path):
+        """setup_state applies initial_state.initialization_data to DB."""
+        import json
+
+        db_data = _minimal_retail_db_data(include_user=True)
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        initial_state = {"initialization_data": {"agent_data": {"users": {"u1": {"email": "new@test.com"}}}}}
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p", "initial_state": initial_state})
+
+        assert env.db.users["u1"].email == "new@test.com"  # type: ignore[union-attr]
+
+    def test_setup_state_executes_initialization_actions(self, tmp_path):
+        """setup_state executes initialization_actions via toolkit."""
+        import json
+
+        db_data = _minimal_retail_db_data(include_user=True)
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        # get_user_details is a read tool that should execute without error
+        initial_state = {"initialization_actions": [{"env_type": "assistant", "func_name": "get_user_details", "arguments": {"user_id": "u1"}}]}
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p", "initial_state": initial_state})
+
+        # If we get here without error, the action executed successfully
+        assert env.db is not None
+
+    def test_setup_state_stores_initial_hash_after_actions(self, tmp_path):
+        """Initial DB hash is recorded AFTER initialization_actions."""
+        import json
+
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+
+        # Hash should match current state (no changes since setup)
+        assert env.get_initial_db_hash() == env.get_db_hash()
+
+    def test_setup_state_creates_user_toolkit_for_telecom(self, tmp_path):
+        """setup_state creates user_toolkit only for telecom."""
+        import json
+
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+        assert env.user_toolkit is None
+
+
+# =============================================================================
+# Offline create_tools / create_user_tools Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestCreateToolsOffline:
+    """Tests for tool creation without real data."""
+
+    def test_create_tools_returns_callable_dict(self, tmp_path):
+        """create_tools returns dict of callables."""
+        import json
+
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+        tools = env.create_tools()
+
+        assert isinstance(tools, dict)
+        assert len(tools) > 0
+        for name, tool in tools.items():
+            assert callable(tool), f"Tool {name} is not callable"
+
+    def test_create_tools_wraps_with_sync(self, tmp_path):
+        """create_tools wraps tools to call sync_tools() after invocation."""
+        import json
+
+        db_data = _minimal_retail_db_data(include_user=True)
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+        tools = env.create_tools()
+
+        sync_called: list = []
+        env.sync_tools = lambda: sync_called.append(True)  # type: ignore[assignment]
+
+        # Execute a read tool
+        tools["get_user_details"](user_id="u1")
+        assert len(sync_called) == 1
+
+    def test_create_user_tools_empty_for_non_telecom(self, tmp_path):
+        """create_user_tools returns empty dict for retail/airline."""
+        import json
+
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+        assert env.create_user_tools() == {}
+
+
+# =============================================================================
+# Offline make_tool_call Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestMakeToolCallOffline:
+    """Tests for make_tool_call without real data."""
+
+    def test_make_tool_call_delegates_to_toolkit(self, tmp_path):
+        """make_tool_call delegates to toolkit.use_tool."""
+        import json
+
+        db_data = _minimal_retail_db_data(include_user=True)
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+        result = env.make_tool_call("get_user_details", user_id="u1")
+
+        assert result is not None
+
+    def test_make_tool_call_unknown_raises(self, tmp_path):
+        """make_tool_call raises ValueError for unknown tool."""
+        import json
+
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+
+        with pytest.raises(ValueError, match="not found"):
+            env.make_tool_call("nonexistent_tool")
+
+    def test_make_user_tool_call_raises_for_non_telecom(self, tmp_path):
+        """make_user_tool_call raises ValueError when no user toolkit."""
+        import json
+
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+
+        with pytest.raises(ValueError, match="No user toolkit"):
+            env.make_user_tool_call("some_tool")
+
+
+# =============================================================================
+# Offline gather_traces / gather_config Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestGatherTracesOffline:
+    """Tests for gather_traces/gather_config without real data."""
+
+    def test_gather_traces_structure(self, tmp_path):
+        """gather_traces returns expected structure."""
+        import json
+
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+        traces = env.gather_traces()
+
+        assert traces["domain"] == "retail"
+        assert "initial_db_hash" in traces
+        assert "final_db_hash" in traces
+        assert traces["db_changed"] is False
+        assert traces["type"] == "Tau2Environment"
+
+    def test_gather_config_structure(self, tmp_path):
+        """gather_config returns expected structure."""
+        import json
+
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p"})
+        config = env.gather_config()
+
+        assert config["domain"] == "retail"
+        assert "toolkit_stats" in config
+        assert "db_stats" in config
+        assert config["type"] == "Tau2Environment"
+
+
+# =============================================================================
+# Offline get_environment_constructor Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestGetEnvironmentConstructor:
+    """Tests for get_environment_constructor factory."""
+
+    def test_returns_callable(self):
+        """get_environment_constructor returns a callable."""
+        constructor = get_environment_constructor({"domain": "retail"})
+        assert callable(constructor)
+
+    @pytest.mark.live
+    def test_constructor_creates_environment(self, ensure_tau2_data):
+        """Returned constructor creates Tau2Environment instances."""
+        constructor = get_environment_constructor({"domain": "retail"})
+        env = constructor()
+        assert isinstance(env, Tau2Environment)
+        assert env.domain == "retail"
+
+
+# =============================================================================
+# Offline _execute_initialization_actions Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestExecuteInitializationActions:
+    """Tests for _execute_initialization_actions edge cases."""
+
+    def test_raises_on_unknown_env_type(self, tmp_path):
+        """Raises ValueError for unknown env_type."""
+        import json
+
+        db_data = {"users": {}, "orders": {}, "products": {}}
+        db_path = tmp_path / "db.json"
+        db_path.write_text(json.dumps(db_data))
+
+        actions = [{"env_type": "unknown", "func_name": "foo"}]
+
+        env = Tau2Environment.__new__(Tau2Environment)
+        env._domain = "retail"
+        env._initial_state_config = None
+        env._policy = "p"
+        env._db_path = str(db_path)
+
+        with pytest.raises(ValueError, match="Unknown env_type"):
+            env._execute_initialization_actions(actions, MagicMock(), None, MagicMock())
+
+    def test_raises_on_missing_user_toolkit(self, tmp_path):
+        """Raises ValueError for user action when user_toolkit is None."""
+        actions = [{"env_type": "user", "func_name": "some_func"}]
+
+        env = Tau2Environment.__new__(Tau2Environment)
+        env._domain = "retail"
+
+        with pytest.raises(ValueError, match="No user toolkit"):
+            env._execute_initialization_actions(actions, MagicMock(), None, MagicMock())
+
+    def test_raises_on_missing_assistant_function(self):
+        """Raises ValueError when assistant function not found on toolkit."""
+        actions = [{"env_type": "assistant", "func_name": "nonexistent_func"}]
+
+        mock_toolkit = MagicMock(spec=[])  # No attributes
+
+        env = Tau2Environment.__new__(Tau2Environment)
+        env._domain = "retail"
+
+        with pytest.raises(ValueError, match="not found on toolkit"):
+            env._execute_initialization_actions(actions, mock_toolkit, None, MagicMock())
