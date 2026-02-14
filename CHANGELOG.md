@@ -11,40 +11,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Benchmarks**
 
-- GAIA2 Benchmark: Integration with Meta's ARE platform for evaluating LLM agents on dynamic, multi-step scenarios. Includes `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator`, default ReAct agent, data loading from HuggingFace, `Gaia2JudgeEngineConfig`, GSR metrics, and support for 5 capability dimensions. `pip install maseval[gaia2]` (PR: #26, #30)
-- MultiAgentBench Benchmark: Integration with MARBLE for evaluating multi-agent collaboration across all 6 paper-defined domains (research, bargaining, coding, database, werewolf, minecraft). Includes abstract base class, MARBLE reproduction mode, data loading, and MARBLE agent adapter. `pip install maseval[multiagentbench]` (PR: #25, #30)
+- CONVERSE benchmark for contextual safety evaluation in adversarial agent-to-agent conversations, including `ConverseBenchmark`, `DefaultAgentConverseBenchmark`, `ConverseEnvironment`, `ConverseExternalAgent`, `PrivacyEvaluator`, `SecurityEvaluator`, and `load_tasks()` utilities for `travel`, `real_estate`, and `insurance` domains. Benchmark source files are now downloaded on first use via `ensure_data_exists()` instead of being bundled in the package. (PR: #28)
 
-**Core**
+- GAIA2 Benchmark: Integration with Meta's ARE (Agent Research Environments) platform for evaluating LLM-based agents on dynamic, multi-step scenarios (PR: #26)
+  - `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator` components for framework-agnostic evaluation with ARE simulation (PR: #26)
+  - `DefaultAgentGaia2Benchmark` with ReAct-style agent for direct comparison with ARE reference implementation (PR: #26)
+  - Tool wrapper (`AREToolWrapper`) for MASEval tracing of ARE tools with simulation time tracking (PR: #26)
+  - Data loading utilities: `load_tasks()`, `configure_model_ids()` for loading scenarios from HuggingFace (PR: #26)
+  - Metrics: `compute_gaia2_metrics()` for GSR (Goal Success Rate) computation by capability type (PR: #26)
+  - Support for 7 capability dimensions: execution, search, adaptability, time, ambiguity, agent2agent, noise (PR: #26)
+  - Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #26)
 
-- Seeding system for reproducible benchmark runs: `SeedGenerator`, `DefaultSeedGenerator`, `seed`/`seed_generator` on `Benchmark` and `ModelAdapter`, with `SeedingError` for unsupported providers. Simplified API where `derive_seed()` returns `None` when disabled. (PR: #24, #27)
-- Seed support in interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFaceModelAdapter` (PR: #24)
-
-**Interface**
-
-- CAMEL-AI integration: `CamelAgentAdapter`, `CamelLLMUser`, `CamelAgentUser`, `camel_role_playing_execution_loop()`, and CAMEL tracers (PR: #22)
-
-**Testing**
-
-- Composable pytest markers (`live`, `credentialed`, `slow`, `smoke`) with marker implication and skip decorators (PR: #29)
-- Data integrity, API contract, live API, and real-data integration tests for all benchmarks and model adapters (PR: #29, #30)
-- CI jobs for slow tests (with benchmark data caching) and credentialed tests (PR: #29)
+- MultiAgentBench Benchmark: Integration with MARBLE MultiAgentBench for evaluating multi-agent collaboration across research, bargaining, coding, and database domains (PR: #25)
+  - `MultiAgentBenchBenchmark` abstract base class for framework-agnostic multi-agent evaluation with seeding support for evaluators and agents (PR: #25)
+  - `MarbleMultiAgentBenchBenchmark` for exact MARBLE reproduction mode using native MARBLE agents (note: MARBLE's internal LLM calls bypass MASEval seeding) (PR: #25)
+  - `MultiAgentBenchEnvironment` and `MultiAgentBenchEvaluator` components (PR: #25)
+  - Data loading utilities: `load_tasks()`, `configure_model_ids()`, `get_domain_info()`, `ensure_marble_exists()` (PR: #25)
+  - MARBLE adapter: `MarbleAgentAdapter` for wrapping MARBLE agents with MASEval tracing (PR: #25)
 
 **Examples**
 
-- GAIA2 benchmark example with Google GenAI and OpenAI model support (PR: #26)
+- Added a dedicated runnable CONVERSE default benchmark example at `examples/converse_benchmark/default_converse_benchmark.py` for quick start with `DefaultAgentConverseBenchmark`. (PR: #28)
+- Gaia2 benchmark example with Google GenAI and OpenAI model support (PR: #26)
+
+**Core**
+
+- Added `SeedGenerator` abstract base class and `DefaultSeedGenerator` implementation for reproducible benchmark runs via SHA-256-based seed derivation (PR: #24)
+- Added `seed` and `seed_generator` parameters to `Benchmark.__init__` for enabling reproducibility (PR: #24)
+- Added `seed_generator` parameter to all benchmark setup methods (`setup_environment`, `setup_user`, `setup_agents`, `setup_evaluators`) (PR: #24)
+- Added `seed` parameter to `ModelAdapter.__init__` for deterministic model inference (PR: #24)
+- Added `SeedingError` exception for providers that don't support seeding (Anthropic models raise this if seed is provided) (PR: #24)
+- Added seed support to interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFaceModelAdapter` pass seeds to underlying APIs (PR: #24)
+
+**Interface**
+
+- CAMEL-AI integration: `CamelAgentAdapter` and `CamelLLMUser` for evaluating CAMEL-AI ChatAgent-based systems (PR: #22)
+  - Added `CamelAgentUser` for using a CAMEL ChatAgent as the user in agent-to-agent evaluation (PR: #22)
+  - Added `camel_role_playing_execution_loop()` for benchmarks using CAMEL's RolePlaying semantics (PR: #22)
+  - Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
+
+**Testing**
+
+- Composable pytest markers (`live`, `credentialed`, `slow`, `smoke`) for fine-grained test selection; default runs exclude slow, credentialed, and smoke tests (PR: #29)
+- Marker implication hook: `credentialed` implies `live`, so `-m "not live"` always gives a fully offline run (PR: #29)
+- Skip decorators (`requires_openai`, `requires_anthropic`, `requires_google`) for tests needing API keys (PR: #29)
+- Data integrity tests for Tau2 and MACS benchmarks validating download pipelines, file structures, and database content (PR: #29)
+- HTTP-level API contract tests for model adapters (OpenAI, Anthropic, Google GenAI, LiteLLM) using `respx` mocks — no API keys needed (PR: #29)
+- Live API round-trip tests for all model adapters (`-m credentialed`) (PR: #29)
+- CI jobs for slow tests (with benchmark data caching) and credentialed tests (behind GitHub Environment approval) (PR: #29)
+- Added `respx` dev dependency for HTTP-level mocking (PR: #29)
 
 ### Changed
 
-- `MACSBenchmark`, `Tau2Benchmark`, and `Gaia2Benchmark` now derive seeds for model adapters, evaluators, and simulators (PR: #26)
-- Refactored `User` into abstract base class with `LLMUser` as concrete implementation; renamed `AgenticUser` → `AgenticLLMUser`, framework-specific users follow `*LLMUser` naming (PR: #22)
-- Coverage script accepts `--exclude` flag; always excludes `credentialed` and `smoke` by default (PR: #29)
+**Core**
+
+- Simplified seeding API: `seed_generator` parameter in setup methods is now always non-None (`SeedGenerator` instead of `Optional[SeedGenerator]`). When seeding is disabled (`seed=None`), `derive_seed()` returns `None` instead of raising an error. This eliminates all `if seed_generator is not None:` conditional checks - the same code path works whether seeding is enabled or disabled. (PR: #27)
+- Clarified benchmark/evaluator component guidance in docstrings and docs, including recommended evaluator exception behavior with `fail_on_evaluation_error`. (PR: #28)
+
+**Benchmarks**
+
+- `MACSBenchmark` and `Tau2Benchmark` benchmarks now actively use the seeding system by deriving seeds for model adapters. Seeds are passed to agents, user simulators, tool simulators, and LLM-based evaluators for reproducible runs. (PR: #26)
+  - `Gaia2Benchmark`: Seeds `agents/gaia2_agent`, `evaluators/judge`
+  - `MACSBenchmark`: Seeds `environment/tools/tool_{name}`, `simulators/user`, `evaluators/user_gsr`, `evaluators/system_gsr`
+  - `Tau2Benchmark`: Seeds `simulators/user`, `agents/default_agent`
+
+**User**
+
+- Refactored `User` class into abstract base class defining the interface (`get_initial_query()`, `respond()`, `is_done()`) with `LLMUser` as the concrete LLM-driven implementation. This enables non-LLM user implementations (scripted, human-in-the-loop, agent-based). (PR: #22)
+- Renamed `AgenticUser` → `AgenticLLMUser` for consistency with the new hierarchy (PR: #22)
+
+**Interface**
+
+- Renamed framework-specific user classes to reflect the new `LLMUser` base (PR: #22):
+  - `SmolAgentUser` → `SmolAgentLLMUser`
+  - `LangGraphUser` → `LangGraphLLMUser`
+  - `LlamaIndexUser` → `LlamaIndexLLMUser`
+
+**Testing**
+
+- Coverage script (`scripts/coverage_by_feature.py`) now accepts `--exclude` flag to skip additional markers; always excludes `credentialed` and `smoke` by default (PR: #29)
 
 ### Fixed
 
-- GAIA2: Various bugs preventing faithful reproduction of ARE reference results — scenario lifecycle, data loading, evaluation flow, multi-turn notification handling, tool filtering, default agent fidelity, and simulation time management (PR: #30)
-- MultiAgentBench: Corrected domain mappings, added missing werewolf/minecraft support, fixed environment constructors, added result summarization matching MARBLE's evaluation pipeline (PR: #30)
-- Tau2: Fixed telecom domain schema to match tau2-bench reference, added agent/user state synchronization, added deterministic network search simulation, fixed initialization flow and tool result serialization (PR: #30)
-- Fixed `DB.load()` and `DB.copy_deep()` return type annotations in Tau2 to use `Self` (PR: #29)
+- Fixed incorrect return type annotations on `DB.load()` and `DB.copy_deep()` in Tau2 benchmark — now use `Self` instead of `"DB"`, so subclass methods return the correct type (PR: #29)
 
 ### Removed
 
