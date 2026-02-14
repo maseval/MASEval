@@ -891,36 +891,33 @@ class DefaultGaia2Agent:
         turn_count = 0
         max_turns = self._get_max_turns()
 
-        # ARE are_simulation_main.py:270
-        first_run = True
-
         while max_turns is None or turn_count < max_turns:
-            if not first_run:
-                if self.environment is not None:
-                    # Between turns: drain notification queue
-                    # ARE are_simulation_main.py:272-274
-                    user_messages, has_env, has_stop = self.environment.get_turn_notifications()
+            if self.environment is not None:
+                # Drain notification queue before each turn (including the first).
+                # ARE are_simulation_main.py:272-274: get_notifications() is called
+                # on every iteration. When the queue is empty the loop busy-waits
+                # with sleep(1) until the first send_message_to_agent event has
+                # been processed by the environment thread.
+                user_messages, has_env, has_stop = self.environment.get_turn_notifications()
 
-                    if has_stop:
-                        logger.warning("Environment stop message received in outer loop — stopping agent")
-                        self._terminated = True
-                        break
+                if has_stop:
+                    logger.warning("Environment stop message received in outer loop — stopping agent")
+                    self._terminated = True
+                    break
 
-                    if not user_messages and not has_env:
-                        # No messages available, wait briefly
-                        # ARE are_simulation_main.py:316-317
-                        time.sleep(1)
-                        continue
+                if not user_messages and not has_env:
+                    # No messages available, wait briefly
+                    # ARE are_simulation_main.py:316-317
+                    time.sleep(1)
+                    continue
 
-                    # Format user messages as [TASK] for the new turn
-                    # ARE are_simulation_main.py:283, 361-365
-                    # ARE base_agent.py:96: "[TASK]: \n{content}\n"
-                    task = "\n".join(user_messages)
-                    self._messages.append({"role": "user", "content": f"[TASK]: \n{task}\n"})
-                # else: no environment — skip notification handling and run
-                # inner loop directly (standalone/testing mode)
-
-            first_run = False
+                # Format user messages as [TASK] for the new turn
+                # ARE are_simulation_main.py:283, 361-365
+                # ARE base_agent.py:96: "[TASK]: \n{content}\n"
+                task = "\n".join(user_messages)
+                self._messages.append({"role": "user", "content": f"[TASK]: \n{task}\n"})
+            # else: no environment — skip notification handling and run
+            # inner loop directly (standalone/testing mode)
 
             # Run inner step loop
             # ARE: react_agent.run(task=task, reset=reset) → execute_agent_loop()
