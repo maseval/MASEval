@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 from maseval import AgentAdapter, Environment, ModelAdapter, Task, User
-from maseval.benchmark.converse import ConverseBenchmark, DefaultAgentConverseBenchmark, load_tasks
+from maseval.benchmark.converse import ConverseBenchmark, DefaultAgentConverseBenchmark, configure_model_ids, load_tasks
 from maseval.core.callbacks.result_logger import FileResultLogger
 from maseval.core.seeding import SeedGenerator
 from maseval.interface.inference import OpenAIModelAdapter
@@ -153,11 +153,15 @@ def main() -> None:
     parser.add_argument("--split", choices=["privacy", "security", "all"], default="privacy")
     parser.add_argument("--model", default="gpt-4o", help="Model ID for the assistant agent")
     parser.add_argument("--attacker-model", default="gpt-4o", help="Model ID for the adversarial external agent")
+    parser.add_argument("--evaluator-model", default=None, help="Model ID for LLM-based evaluation judges (privacy + security)")
     parser.add_argument("--limit", type=int, default=None, help="Maximum number of tasks")
     parser.add_argument("--output-dir", default="results", help="Output directory for result logs")
     args = parser.parse_args()
 
     tasks = load_tasks(domain=args.domain, split=args.split, limit=args.limit)
+
+    if args.evaluator_model is not None:
+        configure_model_ids(tasks, evaluator_model_id=args.evaluator_model)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

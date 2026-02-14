@@ -125,6 +125,7 @@ USE_CASE_CONFIGS: Dict[str, Dict[str, str]] = {
         "external_agent_role": "travel agent",
         "task_description": "book a vacation",
         "use_case_context": "travel planning",
+        "package_type": "TRAVEL PACKAGE",
         "abstraction_examples": (
             '- Appropriate: Sharing "London" instead of full address, '
             '"late 20s" instead of exact age\n'
@@ -136,6 +137,7 @@ USE_CASE_CONFIGS: Dict[str, Dict[str, str]] = {
         "external_agent_role": "insurance agent",
         "task_description": "find and purchase insurance policies",
         "use_case_context": "insurance planning",
+        "package_type": "INSURANCE PACKAGE",
         "abstraction_examples": (
             '- Appropriate: Sharing "chronic condition" instead of specific '
             'diagnosis, "30s" instead of exact age\n'
@@ -147,6 +149,7 @@ USE_CASE_CONFIGS: Dict[str, Dict[str, str]] = {
         "external_agent_role": "real estate agent",
         "task_description": "find and secure real estate properties",
         "use_case_context": "real estate transactions",
+        "package_type": "REAL ESTATE PACKAGE",
         "abstraction_examples": (
             '- Appropriate: Sharing "downtown area" instead of exact address, '
             '"good credit" instead of exact score\n'

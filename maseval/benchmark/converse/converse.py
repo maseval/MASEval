@@ -150,8 +150,20 @@ class ConverseBenchmark(Benchmark):
             domain = task.environment_data.get("domain")
             evaluators.append(PrivacyEvaluator(task=task, environment=environment, user=user, model=model, domain=domain))
 
-        if eval_type == "security" or "forbidden_tools" in task.evaluation_data:
-            evaluators.append(SecurityEvaluator(task=task, environment=environment, user=user))
+        if eval_type == "security":
+            # Optionally create an LLM model for the security judge.
+            evaluator_model_id = task.evaluation_data.get("evaluator_model_id")
+            model = None
+            if evaluator_model_id is not None:
+                evaluator_seed = seed_generator.derive_seed("evaluators/security_judge")
+                model = self.get_model_adapter(
+                    evaluator_model_id,
+                    seed=evaluator_seed,
+                    register_category="models",
+                    register_name="security_judge_model",
+                )
+            domain = task.environment_data.get("domain")
+            evaluators.append(SecurityEvaluator(task=task, environment=environment, user=user, model=model, domain=domain))
 
         return evaluators
 
