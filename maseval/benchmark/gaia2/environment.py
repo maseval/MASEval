@@ -139,6 +139,8 @@ class Gaia2Environment(Environment):
 
         # Create ARE environment for the agent run
         # Match ARE scenario_runner.py:267-282
+        from are.simulation.notification_system import VerboseNotificationSystem  # type: ignore[import-not-found]
+
         config = EnvironmentConfig(
             oracle_mode=False,
             duration=scenario.duration,
@@ -146,7 +148,11 @@ class Gaia2Environment(Environment):
         )
         if scenario.start_time and scenario.start_time > 0:
             config.start_time = scenario.start_time
-        self._are_env = AREEnvironment(config)
+        # Match ARE scenario_runner.py:281: VerboseNotificationSystem() defaults
+        # to VerbosityLevel.MEDIUM, which includes environment notifications
+        # (email, messaging, shopping, cab, calendar). Without this, the default
+        # is VerbosityLevel.LOW (no environment notifications).
+        self._are_env = AREEnvironment(config, notification_system=VerboseNotificationSystem())
 
         # Run scenario (registers apps, schedules events, starts event loop)
         # wait_for_end=False so control returns immediately for agent interaction
@@ -315,6 +321,57 @@ class Gaia2Environment(Environment):
 
         except Exception:
             return [], [], False
+
+    def get_turn_notifications(self) -> Tuple[List[str], bool, bool]:
+        """Get notifications for turn transitions, re-queuing env notifications.
+
+        Matches ARE's ``get_notifications()`` in ``are_simulation_main.py:331-359``:
+        drains the notification queue, separates by type, re-queues environment
+        notifications (so the inner loop's pre-step picks them up), and returns
+        user messages and status flags.
+
+        Returns:
+            Tuple of ``(user_messages, has_env_notifications, has_stop)``.
+            ``user_messages`` are raw message strings for ``[TASK]`` formatting.
+            ``has_env_notifications`` is True when env notifications were re-queued.
+            ``has_stop`` is True when the environment signalled stop.
+        """
+        notification_system = self.get_notification_system()
+        if notification_system is None:
+            return [], False, False
+
+        try:
+            from datetime import datetime, timezone
+
+            from are.simulation.notification_system import MessageType  # type: ignore[import-not-found]
+
+            sim_time = self.get_simulation_time()
+            timestamp = datetime.fromtimestamp(sim_time, tz=timezone.utc)
+            unhandled = notification_system.message_queue.get_by_timestamp(timestamp=timestamp)
+
+            if not unhandled:
+                return [], False, False
+
+            user_messages: List[str] = []
+            has_env = False
+            has_stop = False
+
+            for notif in unhandled:
+                msg_type = getattr(notif, "message_type", None)
+                if msg_type == MessageType.USER_MESSAGE:
+                    user_messages.append(notif.message)
+                elif msg_type == MessageType.ENVIRONMENT_NOTIFICATION:
+                    # Re-queue for inner loop's pre-step to pick up
+                    # ARE are_simulation_main.py:349-352
+                    notification_system.message_queue.put(notif)
+                    has_env = True
+                elif msg_type == MessageType.ENVIRONMENT_STOP:
+                    has_stop = True
+
+            return user_messages, has_env, has_stop
+
+        except Exception:
+            return [], False, False
 
     def get_start_time(self) -> Optional[float]:
         """Get the scenario start time.

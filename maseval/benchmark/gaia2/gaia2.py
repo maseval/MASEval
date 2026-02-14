@@ -79,38 +79,32 @@ class Gaia2Benchmark(Benchmark):
     - ``setup_agents()`` — Create agents for the task
     - ``get_model_adapter()`` — Provide model adapters
 
-    Multi-Turn Notification Loop:
-        GAIA2 uses an **event-driven** multi-turn architecture, not user-turn
-        interaction.  The benchmark invokes the agent **once**; the agent
-        handles multi-turn internally via the notification loop described below.
+    Multi-Turn Architecture:
+        GAIA2 uses ARE's **two-level loop** architecture:
 
-        **How it works:**
+        - **Outer loop** (turns): drains the notification queue, formats user
+          messages as ``[TASK]``, re-queues environment notifications, then
+          runs the inner step loop.
+        - **Inner loop** (steps): ReAct cycle. Terminates on
+          ``send_message_to_user`` (TERMINATED — turn complete) or
+          ``wait_for_notification`` (PAUSED — outer loop continues).
 
-        1. The agent calls ``SystemApp__wait_for_notification(timeout=N)`` as
-           a normal tool.  This triggers ``ARE.Environment.wait_for_next_notification()``
-           synchronously: the simulation processes scheduled events, advances
-           time, and queues any resulting notifications.
-        2. The tool returns an observation (the agent's loop continues).
-        3. **Before the next LLM call**, the agent must poll the notification
-           queue to retrieve messages that arrived during the wait.
-        4. The agent injects those messages into its context and continues
-           reasoning.
-        5. Eventually the agent calls ``AgentUserInterface__send_message_to_user``
-           which is the **only** termination signal.
+        ``ARE are_simulation_main.py:agent_loop()``
 
         **What custom agents must do:**
 
-        - **Do NOT terminate** when ``wait_for_notification`` returns.  Treat
-          it as a regular tool call whose observation is added to context.
-        - **Poll notifications** between steps by calling
-          ``environment.poll_notifications()``, which returns pre-formatted
-          ``(user_messages, env_notifications, has_stop_message)`` without
-          requiring any ARE imports.
-        - **Terminate only** on ``AgentUserInterface__send_message_to_user``.
+        - **Terminate inner loop** on both ``send_message_to_user`` and
+          ``wait_for_notification``. The former completes a turn; the latter
+          pauses the agent while ARE processes events.
+        - **Between turns** (outer loop): drain notifications via
+          ``environment.get_turn_notifications()`` which re-queues environment
+          notifications and returns user messages for ``[TASK]`` formatting.
+        - **Within turns** (inner loop pre-step): poll notifications via
+          ``environment.poll_notifications()`` to pick up re-queued environment
+          notifications and new messages.
 
-        See the default agent implementation for the canonical single-loop
-        approach, and ``Gaia2Environment.poll_notifications()`` for the
-        polling API.
+        See the default agent implementation for the reference two-level loop
+        approach.
     """
 
     # The benchmark invokes the agent once; multi-turn is the agent's
@@ -366,16 +360,29 @@ class Gaia2SimulatedGenerationTimeConfig:
 # Stop sequences for text-based action parsing
 _STOP_SEQUENCES = ["<end_action>", "Observation:"]
 
-# Termination tool names — agent terminates when these are called.
-# wait_for_notification is NOT a termination tool: it pauses the agent while
-# the ARE environment processes events and advances simulation time, then the
-# agent resumes by polling notifications. See Gaia2Benchmark docstring for
-# the full multi-turn contract.
+# Termination tool names — send_message_to_user terminates the inner step
+# loop with TERMINATED state (turn is complete).
+# ARE termination_methods/are_simulation.py:112-114
 _TERMINATION_TOOLS = frozenset(
     {
         "AgentUserInterface__send_message_to_user",
     }
 )
+
+# Pause tool — wait_for_notification terminates the inner step loop with
+# PAUSED state (agent is waiting for events; outer turn loop continues).
+# ARE termination_methods/are_simulation.py:34-36, 116-121
+_PAUSE_TOOL = "SystemApp__wait_for_notification"
+
+
+class _RunningState:
+    """Agent running states matching ARE's RunningState enum.
+
+    ARE agents/default_agent/base_agent.py:RunningState
+    """
+
+    TERMINATED = "TERMINATED"
+    PAUSED = "PAUSED"
 
 
 def _load_prompt_template(name: str) -> str:
@@ -663,6 +670,17 @@ class DefaultGaia2Agent:
     action parsing (Thought/Action/Observation cycle) rather than native
     function calling.
 
+    Uses ARE's **two-level loop** architecture:
+
+    - **Outer loop** (``_turn_loop``): iterates over turns, matching
+      ``are_simulation_main.py:agent_loop()``. Between turns, drains the
+      notification queue, formats user messages as ``[TASK]``, re-queues
+      environment notifications for the inner loop's pre-step.
+    - **Inner loop** (``_step_loop``): iterates over steps within a turn,
+      matching ``base_agent.py:execute_agent_loop()``. Terminates on BOTH
+      ``send_message_to_user`` (TERMINATED) and ``wait_for_notification``
+      (PAUSED).
+
     Key characteristics matching ARE (base_agent.py, are_simulation.py):
 
     - Text-based JSON action format with `<end_action>` token
@@ -672,9 +690,8 @@ class DefaultGaia2Agent:
     - Default max_iterations: 80 (ARE are_simulation_agent_config.py:36)
     - Invalid format retry: up to 10 times (ARE base_agent.py:347)
     - Iteration counter incremented EVERY loop (including errors) (ARE base_agent.py:849)
-    - Terminates on send_message_to_user only
-    - wait_for_notification pauses: ARE processes events, then agent polls
-      notifications and continues the loop
+    - Terminates inner loop on send_message_to_user (TERMINATED) or
+      wait_for_notification (PAUSED)
     - Max-iterations sends message to user via tool (ARE are_simulation.py:109-116)
     - Pre-step notification polling (ARE steps/are_simulation.py:26-62)
     """
@@ -764,10 +781,12 @@ class DefaultGaia2Agent:
         """Execute task and return final response.
 
         GAIA2 is event-driven: the real task instruction is delivered via the
-        notification system (first ``send_message_to_agent`` event), polled in
-        ``_pull_notifications()`` at the start of each iteration. When the
-        query is empty (normal for GAIA2), we skip the ``[TASK]`` message to
-        avoid wasting a turn on an empty prompt.
+        notification system (first ``send_message_to_agent`` event).  The outer
+        turn loop (``_turn_loop``) drains the notification queue and formats
+        user messages as ``[TASK]``, matching ARE's ``agent_loop()``.
+
+        When ``query`` is non-empty (e.g. standalone use), it is prepended as
+        a ``[TASK]`` message before entering the turn loop.
 
         Args:
             query: Task query/instructions (may be empty for GAIA2)
@@ -776,10 +795,10 @@ class DefaultGaia2Agent:
             Final text response from agent
         """
         # Match ARE's message format: [TASK]: \n{content}\n
-        # ARE base_agent.py:97
+        # ARE base_agent.py:96
         if query:
             self._messages.append({"role": "user", "content": f"[TASK]: \n{query}\n"})
-        return self._react_loop()
+        return self._turn_loop()
 
     def _pull_notifications(self) -> None:
         """Pull messages from the ARE notification system.
@@ -850,11 +869,102 @@ class DefaultGaia2Agent:
         if self.environment is not None:
             self.environment.resume_with_offset(offset)
 
-    def _react_loop(self) -> str:
-        """ReAct loop: Thought -> Action -> Observation -> repeat.
+    def _turn_loop(self) -> str:
+        """Outer turn loop matching ARE's ``agent_loop()``.
 
-        Matches ARE's ``execute_agent_loop()`` and ``step()`` methods.
-        Key behavior matching ARE (base_agent.py:776-854):
+        ARE ``are_simulation_main.py:230-326``: iterates over turns. Between
+        turns, drains the notification queue, separates user messages (→
+        ``[TASK]`` format) from environment notifications (→ re-queued for
+        inner loop's pre-step), then runs the inner step loop.
+
+        - ``send_message_to_user`` → TERMINATED: increments turn count
+        - ``wait_for_notification`` → PAUSED: outer loop continues without
+          incrementing turns
+
+        Returns:
+            Final text response
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        turn_count = 0
+        max_turns = self._get_max_turns()
+
+        # ARE are_simulation_main.py:270
+        first_run = True
+
+        while max_turns is None or turn_count < max_turns:
+            if not first_run:
+                if self.environment is not None:
+                    # Between turns: drain notification queue
+                    # ARE are_simulation_main.py:272-274
+                    user_messages, has_env, has_stop = self.environment.get_turn_notifications()
+
+                    if has_stop:
+                        logger.warning("Environment stop message received in outer loop — stopping agent")
+                        self._terminated = True
+                        break
+
+                    if not user_messages and not has_env:
+                        # No messages available, wait briefly
+                        # ARE are_simulation_main.py:316-317
+                        time.sleep(1)
+                        continue
+
+                    # Format user messages as [TASK] for the new turn
+                    # ARE are_simulation_main.py:283, 361-365
+                    # ARE base_agent.py:96: "[TASK]: \n{content}\n"
+                    task = "\n".join(user_messages)
+                    self._messages.append({"role": "user", "content": f"[TASK]: \n{task}\n"})
+                # else: no environment — skip notification handling and run
+                # inner loop directly (standalone/testing mode)
+
+            first_run = False
+
+            # Run inner step loop
+            # ARE: react_agent.run(task=task, reset=reset) → execute_agent_loop()
+            running_state = self._step_loop()
+
+            if running_state == _RunningState.TERMINATED:
+                # ARE are_simulation_main.py:297-300: increment turn count
+                turn_count += 1
+                if self._terminated:
+                    return self._final_message or ""
+            elif running_state == _RunningState.PAUSED:
+                # ARE are_simulation_main.py:301-303: agent called
+                # wait_for_notification, continue outer loop
+                logger.debug("Agent paused (wait_for_notification), continuing outer loop")
+
+        # Max turns reached
+        # ARE are_simulation_main.py:319-320
+        if max_turns is not None and turn_count >= max_turns and not self._terminated:
+            logger.warning("Max turns (%d) reached — stopping agent", max_turns)
+
+        return self._final_message or "Agent terminated without final message."
+
+    def _get_max_turns(self) -> Optional[int]:
+        """Get max turns from the scenario, matching ARE's ``scenario.nb_turns``.
+
+        Returns:
+            Number of turns, or None for unlimited
+        """
+        if self.environment is None:
+            return None
+        try:
+            scenario = self.environment.get_scenario()
+            return getattr(scenario, "nb_turns", None)
+        except Exception:
+            return None
+
+    def _step_loop(self) -> "_RunningState":
+        """Inner step loop matching ARE's ``execute_agent_loop()``.
+
+        ARE ``base_agent.py:775-854``: iterates over steps within a single
+        turn. Terminates when the agent calls ``send_message_to_user``
+        (TERMINATED) or ``wait_for_notification`` (PAUSED).
+
+        Key behavior matching ARE:
 
         - Iteration counter incremented on EVERY loop iteration (including errors)
         - Format retries happen within a single iteration
@@ -864,7 +974,7 @@ class DefaultGaia2Agent:
         - Simulated generation time: pause env before LLM, resume with offset after
 
         Returns:
-            Final text response
+            Running state: TERMINATED or PAUSED
         """
         while self._iteration_count < self.max_iterations and not self._terminated:
             # Check for environment stop BEFORE draining notifications.
@@ -872,11 +982,11 @@ class DefaultGaia2Agent:
             # via has_environment_stop_message) in the while-condition, THEN runs
             # pre_step (which drains via get_by_timestamp). Reversing this order
             # causes the drain to consume ENVIRONMENT_STOP before the peek sees it.
-            # ARE agents/default_agent/termination_methods/are_simulation.py:105-107
+            # ARE agents/default_agent/termination_methods/are_simulation.py:98-99
             # ARE agents/default_agent/base_agent.py:776-799
             if self._check_environment_stop():
                 self._terminated = True
-                break
+                return _RunningState.TERMINATED
 
             # Pre-step: poll for notifications (matching ARE's pre-step)
             # ARE agents/default_agent/steps/are_simulation.py:26-62
@@ -941,18 +1051,29 @@ class DefaultGaia2Agent:
                 if self.verbose >= 1:
                     print(f"[Iteration {self._iteration_count}] Tool: {tool_name}")
 
-                # Check for termination tool (send_message_to_user)
-                # ARE agents/default_agent/termination_methods/are_simulation.py:76-118
+                # Check for termination tools
+                # ARE agents/default_agent/termination_methods/are_simulation.py:71-121
                 if tool_name in _TERMINATION_TOOLS:
+                    # send_message_to_user → TERMINATED
+                    # ARE termination_methods/are_simulation.py:93-96
                     self._terminated = True
                     observation = self._execute_tool(tool_name, tool_args)
                     self._final_message = tool_args.get("content", str(observation)) if isinstance(tool_args, dict) else str(observation)
-                    return self._final_message
+                    return _RunningState.TERMINATED
 
-                # Execute tool (includes wait_for_notification, which pauses
-                # the agent while ARE processes events and advances time;
-                # the next iteration's _pull_notifications() picks up any
-                # new messages that arrived during the wait)
+                if tool_name == _PAUSE_TOOL:
+                    # wait_for_notification → execute tool, add observation, PAUSED
+                    # ARE termination_methods/are_simulation.py:34-36
+                    observation = self._execute_tool(tool_name, tool_args)
+                    self._messages.append(
+                        {
+                            "role": "user",
+                            "content": f"[OUTPUT OF STEP {self._step_count}] Observation:\n***\n{observation}\n***\n",
+                        }
+                    )
+                    return _RunningState.PAUSED
+
+                # Execute regular tool
                 observation = self._execute_tool(tool_name, tool_args)
 
                 # Add observation in ARE's format
@@ -991,16 +1112,17 @@ class DefaultGaia2Agent:
                 self._iteration_count += 1
 
         # Max iterations reached: send message to user via tool
-        # ARE agents/default_agent/termination_methods/are_simulation.py:109-116
+        # ARE agents/default_agent/termination_methods/are_simulation.py:100-108
         if self._iteration_count >= self.max_iterations and not self._terminated:
             max_iter_msg = f"Max iterations ({self.max_iterations}) reached. Stopping."
             # Call the actual tool to record the event in the simulation
             if "AgentUserInterface__send_message_to_user" in self.tools:
                 self._execute_tool("AgentUserInterface__send_message_to_user", {"content": max_iter_msg})
             self._terminated = True
-            return max_iter_msg
+            self._final_message = max_iter_msg
+            return _RunningState.TERMINATED
 
-        return self._final_message or "Agent terminated without final message."
+        return _RunningState.TERMINATED
 
     def _call_llm_with_format_retry(self, messages: List[Dict[str, Any]]) -> Tuple[Optional[str], float]:
         """Call LLM with retry for invalid format, matching ARE's behavior.

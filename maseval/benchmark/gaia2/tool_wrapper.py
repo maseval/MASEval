@@ -9,8 +9,6 @@ Reference Paper: "GAIA-2: A Controllable Multi-Turn Conversational Benchmark for
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from are.simulation.tool_utils import AppToolAdapter
-
 from maseval.core.tracing import TraceableMixin
 from maseval.core.config import ConfigurableMixin
 from maseval.core.history import ToolInvocationHistory
@@ -61,6 +59,8 @@ class Gaia2GenericTool(TraceableMixin, ConfigurableMixin):
 
         # Delegate metadata extraction to ARE's AppToolAdapter (tool_utils.py:544-584).
         # This is the source of truth for tool name, description, inputs, and output_type.
+        from are.simulation.tool_utils import AppToolAdapter  # type: ignore[import-not-found]
+
         adapter = AppToolAdapter(are_tool)
         self.name: str = adapter.name
         self.description: str = adapter.description

@@ -391,10 +391,11 @@ class TestDefaultGaia2AgentRun:
         assert "ready to help" in result.lower()
 
     def test_continues_after_wait_for_notification(self, sample_tools_dict, gaia2_model_wait_notification):
-        """Test agent does NOT terminate on wait_for_notification.
+        """Test agent pauses on wait_for_notification and resumes.
 
-        wait_for_notification is a pause, not a termination signal.  The agent
-        must continue its loop and eventually terminate via send_message_to_user.
+        wait_for_notification pauses the inner step loop (PAUSED state). The
+        outer turn loop continues — eventually the agent terminates via
+        send_message_to_user. Matches ARE's two-level loop architecture.
         """
         from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
 

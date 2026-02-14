@@ -142,6 +142,7 @@ class TestGaia2BenchmarkSetupEnvironment:
                 "are": mock_are,
                 "are.simulation": mock_are.simulation,
                 "are.simulation.environment": mock_are.simulation.environment,
+                "are.simulation.notification_system": mock_are.simulation.notification_system,
                 "are.simulation.validation": mock_are.simulation.validation,
                 "are.simulation.scenarios": mock_are.simulation.scenarios,
                 "are.simulation.scenarios.config": mock_are.simulation.scenarios.config,
