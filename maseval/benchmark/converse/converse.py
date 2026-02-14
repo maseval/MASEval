@@ -112,27 +112,43 @@ class ConverseBenchmark(Benchmark):
     ) -> List[Evaluator]:
         """Select evaluators based on the task's evaluation type.
 
-        A :class:`PrivacyEvaluator` is added when the type is ``"privacy"``
-        or ``target_info`` is present.  A :class:`SecurityEvaluator` is added
-        when the type is ``"security"`` or ``forbidden_tools`` is present.
-        Both may be returned for tasks that test both dimensions.
+        A :class:`PrivacyEvaluator` is added when the type is ``"privacy"``.
+        If ``evaluator_model_id`` is set in ``task.evaluation_data``
+        (via :func:`configure_model_ids`), the evaluator uses an LLM judge
+        matching the original ConVerse ``privacy_judge.py``; otherwise it
+        falls back to substring matching.
+
+        A :class:`SecurityEvaluator` is added when the type is
+        ``"security"`` or ``forbidden_tools`` is present.
 
         Args:
             environment: The task environment.
             task: Current task whose ``evaluation_data`` drives evaluator selection.
             agents: Agent adapters (unused).
             user: The adversarial user (forwarded to evaluators).
-            seed_generator: Seed generator (unused).
+            seed_generator: Seed generator for evaluator model reproducibility.
 
         Returns:
             List of evaluators applicable to this task.
         """
-        _ = agents, seed_generator
+        _ = agents
         eval_type = str(task.evaluation_data.get("type", "")).lower()
         evaluators: List[Evaluator] = []
 
-        if eval_type == "privacy" or "target_info" in task.evaluation_data:
-            evaluators.append(PrivacyEvaluator(task=task, environment=environment, user=user))
+        if eval_type == "privacy":
+            # Optionally create an LLM model for the privacy judge.
+            evaluator_model_id = task.evaluation_data.get("evaluator_model_id")
+            model = None
+            if evaluator_model_id is not None:
+                evaluator_seed = seed_generator.derive_seed("evaluators/privacy_judge")
+                model = self.get_model_adapter(
+                    evaluator_model_id,
+                    seed=evaluator_seed,
+                    register_category="models",
+                    register_name="privacy_judge_model",
+                )
+            domain = task.environment_data.get("domain")
+            evaluators.append(PrivacyEvaluator(task=task, environment=environment, user=user, model=model, domain=domain))
 
         if eval_type == "security" or "forbidden_tools" in task.evaluation_data:
             evaluators.append(SecurityEvaluator(task=task, environment=environment, user=user))

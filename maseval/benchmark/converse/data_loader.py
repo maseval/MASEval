@@ -6,7 +6,7 @@ Raw dataset files are not bundled in the package.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -162,6 +162,23 @@ def parse_privacy_attacks(file_path: Path, persona_id: int, env_text: str, optio
             data_item = str(item.get("data_item", "unknown"))
             task_id = f"{domain}_p{persona_id}_privacy_{_slugify(category_name)}_{_slugify(data_item)}"
 
+            # Build evaluation_data with fields matching the original ConVerse
+            # privacy_judge.py:199-221 routing logic.
+            evaluation_data: Dict[str, Any] = {
+                "type": "privacy",
+                "category": category_name,
+                "data_item": data_item,
+                "attack_action": item.get("attack_action", ""),
+            }
+
+            if category_name == "related_and_useful":
+                # Abstraction pathway: ConVerse/judge/privacy_judge.py:211-218
+                evaluation_data["raw_data"] = item.get("raw_data", [])
+                evaluation_data["acceptable_abstraction"] = item.get("acceptable_abstraction", "")
+            else:
+                # Information leak pathway: ConVerse/judge/privacy_judge.py:203-210
+                evaluation_data["ground_truth_snippets"] = item.get("extraction_snippets", [])
+
             tasks.append(
                 Task(
                     id=task_id,
@@ -178,11 +195,7 @@ def parse_privacy_attacks(file_path: Path, persona_id: int, env_text: str, optio
                         "attack_strategy": item.get("attack_action", ""),
                         "attack_rationale": item.get("attack_rationale", ""),
                     },
-                    evaluation_data={
-                        "type": "privacy",
-                        "target_info": data_item,
-                        "ground_truth_snippets": item.get("extraction_snippets", []),
-                    },
+                    evaluation_data=evaluation_data,
                     protocol=TaskProtocol(timeout_seconds=600),
                 )
             )
@@ -330,3 +343,48 @@ def load_tasks(
         all_tasks = all_tasks[:limit]
 
     return TaskQueue(all_tasks)
+
+
+# Mapping from MASEval domain names to original ConVerse use_case keys
+# used in USE_CASE_CONFIGS (ConVerse/judge/generic_prompts.py:246-306).
+DOMAIN_TO_USE_CASE: Dict[str, str] = {
+    "travel": "travel_planning",
+    "real_estate": "real_estate",
+    "insurance": "insurance",
+}
+
+
+def configure_model_ids(
+    tasks: Union[TaskQueue, List[Task]],
+    *,
+    evaluator_model_id: Optional[str] = None,
+) -> Union[TaskQueue, List[Task]]:
+    """Configure the evaluator model ID for privacy tasks.
+
+    The original ConVerse uses an LLM judge for privacy evaluation
+    (``ConVerse/judge/privacy_judge.py``).  Setting *evaluator_model_id*
+    enables LLM-based evaluation; without it the evaluator falls back
+    to substring matching.
+
+    Only sets values if not already present, allowing task-specific
+    overrides in the original data to take precedence.
+
+    Args:
+        tasks: TaskQueue or list of Tasks to configure.
+        evaluator_model_id: Model ID for the privacy evaluator LLM judge.
+
+    Returns:
+        The same queue or list (mutated in place for convenience).
+
+    Example:
+        ```python
+        tasks = load_tasks("travel", split="privacy", limit=5)
+        configure_model_ids(tasks, evaluator_model_id="gpt-4o")
+        benchmark = MyConverseBenchmark(agent_data=agent_config)
+        results = benchmark.run(tasks)
+        ```
+    """
+    for task in tasks:
+        if evaluator_model_id is not None:
+            task.evaluation_data.setdefault("evaluator_model_id", evaluator_model_id)
+    return tasks

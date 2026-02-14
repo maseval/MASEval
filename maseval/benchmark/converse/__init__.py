@@ -47,7 +47,7 @@ Usage::
 """
 
 from .converse import ConverseBenchmark, DefaultAgentConverseBenchmark, DefaultConverseAgent, DefaultConverseAgentAdapter
-from .data_loader import ConverseDomain, ensure_data_exists, load_tasks
+from .data_loader import ConverseDomain, configure_model_ids, ensure_data_exists, load_tasks
 from .environment import ConverseEnvironment
 from .evaluator import PrivacyEvaluator, SecurityEvaluator
 from .external_agent import ConverseExternalAgent
@@ -62,6 +62,7 @@ __all__ = [
     "PrivacyEvaluator",
     "SecurityEvaluator",
     "ConverseDomain",
+    "configure_model_ids",
     "load_tasks",
     "ensure_data_exists",
 ]
