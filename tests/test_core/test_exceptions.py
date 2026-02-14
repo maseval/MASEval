@@ -7,6 +7,9 @@ failures.
 """
 
 import pytest
+
+pytestmark = pytest.mark.core
+
 from maseval import (
     TaskQueue,
     TaskExecutionStatus,

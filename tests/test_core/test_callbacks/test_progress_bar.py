@@ -8,6 +8,8 @@ Visual output should be manually verified during development.
 import pytest
 from unittest.mock import MagicMock, patch
 
+pytestmark = pytest.mark.core
+
 from maseval.core.callbacks.progress_bar import (
     ProgressBarCallback,
     TqdmProgressBarCallback,

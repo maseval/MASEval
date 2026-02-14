@@ -26,8 +26,14 @@ jobs:
           pip install uv
           uv sync --group dev
       - name: Run core tests
-        run: |
-          uv run pytest -m core -v
+        run: uv run coverage run --parallel-mode -m pytest -m core -v
+      - name: Upload coverage data
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-core
+          path: .coverage.*
+          include-hidden-files: true
 
   test-benchmark:
     name: Benchmark Tests
@@ -47,12 +53,17 @@ jobs:
           pip install uv
           uv sync --all-extras --group dev
       - name: Run benchmark tests
-        run: |
-          uv run pytest -m "benchmark and not (slow or live)" -v
+        run: uv run coverage run --parallel-mode -m pytest -m "benchmark and not (slow or live)" -v
+      - name: Upload coverage data
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-benchmark
+          path: .coverage.*
+          include-hidden-files: true
 
-  test-all:
-    name: All Tests (With Optional Deps)
-    needs: [test-core, test-benchmark]
+  test-core-optional:
+    name: Core Tests (With Optional Deps)
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -68,9 +79,42 @@ jobs:
         run: |
           pip install uv
           uv sync --all-extras --group dev
-      - name: Run all tests
+      - name: Run core tests with optional deps
+        run: uv run coverage run --parallel-mode -m pytest -m core -v
+      - name: Upload coverage data
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-core-optional
+          path: .coverage.*
+          include-hidden-files: true
+
+  test-interface:
+    name: Interface Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install all dependencies
         run: |
-          uv run pytest -v
+          pip install uv
+          uv sync --all-extras --group dev
+      - name: Run interface tests
+        run: uv run coverage run --parallel-mode -m pytest -m interface -v
+      - name: Upload coverage data
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-interface
+          path: .coverage.*
+          include-hidden-files: true
 
   test-slow:
     name: Slow Tests (Data Downloads + Integrity)
@@ -86,9 +130,14 @@ jobs:
         run: |
           pip install uv
           uv sync --all-extras --group dev
-      - name: Run slow tests
-        run: |
-          uv run pytest -m "slow and not credentialed" -v
+      - name: Run slow and live tests
+        run: uv run coverage run --parallel-mode -m pytest -m "(slow or live) and not credentialed" -v
+      - name: Upload coverage data
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-slow
+          path: .coverage.*
+          include-hidden-files: true
 
   # test-credentialed:
   #   name: Credentialed Tests (Live API)
@@ -115,6 +164,7 @@ jobs:
 
   coverage:
     name: Coverage Report
+    needs: [test-core, test-benchmark, test-core-optional, test-interface, test-slow]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -131,11 +181,17 @@ jobs:
       - name: Install dependencies
         run: |
           pip install uv
-          uv sync --all-extras --all-groups
+          uv sync --group dev
 
-      - name: Run tests with coverage
+      - name: Download coverage data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+
+      - name: Combine and report coverage
         run: |
-          uv run coverage run -m pytest
+          uv run coverage combine
           uv run coverage xml
           uv run coverage html
           uv run coverage report

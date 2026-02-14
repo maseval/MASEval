@@ -55,18 +55,29 @@ Defined in `pyproject.toml`:
 
 ## CI Pipeline
 
-Six jobs in `.github/workflows/test.yml`:
+Jobs in `.github/workflows/test.yml`. Each test job collects coverage data (from Python 3.12 only); the final coverage job merges them into one combined report.
 
-| Job               | Python    | What it runs                      | Gate                   |
-| ----------------- | --------- | --------------------------------- | ---------------------- |
-| test-core         | 3.10–3.14 | `-m core`                         | —                      |
-| test-benchmark    | 3.10–3.14 | `-m "benchmark and not (slow or live)"` | —                |
-| test-all          | 3.10–3.14 | `pytest -v` (default filter)      | After core + benchmark |
-| test-slow         | 3.12      | `-m "slow and not credentialed"`  | —                      |
-| test-credentialed | 3.12      | `-m "credentialed and not smoke"` | Maintainer approval    |
-| coverage          | 3.12      | Default suite (fast) with coverage report | —              |
+| Job                | Python    | What it runs                                 | Gate                |
+| ------------------ | --------- | -------------------------------------------- | ------------------- |
+| test-core          | 3.10–3.14 | `-m core` (no optional deps)                 | —                   |
+| test-benchmark     | 3.10–3.14 | `-m "benchmark and not (slow or live)"`      | —                   |
+| test-core-optional | 3.10–3.14 | `-m core` (with optional deps)               | —                   |
+| test-interface     | 3.10–3.14 | `-m interface`                               | —                   |
+| test-slow          | 3.12      | `-m "(slow or live) and not credentialed"`   | —                   |
+| test-credentialed  | 3.12      | `-m "credentialed and not smoke"` (disabled) | Maintainer approval |
+| coverage           | 3.12      | Combines coverage from all jobs above        | After all test jobs |
 
 Contributors don't need API keys — the default suite and slow tests run without them.
+
+### Detecting orphaned tests
+
+Every test must carry at least one marker that maps to a CI job. To find tests that would be missed:
+
+```bash
+uv run pytest --collect-only -m "not (core or benchmark or interface or slow or live or credentialed or smoke)"
+```
+
+If this reports any collected tests, add the appropriate marker (usually `pytestmark = pytest.mark.core` or `pytest.mark.benchmark`) to the file.
 
 ## Test Organization
 
@@ -105,6 +116,7 @@ Benchmark tests follow a **two-tier pattern**:
 **Tier 1: Structural tests (offline, `benchmark` marker only)**
 
 Tests that work without downloaded data or network access:
+
 - Import protection: `maseval` runs without benchmark optional dependencies
 - Graceful errors: descriptive error when benchmark code is accessed without deps
 - Interface checks: class methods exist, types correct, invalid inputs rejected
@@ -113,6 +125,7 @@ Tests that work without downloaded data or network access:
 **Tier 2: Real data tests (`benchmark` + `live` markers)**
 
 Tests that download and use actual benchmark data:
+
 - Environment/tool tests: create real environments, execute tools on real databases
 - Data loading pipeline: `load_tasks`, `load_domain_config`, etc.
 - Data integrity validation (also marked `slow`): schema checks, minimum record counts, field structure
@@ -122,6 +135,7 @@ Tests that download and use actual benchmark data:
 Benchmarks use `ensure_data_exists()` to download data to the **package's default data directory** (not temp dirs). This function caches — it skips download if files already exist. A session-scoped pytest fixture (e.g., `ensure_tau2_data`, `ensure_macs_templates`) triggers the download once per test session.
 
 Tests that need real data should:
+
 1. Depend on the download fixture (`ensure_tau2_data`, `ensure_macs_templates`, etc.)
 2. Be marked `@pytest.mark.live`
 3. Use simple constructors — e.g., `Tau2Environment({"domain": "retail"})` — since data is already in the default location
@@ -131,6 +145,7 @@ Tests that don't need data (structural, mock-based) should NOT depend on the dow
 #### How to decide: mock or real data?
 
 This is a judgment call. As a guideline:
+
 - If the test validates **structure, types, or error handling** → Tier 1 (offline)
 - If the test operates on **real database records, files, or network resources** → Tier 2 (`live`)
 - Don't force synthetic fixtures where they add complexity without value. If something needs real data, test it with real data.
@@ -166,4 +181,4 @@ requires_openai = pytest.mark.skipif(
 
 ## Notes
 
-- Credentialed tests require maintainer approval via GitHub Environment. See `EXTENDEDTESTINGSTRATEGYPLAN.md` for details.
+- Credentialed tests require maintainer approval via GitHub Environment.
