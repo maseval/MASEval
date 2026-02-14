@@ -111,6 +111,7 @@ all = ["maseval[examples,transformers,wandb,multiagentbench]"]
 dev = [
     "pytest>=9.0.0",
     "pytest-cov>=7.0.0",
+    "coverage>=7.0.0",
     "ruff>=0.14.0",
     "ty>=0.0.5",
     "pre-commit>=4.0.0",

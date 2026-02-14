@@ -1,0 +1,2 @@
+# Ignore downloaded data files created by the CONVERSE benchmark
+data/*
