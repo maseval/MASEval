@@ -1359,6 +1359,10 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
         max_iterations = merged_data.get("max_iterations", _DEFAULT_MAX_ITERATIONS)
         invalid_format_retries = merged_data.get("invalid_format_retries", _DEFAULT_INVALID_FORMAT_RETRIES)
         simulated_generation_time_config = merged_data.get("simulated_generation_time_config")
+        if simulated_generation_time_config is None:
+            from are.simulation.types import SimulatedGenerationTimeConfig  # type: ignore[import-not-found]
+
+            simulated_generation_time_config = SimulatedGenerationTimeConfig(mode="measured")
         verbose = merged_data.get("verbose", 0)
 
         # Derive seed for agent model (returns None if seeding disabled)
