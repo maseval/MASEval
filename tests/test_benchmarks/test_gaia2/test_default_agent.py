@@ -660,6 +660,43 @@ class TestDefaultGaia2AgentRun:
         wait_observation = [m for m in messages if "No notifications" in str(m.get("content", ""))]
         assert len(wait_observation) > 0
 
+    def test_execute_tool_normalizes_empty_action_input(self):
+        """Test that empty action_input {} doesn't crash kwargs-only tools.
+
+        ARE's parse_json_tool_call normalizes empty dict {} to empty string ""
+        (via ``action_input or ""``). _execute_tool must normalize this back
+        to {} before calling the tool, matching ARE's execute_tool_call
+        (json_action_executor.py:204). Without this, tools with **kwargs-only
+        signatures crash with TypeError on the positional string argument.
+        """
+        from maseval.benchmark.gaia2.gaia2 import DefaultGaia2Agent
+
+        call_log = []
+
+        def no_arg_tool(**kwargs):
+            call_log.append(kwargs)
+            return "2024-01-15T10:00:00Z"
+
+        tools = {
+            "SystemApp__get_current_time": no_arg_tool,
+            "AgentUserInterface__send_message_to_user": lambda **kwargs: "sent",
+        }
+
+        model = DummyModelAdapter(
+            responses=[
+                'Thought: Get the time.\n\nAction:\n{"action": "SystemApp__get_current_time", "action_input": {}}<end_action>',
+                'Thought: Done.\n\nAction:\n{"action": "AgentUserInterface__send_message_to_user", "action_input": {"content": "Done"}}<end_action>',
+            ]
+        )
+
+        agent = DefaultGaia2Agent(tools=tools, model=model)
+        agent.run("What time is it?")
+
+        # Tool was called successfully with no arguments (not with positional "")
+        assert len(call_log) == 1
+        assert call_log[0] == {}
+        assert agent._terminated
+
 
 @pytest.mark.benchmark
 class TestDefaultGaia2AgentState:

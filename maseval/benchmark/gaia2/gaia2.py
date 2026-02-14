@@ -1213,6 +1213,11 @@ class DefaultGaia2Agent:
         if tool_name not in self.tools:
             raise RuntimeError(f"Error: unknown tool {tool_name}, should be instead one of {list(self.tools.keys())}.")
 
+        # Normalize empty/falsy args to empty dict
+        # (matches ARE json_action_executor.py:204)
+        if not tool_args:
+            tool_args = {}
+
         try:
             # Match original ARE behavior: string args passed as positional argument
             if isinstance(tool_args, str):
