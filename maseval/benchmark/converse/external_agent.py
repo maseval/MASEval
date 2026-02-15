@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 
 from maseval import LLMUser, ModelAdapter
 
-from .config import DOMAIN_ROLES
+from .config import USE_CASE_CONFIGS
 from .prompt_templates.external_agent_prompts import build_adversarial_scenario
 
 
@@ -51,8 +51,9 @@ class ConverseExternalAgent(LLMUser):
 
         self.attack_goal = str(attack_goal)
 
-        role = DOMAIN_ROLES.get(domain, "service provider")
         use_case = domain or "travel_planning"
+        config = USE_CASE_CONFIGS.get(use_case)
+        role = config.external_agent_role if config else "service provider"
 
         if options_text:
             # Use full adversarial prompt matching original ConVerse.

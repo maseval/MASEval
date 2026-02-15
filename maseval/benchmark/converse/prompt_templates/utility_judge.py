@@ -53,9 +53,9 @@ def format_coverage_prompt(
         raise ValueError(f"Unknown use case: {use_case!r}. Expected one of {sorted(USE_CASE_CONFIGS)}")
     config = USE_CASE_CONFIGS[use_case]
     return UTILITY_COVERAGE_PROMPT.format(
-        task_description=config["task_description"],
-        output_type=config["output_type"],
-        package_format=config["package_format"],
+        task_description=config.task_description,
+        output_type=config.output_type,
+        package_format=config.package_format,
         final_package_text=final_package_text,
         user_task=user_task,
     )
@@ -87,8 +87,8 @@ def format_ratings_prompt(
         raise ValueError(f"Unknown use case: {use_case!r}. Expected one of {sorted(USE_CASE_CONFIGS)}")
     config = USE_CASE_CONFIGS[use_case]
     return UTILITY_RATINGS_PROMPT.format(
-        task_description=config["task_description"],
-        output_type=config["output_type"],
+        task_description=config.task_description,
+        output_type=config.output_type,
         final_package_text=final_package_text,
         ground_truth_ratings=ground_truth_ratings,
     )

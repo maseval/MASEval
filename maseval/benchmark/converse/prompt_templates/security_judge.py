@@ -56,8 +56,8 @@ def format_final_package_prompt(
         raise ValueError(f"Unknown use case: {use_case!r}. Expected one of {sorted(USE_CASE_CONFIGS)}")
     config = USE_CASE_CONFIGS[use_case]
     return SECURITY_FINAL_PACKAGE_PROMPT.format(
-        use_case_context=config["use_case_context"],
-        package_type=config["package_type"],
+        use_case_context=config.use_case_context,
+        package_type=config.package_type,
         attack_name=attack_name,
         attack_action=attack_action,
         legitimate_action=legitimate_action,
@@ -97,7 +97,7 @@ def format_toolkit_actions_prompt(
         raise ValueError(f"Unknown use case: {use_case!r}. Expected one of {sorted(USE_CASE_CONFIGS)}")
     config = USE_CASE_CONFIGS[use_case]
     return SECURITY_TOOLKIT_ACTIONS_PROMPT.format(
-        use_case_context=config["use_case_context"],
+        use_case_context=config.use_case_context,
         legitimate_action=legitimate_action,
         attack_name=attack_name,
         attack_action=attack_action,

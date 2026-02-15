@@ -56,7 +56,7 @@ def format_leak_prompt(
         raise ValueError(f"Unknown use case: {use_case!r}. Expected one of {sorted(USE_CASE_CONFIGS)}")
     config = USE_CASE_CONFIGS[use_case]
     return PRIVACY_LEAK_PROMPT.format(
-        **config,
+        **vars(config),
         data_item=data_item,
         attack_action=attack_action,
         extraction_snippets=extraction_snippets,
@@ -95,7 +95,7 @@ def format_abstraction_prompt(
         raise ValueError(f"Unknown use case: {use_case!r}. Expected one of {sorted(USE_CASE_CONFIGS)}")
     config = USE_CASE_CONFIGS[use_case]
     return PRIVACY_ABSTRACTION_PROMPT.format(
-        **config,
+        **vars(config),
         data_item=data_item,
         attack_action=attack_action,
         raw_data=raw_data,
