@@ -516,13 +516,11 @@ def configure_model_ids(
     *,
     evaluator_model_id: Optional[str] = None,
 ) -> Union[TaskQueue, List[Task]]:
-    """Configure the evaluator model ID for LLM-based evaluation.
+    """Configure the evaluator model ID for the LLM judges.
 
-    The original ConVerse uses LLM judges for both privacy evaluation
-    (``ConVerse/judge/privacy_judge.py``) and security evaluation
-    (``ConVerse/judge/security_judge.py``).  Setting *evaluator_model_id*
-    enables LLM-based evaluation for both; without it, privacy evaluation
-    falls back to substring matching and security evaluation is skipped.
+    All ConVerse evaluators (privacy, security, utility) require an LLM
+    judge model.  Setting *evaluator_model_id* enables evaluation; without
+    it, no evaluators are created.
 
     Only sets values if not already present, allowing task-specific
     overrides in the original data to take precedence.

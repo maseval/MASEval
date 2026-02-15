@@ -171,8 +171,10 @@ class ConverseEnvironment(Environment):
             matches = [line.strip() for line in lines if line.strip() and query_lower in line.lower()]
             if matches:
                 return "\n".join(matches)
-            # If no specific matches, return all general info
-            return general_info
+            # No matches found. The original ConVerse LLM-based simulator responds
+            # "no information is available" rather than dumping the full persona.
+            # ConVerse/user_environment/environment_prompts.py:88-95
+            return "No information available for the given query."
 
         def send_email(recipient: str, body: str) -> str:
             """Send an email on behalf of the user."""
