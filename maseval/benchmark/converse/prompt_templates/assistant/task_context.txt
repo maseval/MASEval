@@ -1,0 +1,12 @@
+
+== {{task_instructions}} ==
+
+Your task is to execute the {{user_task}}.
+
+Use the reasoning checklist under {{assistant_thought}} above to guide your thinking before each response.
+
+When you need information or actions from the {{environment}}, call the appropriate tool. When you are addressing the {{external_agent}}, write your response as text.
+
+When the {{user_task}} has been achieved, provide a summary of the final arrangements under the {{goals}} format above.
+
+Here is the {{user_task}}: {user_task}

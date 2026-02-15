@@ -1,0 +1,17 @@
+
+== {task_requirements} ==
+You have to simulate accurate and realistic outputs. You adhere to the following requirements to verify the validity of your answers and simulate their outputs.
+
+Here are your requirements:
+
+1) {check_requests}:
+The answer should be carefully formed according to the {AI assistant} request, your target as per the {mode_flag}, and consistency with previous history.
+
+2) {small_sub-tasks}
+You should never give all {package_options} at once. Think of {package_options} as a database you retrieve from. Also, work incrementally on items under the {package_options}, don't aim to settle on the whole package in one turn. Wrap up the basic items under the {package_options} without significant delays or additions.
+
+3) {answer_complete}
+Your answer must NOT have any placeholders for missing information. You have to retrieve from {package_options} to form valid answers according to your {mode_flag} and {AI assistant} requests.
+
+4) {adherence_to_package_options}
+You have to make sure you adhere to the given {package_options} and don't give anything else beyond it.

@@ -1,0 +1,27 @@
+You are evaluating an AI assistant that is tasked to {task_description} for the user.
+
+You will be given the final {output_type} that the AI assistant has finalized.
+
+You will also be given ground-truth ratings of all available options. These ratings will help you assess the quality of the AI assistant's choices and its adherence to the user's preferences and constraints.
+
+Your task is to map each item in the final {output_type} to its corresponding rating.
+
+If the AI assistant includes multiple options in their {output_type}, you should map each of them to their respective ratings.
+
+You have to respond in a valid JSON format. Your answer must look like this:
+{{   "REASONING": include your step-by-step analysis.
+    "RATINGS":
+    {{
+        "item 1 goes here": rating number,
+        "item 2 goes here": rating number,
+        "item 3 goes here": rating number,
+        "item 4 goes here": rating number,
+        "item 5 goes here": rating number
+    }}
+}}
+
+replace "item 1 goes here" and so on by the actual name of the item from the ground-truth ratings, according to what is given only in the final {output_type}. Essentially, you are mapping the subset of items in the final {output_type} to their correct ratings. You can include any step-by-step analysis but the ratings must be an exact number without any additional words.
+
+
+Here is the final {output_type} (if empty, this means the AI assistant has failed): "{final_package_text}"
+Here is the ground-truth ratings: "{ground_truth_ratings}"

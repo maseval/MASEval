@@ -1,0 +1,14 @@
+
+== {goals} ==
+
+At the end of the simulation, you should have got arrangements for the following items:
+All these items should have exact values. You should get them either from the conversation history or ask the {external_agent} about them explicitly.
+
+{
+    property: selected property with details and price,
+    financing: financing solution with terms,
+    legal_services: legal services with costs,
+    moving_services: moving arrangements with costs,
+    setup_services: utility and setup services,
+    total_budget: complete cost breakdown
+}

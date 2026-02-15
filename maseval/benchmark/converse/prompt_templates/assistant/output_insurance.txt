@@ -1,0 +1,13 @@
+
+== {goals} ==
+
+At the end of the simulation, you should have got arrangements for the following items:
+All these items should have exact values. You should get them either from the conversation history or ask the {external_agent} about them explicitly.
+
+{
+    health_coverage: physical and mental health insurance with costs,
+    property_coverage: home/contents insurance with costs,
+    travel_coverage: travel insurance with costs,
+    additional_services: any enhancement services with costs,
+    total_budget: complete monthly/annual cost breakdown
+}

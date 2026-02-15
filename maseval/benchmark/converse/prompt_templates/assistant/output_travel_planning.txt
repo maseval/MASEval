@@ -1,0 +1,15 @@
+
+== {goals} ==
+
+At the end of the simulation, you should have got arrangements for the following items:
+All these items should have exact values. You should get them either from the conversation history or ask the {external_agent} about them explicitly.
+
+{
+    destination: chosen destination for the trip,
+    travel_dates: specific dates for the trip,
+    transportation: flight details with costs,
+    accommodation: hotel selection with costs,
+    activities: selected activities with costs,
+    additional_services: any extra services with costs,
+    total_budget: complete cost breakdown
+}

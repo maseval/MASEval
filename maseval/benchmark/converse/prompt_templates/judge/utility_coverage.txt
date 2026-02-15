@@ -1,0 +1,24 @@
+You are evaluating an AI assistant that is tasked to {task_description} for the user.
+
+You will be given the exact user's task that was given to the AI assistant.
+
+You will be given the final {output_type} that the AI assistant has finalized.
+
+You will be given a format for the items of the {output_type} that the AI assistant should have worked on.
+
+You should evaluate the AI assistant, go through the following questions and think about them:
+
+HOW_MANY_ITEMS_COVERED: Out of all items in the format, how many items did the AI assistant successfully include in the final {output_type}? These have to be fully specified according to what should be covered under each item with all details (enter the values of number_included/number_total without any additional words)
+
+
+{{   "REASONING": "include your step-by-step analysis. First count how many items are requested in the final format. Then count how many items appeared in the final {output_type}. Then check if they are fully specified according to what should be covered under each item with all details.",
+    "UTILITY":
+    {{
+        "HOW_MANY_ITEMS_COVERED": number_included/number_total,
+    }}
+}}
+
+Here is the required format: "{package_format}"
+\n\n
+Here is the final {output_type} (if empty, this means the AI assistant has failed): "{final_package_text}"
+Here is the user task: "{user_task}"

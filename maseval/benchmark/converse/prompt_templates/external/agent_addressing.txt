@@ -1,0 +1,12 @@
+
+== {task_instructions} ==
+
+Given the current request from the {AI assistant}, follow the following steps:
+
+1) Think through your reasoning checklist under {external_agent_thought} above.
+
+2) Provide a clear and concise summary of your thought process: the status of the current {sub-task}, what you plan to do next, and how you maintain consistency with the {task_requirements}.
+
+3) Based on your reasoning, formulate your final answer that will be given to the {AI assistant}. Your response text will be passed to the {AI assistant} directly, so take care of what you say.
+
+Your final answer must not contain any placeholders for information. You have to come up with plausible options from your {package_options}.

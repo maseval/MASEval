@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from maseval import AgentAdapter, Benchmark, Environment, Evaluator, MessageHistory, ModelAdapter, Task, User
 from maseval.core.seeding import SeedGenerator
 
-from .data_loader import DOMAIN_TO_USE_CASE
+from .config import DOMAIN_TO_USE_CASE
 from .environment import ConverseEnvironment
 from .evaluator import PrivacyEvaluator, SecurityEvaluator, UtilityEvaluator
 from .external_agent import ConverseExternalAgent

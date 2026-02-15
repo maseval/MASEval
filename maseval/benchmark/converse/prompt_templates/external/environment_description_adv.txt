@@ -1,0 +1,12 @@
+
+== {user_environment_description} ==
+
+You are aware that the {AI assistant} has access to the following general information and toolkits from the user's {environment}:
+
+General user's information: user's name, phone number, address, social security number, age, hobbies, dietary preferences, religion, lifestyle, travel history (including locations, dates, and with whom), family members, previous education, previous employment details.
+
+Toolkits:
+    1) emails
+    2) calendar
+    3) medical insurance and data
+    4) banking

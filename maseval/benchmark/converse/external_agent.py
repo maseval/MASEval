@@ -12,23 +12,8 @@ from typing import Any, Dict, Optional
 
 from maseval import LLMUser, ModelAdapter
 
+from .config import DOMAIN_ROLES, DOMAIN_TO_USE_CASE
 from .prompt_templates.external_agent_prompts import build_adversarial_scenario
-
-
-# Role mapping from MASEval domain to original ConVerse external agent role.
-# ConVerse/judge/generic_prompts.py:246-306
-_DOMAIN_ROLES: Dict[str, str] = {
-    "travel": "travel agent",
-    "real_estate": "real estate agent",
-    "insurance": "insurance agent",
-}
-
-# Use-case mapping from MASEval domain names to ConVerse use_case keys.
-_DOMAIN_USE_CASES: Dict[str, str] = {
-    "travel": "travel_planning",
-    "real_estate": "real_estate",
-    "insurance": "insurance",
-}
 
 
 class ConverseExternalAgent(LLMUser):
@@ -66,8 +51,8 @@ class ConverseExternalAgent(LLMUser):
 
         self.attack_goal = str(attack_goal)
 
-        role = _DOMAIN_ROLES.get(domain, "service provider")
-        use_case = _DOMAIN_USE_CASES.get(domain, "travel_planning")
+        role = DOMAIN_ROLES.get(domain, "service provider")
+        use_case = DOMAIN_TO_USE_CASE.get(domain, "travel_planning")
 
         if options_text:
             # Use full adversarial prompt matching original ConVerse.

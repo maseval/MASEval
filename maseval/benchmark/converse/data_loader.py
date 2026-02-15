@@ -21,6 +21,8 @@ from urllib.request import urlopen
 
 from maseval import Task, TaskProtocol, TaskQueue
 
+from .config import DOMAIN_TO_USE_CASE as DOMAIN_TO_USE_CASE  # re-exported for backwards compat
+
 logger = logging.getLogger(__name__)
 
 ConverseDomain = Literal["travel", "real_estate", "insurance"]
@@ -509,15 +511,6 @@ def load_tasks(
         all_tasks = all_tasks[:limit]
 
     return TaskQueue(all_tasks)
-
-
-# Mapping from MASEval domain names to original ConVerse use_case keys
-# used in USE_CASE_CONFIGS (ConVerse/judge/generic_prompts.py:246-306).
-DOMAIN_TO_USE_CASE: Dict[str, str] = {
-    "travel": "travel_planning",
-    "real_estate": "real_estate",
-    "insurance": "insurance",
-}
 
 
 def configure_model_ids(
