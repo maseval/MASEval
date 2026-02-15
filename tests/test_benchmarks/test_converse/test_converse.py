@@ -901,34 +901,42 @@ def test_get_user_info_match_found() -> None:
 
 
 @pytest.mark.benchmark
-def test_send_email_records_action() -> None:
-    """send_email records the email and returns confirmation."""
+@pytest.mark.parametrize(
+    "tool_name, kwargs, expected_msg, state_key, expected_state",
+    [
+        pytest.param(
+            "send_email",
+            {"recipient": "bob@x.com", "body": "Hello Bob"},
+            "Email sent to bob@x.com",
+            "sent_emails",
+            [{"recipient": "bob@x.com", "body": "Hello Bob"}],
+            id="send_email",
+        ),
+        pytest.param(
+            "update_insurance_policy",
+            {"action": "Cancel policy 123"},
+            "Insurance action recorded",
+            "insurance_actions",
+            ["Cancel policy 123"],
+            id="update_insurance_policy",
+        ),
+        pytest.param(
+            "create_financial_product",
+            {"action": "Open savings account"},
+            "Financial request recorded",
+            "financial_actions",
+            ["Open savings account"],
+            id="create_financial_product",
+        ),
+    ],
+)
+def test_action_tool_records_state(tool_name: str, kwargs: Dict[str, str], expected_msg: str, state_key: str, expected_state: Any) -> None:
+    """Action tools record their invocation in environment state."""
     env = ConverseEnvironment({})
     tools = env.get_tools()
-    result = tools["send_email"](recipient="bob@x.com", body="Hello Bob")
-    assert "Email sent to bob@x.com" in result
-    assert len(env.state["sent_emails"]) == 1
-    assert env.state["sent_emails"][0] == {"recipient": "bob@x.com", "body": "Hello Bob"}
-
-
-@pytest.mark.benchmark
-def test_update_insurance_policy_records_action() -> None:
-    """update_insurance_policy records the action."""
-    env = ConverseEnvironment({})
-    tools = env.get_tools()
-    result = tools["update_insurance_policy"](action="Cancel policy 123")
-    assert "Insurance action recorded" in result
-    assert env.state["insurance_actions"] == ["Cancel policy 123"]
-
-
-@pytest.mark.benchmark
-def test_create_financial_product_records_action() -> None:
-    """create_financial_product records the action."""
-    env = ConverseEnvironment({})
-    tools = env.get_tools()
-    result = tools["create_financial_product"](action="Open savings account")
-    assert "Financial request recorded" in result
-    assert env.state["financial_actions"] == ["Open savings account"]
+    result = tools[tool_name](**kwargs)
+    assert expected_msg in result
+    assert env.state[state_key] == expected_state
 
 
 # ===========================================================================
@@ -1027,12 +1035,18 @@ def test_parse_coverage_fraction_valid() -> None:
 
 
 @pytest.mark.benchmark
-def test_parse_coverage_fraction_edge_cases() -> None:
+@pytest.mark.parametrize(
+    "parsed_json",
+    [
+        pytest.param({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "not_a_number"}}, id="non_numeric"),
+        pytest.param({}, id="missing_utility_key"),
+        pytest.param({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "5/0"}}, id="zero_denominator"),
+        pytest.param({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "only_one_part"}}, id="no_slash"),
+    ],
+)
+def test_parse_coverage_fraction_edge_cases(parsed_json: Dict[str, Any]) -> None:
     """_parse_coverage_fraction returns 0.0 for invalid inputs."""
-    assert UtilityEvaluator._parse_coverage_fraction({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "not_a_number"}}) == 0.0
-    assert UtilityEvaluator._parse_coverage_fraction({}) == 0.0
-    assert UtilityEvaluator._parse_coverage_fraction({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "5/0"}}) == 0.0
-    assert UtilityEvaluator._parse_coverage_fraction({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "only_one_part"}}) == 0.0
+    assert UtilityEvaluator._parse_coverage_fraction(parsed_json) == 0.0
 
 
 # ===========================================================================
@@ -1279,8 +1293,15 @@ def test_execute_tool_call_unknown_tool() -> None:
 
 
 @pytest.mark.benchmark
-def test_execute_tool_call_json_parse_failure() -> None:
-    """_execute_tool_call falls back to empty dict when arguments are not valid JSON."""
+@pytest.mark.parametrize(
+    "bad_arguments",
+    [
+        pytest.param("not json{{{", id="invalid_json"),
+        pytest.param('"just a string"', id="non_dict_json"),
+    ],
+)
+def test_execute_tool_call_bad_arguments_fallback(bad_arguments: str) -> None:
+    """_execute_tool_call falls back to empty dict when arguments are not a valid JSON dict."""
     call_args: List[Dict[str, Any]] = []
 
     def capture_tool(**kwargs: Any) -> str:
@@ -1289,23 +1310,7 @@ def test_execute_tool_call_json_parse_failure() -> None:
 
     model = FakeModelAdapter([ChatResponse(content="done")])
     agent = DefaultConverseAgent(model=model, tools={"capture": capture_tool})
-    result = agent._execute_tool_call({"function": {"name": "capture", "arguments": "not json{{{"}})
-    assert result == "ok"
-    assert call_args == [{}]
-
-
-@pytest.mark.benchmark
-def test_execute_tool_call_arguments_not_dict() -> None:
-    """_execute_tool_call falls back to empty dict when parsed arguments are not a dict."""
-    call_args: List[Dict[str, Any]] = []
-
-    def capture_tool(**kwargs: Any) -> str:
-        call_args.append(kwargs)
-        return "ok"
-
-    model = FakeModelAdapter([ChatResponse(content="done")])
-    agent = DefaultConverseAgent(model=model, tools={"capture": capture_tool})
-    result = agent._execute_tool_call({"function": {"name": "capture", "arguments": '"just a string"'}})
+    result = agent._execute_tool_call({"function": {"name": "capture", "arguments": bad_arguments}})
     assert result == "ok"
     assert call_args == [{}]
 
@@ -1447,20 +1452,19 @@ def test_build_environment_data_auto_parse() -> None:
 
 
 @pytest.mark.benchmark
-def test_parse_privacy_attacks_file_not_found() -> None:
-    """parse_privacy_attacks returns empty list when file doesn't exist."""
-    from maseval.benchmark.converse.data_loader import parse_privacy_attacks
+@pytest.mark.parametrize(
+    "parser_name",
+    [
+        pytest.param("parse_privacy_attacks", id="privacy"),
+        pytest.param("parse_security_attacks", id="security"),
+    ],
+)
+def test_parse_attacks_file_not_found(parser_name: str) -> None:
+    """Attack parsers return empty list when file doesn't exist."""
+    import maseval.benchmark.converse.data_loader as dl
 
-    result = parse_privacy_attacks(Path("/nonexistent/file.json"), 1, "env", "opts", "travel_planning")
-    assert result == []
-
-
-@pytest.mark.benchmark
-def test_parse_security_attacks_file_not_found() -> None:
-    """parse_security_attacks returns empty list when file doesn't exist."""
-    from maseval.benchmark.converse.data_loader import parse_security_attacks
-
-    result = parse_security_attacks(Path("/nonexistent/file.json"), 1, "env", "opts", "travel_planning")
+    parser = getattr(dl, parser_name)
+    result = parser(Path("/nonexistent/file.json"), 1, "env", "opts", "travel_planning")
     assert result == []
 
 
