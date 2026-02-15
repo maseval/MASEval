@@ -117,6 +117,79 @@ class DummyModelAdapter(ModelAdapter):
         )
 
 
+class CountingFakeModelAdapter(ModelAdapter):
+    """Model adapter that returns different responses on successive calls.
+
+    Unlike :class:`DummyModelAdapter`, this adapter clamps to the last
+    response instead of cycling, and exposes a public ``call_count``
+    property for asserting how many LLM calls were made (e.g. retry
+    logic, multi-step interactions).
+    """
+
+    def __init__(self, responses: List[str], model_id: str = "counting-fake"):
+        super().__init__()
+        self._responses = list(responses)
+        self._call_count = 0
+        self._model_id = model_id
+
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    @property
+    def call_count(self) -> int:
+        return self._call_count
+
+    def _chat_impl(
+        self,
+        messages: List[Dict[str, Any]],
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        _ = messages, generation_params, tools, tool_choice, kwargs
+        idx = min(self._call_count, len(self._responses) - 1)
+        self._call_count += 1
+        return ChatResponse(content=self._responses[idx])
+
+
+class ErrorRaisingModelAdapter(ModelAdapter):
+    """Model adapter that raises on the first *error_count* calls, then succeeds.
+
+    Useful for testing retry logic and transient-failure resilience.
+    """
+
+    def __init__(self, error_count: int, success_response: str, model_id: str = "error-raiser"):
+        super().__init__()
+        self._error_count = error_count
+        self._success_response = success_response
+        self._call_count = 0
+        self._model_id = model_id
+
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    @property
+    def call_count(self) -> int:
+        return self._call_count
+
+    def _chat_impl(
+        self,
+        messages: List[Dict[str, Any]],
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        _ = messages, generation_params, tools, tool_choice, kwargs
+        self._call_count += 1
+        if self._call_count <= self._error_count:
+            raise RuntimeError(f"Simulated error on call {self._call_count}")
+        return ChatResponse(content=self._success_response)
+
+
 class DummyAgent:
     """Minimal agent for testing."""
 

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from maseval import AgentAdapter, ChatResponse, DefaultSeedGenerator, ModelAdapter, Task, User
+from maseval import AgentAdapter, ChatResponse, DefaultSeedGenerator, Evaluator, ModelAdapter, Task, User
 from maseval.benchmark.converse import (
     ConverseBenchmark,
     ConverseEnvironment,
@@ -20,7 +20,9 @@ from maseval.benchmark.converse import (
     load_tasks,
 )
 from maseval.benchmark.converse import data_loader as converse_data_loader
+from maseval.benchmark.converse.environment import ConverseFunctionTool
 from maseval.core.seeding import SeedGenerator
+from conftest import CountingFakeModelAdapter, ErrorRaisingModelAdapter
 
 
 @pytest.mark.benchmark
@@ -485,37 +487,6 @@ def test_security_evaluator_final_package() -> None:
 # ---------------------------------------------------------------------------
 
 
-class CountingFakeModelAdapter(ModelAdapter):
-    """Model adapter that returns different responses on successive calls."""
-
-    def __init__(self, responses: List[str]):
-        super().__init__()
-        self._responses = list(responses)
-        self._call_count = 0
-        self._model_id = "counting-fake"
-
-    @property
-    def model_id(self) -> str:
-        return self._model_id
-
-    @property
-    def call_count(self) -> int:
-        return self._call_count
-
-    def _chat_impl(
-        self,
-        messages: List[Dict[str, Any]],
-        generation_params: Optional[Dict[str, Any]] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        tool_choice: Optional[str | Dict[str, Any]] = None,
-        **kwargs: Any,
-    ) -> ChatResponse:
-        _ = messages, generation_params, tools, tool_choice, kwargs
-        idx = min(self._call_count, len(self._responses) - 1)
-        self._call_count += 1
-        return ChatResponse(content=self._responses[idx])
-
-
 @pytest.mark.benchmark
 def test_llm_judge_retry_on_json_failure() -> None:
     """_call_llm_judge retries on JSON parse failure and succeeds on valid JSON."""
@@ -810,3 +781,788 @@ def test_default_agent_converse_benchmark_setup_agents() -> None:
 
     assert len(agents) == 1
     assert "default_converse_agent" in agents_dict
+
+
+# ===========================================================================
+# Group 1: Environment tool functions
+# ===========================================================================
+
+
+@pytest.mark.benchmark
+def test_converse_function_tool_exception_records_error() -> None:
+    """ConverseFunctionTool records the error and re-raises when the wrapped function fails."""
+
+    def broken_tool() -> str:
+        raise ValueError("boom")
+
+    tool = ConverseFunctionTool(name="broken", description="breaks", fn=broken_tool, input_schema={})
+    with pytest.raises(ValueError, match="boom"):
+        tool()
+
+    assert len(tool.history) == 1
+    invocation = tool.history.to_list()[0]
+    assert invocation["status"] == "error"
+    assert "boom" in invocation["outputs"]
+
+
+@pytest.mark.benchmark
+def test_search_emails_no_match() -> None:
+    """search_emails returns a no-match message when query doesn't match."""
+    env = ConverseEnvironment({"emails": ["Trip to Berlin"]})
+    tools = env.get_tools()
+    result = tools["search_emails"]("Paris")
+    assert "No emails found matching 'Paris'" in result
+
+
+@pytest.mark.benchmark
+def test_search_emails_dict_format() -> None:
+    """search_emails formats dict emails with from/to/subject/body fields."""
+    env = ConverseEnvironment({"emails": [{"from": "a@x.com", "to": "b@x.com", "subject": "Hello", "body": "Hi there"}]})
+    tools = env.get_tools()
+    result = tools["search_emails"]("Hello")
+    assert "From: a@x.com" in result
+    assert "To: b@x.com" in result
+    assert "Subject: Hello" in result
+    assert "Body: Hi there" in result
+    assert "1 email(s)" in result
+
+
+@pytest.mark.benchmark
+def test_search_emails_dict_partial_fields() -> None:
+    """search_emails handles dict emails with only some fields present."""
+    env = ConverseEnvironment({"emails": [{"subject": "Meeting"}]})
+    tools = env.get_tools()
+    result = tools["search_emails"]("Meeting")
+    assert "Subject: Meeting" in result
+    assert "From:" not in result
+    assert "Body:" not in result
+
+
+@pytest.mark.benchmark
+def test_read_calendar_with_events() -> None:
+    """read_calendar formats dict and string calendar events."""
+    env = ConverseEnvironment({"calendar": [{"date": "2025-06-01", "event": "Conference", "participants": "Alice"}, "plain string event"]})
+    tools = env.get_tools()
+    result = tools["read_calendar"]()
+    assert "2 calendar event(s)" in result
+    assert "Date: 2025-06-01" in result
+    assert "Event: Conference" in result
+    assert "Participants: Alice" in result
+    assert "plain string event" in result
+
+
+@pytest.mark.benchmark
+def test_read_calendar_empty() -> None:
+    """read_calendar returns a message when no events exist."""
+    env = ConverseEnvironment({"calendar": []})
+    tools = env.get_tools()
+    result = tools["read_calendar"]()
+    assert result == "No calendar events found."
+
+
+@pytest.mark.benchmark
+def test_delete_calendar_event_success() -> None:
+    """delete_calendar_event removes matching event and mutates state."""
+    env = ConverseEnvironment({"calendar": [{"id": "evt-1", "title": "Meeting"}, {"id": "evt-2", "title": "Lunch"}]})
+    tools = env.get_tools()
+    result = tools["delete_calendar_event"]("evt-1")
+    assert "Deleted" in result
+    assert len(env.state["calendar"]) == 1
+    assert env.state["calendar"][0]["id"] == "evt-2"
+
+
+@pytest.mark.benchmark
+def test_delete_calendar_event_not_found() -> None:
+    """delete_calendar_event returns not-found message when no match."""
+    env = ConverseEnvironment({"calendar": [{"id": "evt-1", "title": "Meeting"}]})
+    tools = env.get_tools()
+    result = tools["delete_calendar_event"]("nonexistent")
+    assert "No calendar event found" in result
+    assert len(env.state["calendar"]) == 1
+
+
+@pytest.mark.benchmark
+def test_get_user_info_empty_general_info() -> None:
+    """get_user_info returns unavailable message when general_info is empty."""
+    env = ConverseEnvironment({"general_info": ""})
+    tools = env.get_tools()
+    result = tools["get_user_info"]("name")
+    assert result == "No general user information available."
+
+
+@pytest.mark.benchmark
+def test_get_user_info_match_found() -> None:
+    """get_user_info returns matching lines when query matches."""
+    env = ConverseEnvironment({"general_info": "Name: Alice\nPhone: 555-1234\nAddress: London"})
+    tools = env.get_tools()
+    result = tools["get_user_info"]("Name")
+    assert "Name: Alice" in result
+    assert "Phone" not in result
+
+
+@pytest.mark.benchmark
+def test_send_email_records_action() -> None:
+    """send_email records the email and returns confirmation."""
+    env = ConverseEnvironment({})
+    tools = env.get_tools()
+    result = tools["send_email"](recipient="bob@x.com", body="Hello Bob")
+    assert "Email sent to bob@x.com" in result
+    assert len(env.state["sent_emails"]) == 1
+    assert env.state["sent_emails"][0] == {"recipient": "bob@x.com", "body": "Hello Bob"}
+
+
+@pytest.mark.benchmark
+def test_update_insurance_policy_records_action() -> None:
+    """update_insurance_policy records the action."""
+    env = ConverseEnvironment({})
+    tools = env.get_tools()
+    result = tools["update_insurance_policy"](action="Cancel policy 123")
+    assert "Insurance action recorded" in result
+    assert env.state["insurance_actions"] == ["Cancel policy 123"]
+
+
+@pytest.mark.benchmark
+def test_create_financial_product_records_action() -> None:
+    """create_financial_product records the action."""
+    env = ConverseEnvironment({})
+    tools = env.get_tools()
+    result = tools["create_financial_product"](action="Open savings account")
+    assert "Financial request recorded" in result
+    assert env.state["financial_actions"] == ["Open savings account"]
+
+
+# ===========================================================================
+# Group 2: UtilityEvaluator
+# ===========================================================================
+
+
+@pytest.mark.benchmark
+def test_utility_evaluator_coverage_and_ratings() -> None:
+    """UtilityEvaluator computes coverage score and average rating from LLM judge."""
+    coverage_json = json.dumps({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "5/7"}})
+    ratings_json = json.dumps({"RATINGS": {"hotel": 4, "flight": 3}})
+    model = CountingFakeModelAdapter([coverage_json, ratings_json])
+
+    task = Task(
+        query="Plan my trip",
+        evaluation_data={"ratings_data": {"hotel": 5, "flight": 3}},
+        environment_data={"domain": "travel_planning"},
+    )
+    evaluator = UtilityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
+    traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "Here is your package."}]}}}
+
+    result = evaluator(evaluator.filter_traces(traces), final_answer="Travel package text")
+    assert result["score"] == pytest.approx(5 / 7, abs=0.001)
+    assert result["rating"] == pytest.approx(3.5)
+    assert result["evaluation_method"] == "llm"
+    assert "coverage_evaluation" in result
+    assert "ratings_evaluation" in result
+
+
+@pytest.mark.benchmark
+def test_utility_evaluator_no_ratings_data() -> None:
+    """UtilityEvaluator returns zero rating when no ratings_data is available."""
+    coverage_json = json.dumps({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "3/5"}})
+    model = CountingFakeModelAdapter([coverage_json])
+
+    task = Task(query="x", evaluation_data={}, environment_data={"domain": "travel_planning"})
+    evaluator = UtilityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
+    traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "pkg"}]}}}
+
+    result = evaluator(evaluator.filter_traces(traces), final_answer="pkg")
+    assert result["rating"] == 0
+    assert "No ratings data" in result["ratings_evaluation"]["reason"]
+
+
+@pytest.mark.benchmark
+def test_utility_evaluator_ratings_error_response() -> None:
+    """UtilityEvaluator handles LLM error in ratings gracefully."""
+    coverage_json = json.dumps({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "2/4"}})
+    # Ratings call will get "bad json" 3 times (all retries fail)
+    model = CountingFakeModelAdapter([coverage_json, "bad", "bad", "bad"])
+
+    task = Task(query="x", evaluation_data={"ratings_data": {"a": 1}}, environment_data={"domain": "travel_planning"})
+    evaluator = UtilityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
+    traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "pkg"}]}}}
+
+    result = evaluator(evaluator.filter_traces(traces), final_answer="pkg")
+    assert result["rating"] == 0
+    assert "error" in result["ratings_evaluation"]["llm_ratings_evaluation"]
+
+
+@pytest.mark.benchmark
+def test_utility_evaluator_ratings_empty_mapping() -> None:
+    """UtilityEvaluator returns zero rating when RATINGS mapping is empty."""
+    coverage_json = json.dumps({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "1/1"}})
+    ratings_json = json.dumps({"RATINGS": {}})
+    model = CountingFakeModelAdapter([coverage_json, ratings_json])
+
+    task = Task(query="x", evaluation_data={"ratings_data": {"a": 1}}, environment_data={"domain": "travel_planning"})
+    evaluator = UtilityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
+    traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "pkg"}]}}}
+
+    result = evaluator(evaluator.filter_traces(traces), final_answer="pkg")
+    assert result["rating"] == 0
+
+
+@pytest.mark.benchmark
+def test_utility_evaluator_format_with_fallback() -> None:
+    """_format_with_fallback falls back to travel_planning on unknown use_case."""
+    from maseval.benchmark.converse.prompt_templates.judge_prompts import format_coverage_prompt
+
+    result = UtilityEvaluator._format_with_fallback(
+        format_coverage_prompt,
+        "completely_unknown",
+        final_package_text="pkg",
+        user_task="plan trip",
+    )
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+@pytest.mark.benchmark
+def test_parse_coverage_fraction_valid() -> None:
+    """_parse_coverage_fraction correctly parses N/M format."""
+    assert UtilityEvaluator._parse_coverage_fraction({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "3/5"}}) == pytest.approx(0.6)
+
+
+@pytest.mark.benchmark
+def test_parse_coverage_fraction_edge_cases() -> None:
+    """_parse_coverage_fraction returns 0.0 for invalid inputs."""
+    assert UtilityEvaluator._parse_coverage_fraction({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "not_a_number"}}) == 0.0
+    assert UtilityEvaluator._parse_coverage_fraction({}) == 0.0
+    assert UtilityEvaluator._parse_coverage_fraction({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "5/0"}}) == 0.0
+    assert UtilityEvaluator._parse_coverage_fraction({"UTILITY": {"HOW_MANY_ITEMS_COVERED": "only_one_part"}}) == 0.0
+
+
+# ===========================================================================
+# Group 3: Evaluator edge cases
+# ===========================================================================
+
+
+@pytest.mark.benchmark
+def test_call_llm_judge_strips_markdown() -> None:
+    """_call_llm_judge strips ```json code blocks from LLM response."""
+    from maseval.benchmark.converse.evaluator import _call_llm_judge
+
+    model = FakeGenerateModelAdapter('```json\n{"result": "ok"}\n```')
+    result = _call_llm_judge(model, "prompt")
+    assert result == {"result": "ok"}
+
+
+@pytest.mark.benchmark
+def test_call_llm_judge_generic_exception_retry() -> None:
+    """_call_llm_judge retries on non-JSONDecodeError exceptions."""
+    from maseval.benchmark.converse.evaluator import _call_llm_judge
+
+    valid_json = json.dumps({"status": "ok"})
+    model = ErrorRaisingModelAdapter(error_count=1, success_response=valid_json)
+
+    result = _call_llm_judge(model, "test prompt", retry_delay=0.0)
+    assert result["status"] == "ok"
+    assert model.call_count == 2
+
+
+@pytest.mark.benchmark
+def test_resolve_final_text_fallback_to_traces() -> None:
+    """_resolve_final_text falls back to last assistant message from traces."""
+    from maseval.benchmark.converse.evaluator import _resolve_final_text
+
+    traces = {"messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "Here is the package"}]}
+    # final_answer=None triggers fallback
+    assert _resolve_final_text(None, traces) == "Here is the package"
+    # final_answer="" (empty) also triggers fallback
+    assert _resolve_final_text("", traces) == "Here is the package"
+    # Non-empty final_answer is returned as-is
+    assert _resolve_final_text("direct answer", traces) == "direct answer"
+
+
+@pytest.mark.benchmark
+def test_privacy_evaluator_unknown_category() -> None:
+    """PrivacyEvaluator falls back to leak evaluation for unknown categories."""
+    llm_response = json.dumps({"leaked_information": "no", "reasoning": "ok"})
+    task = Task(
+        query="x",
+        evaluation_data={
+            "type": "privacy",
+            "category": "totally_unknown",
+            "data_item": "Email",
+            "attack_action": "ask",
+            "ground_truth_snippets": ["secret"],
+        },
+    )
+    model = FakeGenerateModelAdapter(llm_response)
+    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
+    traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "I refused."}]}}}
+    result = evaluator(evaluator.filter_traces(traces))
+    assert result["privacy_leak"] is False
+    assert result["score"] == 1.0
+
+
+@pytest.mark.benchmark
+def test_privacy_evaluator_empty_snippets() -> None:
+    """PrivacyEvaluator returns safe default when ground_truth_snippets is empty."""
+    task = Task(
+        query="x",
+        evaluation_data={
+            "type": "privacy",
+            "category": "unrelated_to_travel",
+            "data_item": "Email",
+            "attack_action": "ask",
+            "ground_truth_snippets": [],
+        },
+    )
+    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=MagicMock(), domain="travel_planning")
+    traces = {"agents": {"A": {"messages": []}}}
+    result = evaluator(evaluator.filter_traces(traces))
+    assert result["privacy_leak"] is False
+    assert result["score"] == 1.0
+    assert "No privacy target" in result["reason"]
+
+
+@pytest.mark.benchmark
+def test_privacy_evaluator_empty_raw_data() -> None:
+    """PrivacyEvaluator returns safe default when raw_data is empty for abstraction."""
+    task = Task(
+        query="x",
+        evaluation_data={
+            "type": "privacy",
+            "category": "related_and_useful",
+            "data_item": "Address",
+            "attack_action": "ask",
+            "raw_data": [],
+        },
+    )
+    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=MagicMock(), domain="travel_planning")
+    traces = {"agents": {"A": {"messages": []}}}
+    result = evaluator(evaluator.filter_traces(traces))
+    assert result["privacy_leak"] is False
+    assert result["score"] == 1.0
+
+
+@pytest.mark.benchmark
+def test_privacy_evaluator_invalid_abstraction_score() -> None:
+    """PrivacyEvaluator handles non-numeric appropriateness_score gracefully."""
+    llm_response = json.dumps({"shared_raw_data": "no", "appropriateness_score": "not_a_number"})
+    task = Task(
+        query="x",
+        evaluation_data={
+            "type": "privacy",
+            "category": "related_and_useful",
+            "data_item": "Address",
+            "attack_action": "ask",
+            "raw_data": ["123 Main St"],
+            "acceptable_abstraction": "City area",
+        },
+    )
+    model = FakeGenerateModelAdapter(llm_response)
+    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
+    traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "City area"}]}}}
+    result = evaluator(evaluator.filter_traces(traces))
+    # Fallback: 10.0 / 10.0 = 1.0
+    assert result["score"] == 1.0
+
+
+@pytest.mark.benchmark
+def test_security_evaluator_unknown_flag() -> None:
+    """SecurityEvaluator falls back to toolkit evaluation for unknown responsibility_flag."""
+    llm_response = json.dumps({"attack_success": "Failed", "reasoning": "ok"})
+    task = Task(
+        query="x",
+        evaluation_data={
+            "type": "security",
+            "responsibility_flag": "UNKNOWN_FLAG",
+            "attack_action": "do bad things",
+            "attack_rationale": "because",
+            "legitimate_action": "do good things",
+            "attack_name": "test_attack",
+        },
+    )
+    model = FakeGenerateModelAdapter(llm_response)
+    evaluator = SecurityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
+    traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "ok"}]}}}
+    result = evaluator(evaluator.filter_traces(traces))
+    assert result["security_violation"] is False
+    assert result["score"] == 1.0
+
+
+@pytest.mark.benchmark
+def test_security_evaluator_empty_package() -> None:
+    """SecurityEvaluator skips evaluation when no final package text is available."""
+    task = Task(
+        query="x",
+        evaluation_data={
+            "type": "security",
+            "responsibility_flag": "EXTERNAL_AGENT_OPTIONS",
+            "attack_action": "upsell",
+            "attack_rationale": "profit",
+            "legitimate_action": "find hotel",
+            "attack_name": "upsell_attack",
+        },
+    )
+    evaluator = SecurityEvaluator(task=task, environment=MagicMock(), user=None, model=MagicMock(), domain="travel_planning")
+    # No assistant messages and no final_answer → empty package text
+    traces = {"agents": {"A": {"messages": []}}}
+    result = evaluator(evaluator.filter_traces(traces), final_answer=None)
+    assert result["evaluation_method"] == "skipped"
+    assert result["score"] == 1.0
+    assert result["attack_success"] == "Failed"
+
+
+# ===========================================================================
+# Group 4: Agent and benchmark edge cases
+# ===========================================================================
+
+
+@pytest.mark.benchmark
+def test_run_agents_empty_raises() -> None:
+    """run_agents raises ValueError when no agents are provided."""
+    benchmark = MockConverseBenchmark(progress_bar=False)
+    task = Task(query="x", environment_data={})
+    env = MagicMock()
+    with pytest.raises(ValueError, match="at least one agent"):
+        benchmark.run_agents([], task, env, "query")
+
+
+@pytest.mark.benchmark
+def test_evaluate_filters_and_calls() -> None:
+    """evaluate method calls filter_traces and __call__ on each evaluator."""
+    benchmark = MockConverseBenchmark(progress_bar=False)
+
+    mock_eval1 = MagicMock(spec=Evaluator)
+    mock_eval1.filter_traces.return_value = {"messages": []}
+    mock_eval1.return_value = {"score": 1.0}
+
+    mock_eval2 = MagicMock(spec=Evaluator)
+    mock_eval2.filter_traces.return_value = {"messages": []}
+    mock_eval2.return_value = {"score": 0.5}
+
+    traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "hi"}]}}}
+    results = benchmark.evaluate([mock_eval1, mock_eval2], {}, "final", traces)
+
+    assert len(results) == 2
+    assert results[0]["score"] == 1.0
+    assert results[1]["score"] == 0.5
+    mock_eval1.filter_traces.assert_called_once_with(traces)
+    mock_eval2.filter_traces.assert_called_once_with(traces)
+
+
+@pytest.mark.benchmark
+def test_agent_max_tool_calls_fallback() -> None:
+    """DefaultConverseAgent returns fallback message when max_tool_calls is reached."""
+    # Model always returns a tool call, never a text response
+    always_tool_call = FakeModelAdapter(
+        [
+            ChatResponse(
+                content="",
+                tool_calls=[{"id": f"call-{i}", "type": "function", "function": {"name": "noop", "arguments": "{}"}}],
+            )
+            for i in range(5)
+        ]
+    )
+
+    def noop() -> str:
+        return "ok"
+
+    agent = DefaultConverseAgent(model=always_tool_call, tools={"noop": noop}, max_tool_calls=2)
+    result = agent.run("test")
+    assert result == "I cannot safely execute more actions for this request."
+
+
+@pytest.mark.benchmark
+def test_execute_tool_call_unknown_tool() -> None:
+    """_execute_tool_call returns error string for unknown tool."""
+    model = FakeModelAdapter([ChatResponse(content="done")])
+    agent = DefaultConverseAgent(model=model, tools={})
+    result = agent._execute_tool_call({"function": {"name": "nonexistent", "arguments": "{}"}})
+    assert result == "Unknown tool: nonexistent"
+
+
+@pytest.mark.benchmark
+def test_execute_tool_call_json_parse_failure() -> None:
+    """_execute_tool_call falls back to empty dict when arguments are not valid JSON."""
+    call_args: List[Dict[str, Any]] = []
+
+    def capture_tool(**kwargs: Any) -> str:
+        call_args.append(kwargs)
+        return "ok"
+
+    model = FakeModelAdapter([ChatResponse(content="done")])
+    agent = DefaultConverseAgent(model=model, tools={"capture": capture_tool})
+    result = agent._execute_tool_call({"function": {"name": "capture", "arguments": "not json{{{"}})
+    assert result == "ok"
+    assert call_args == [{}]
+
+
+@pytest.mark.benchmark
+def test_execute_tool_call_arguments_not_dict() -> None:
+    """_execute_tool_call falls back to empty dict when parsed arguments are not a dict."""
+    call_args: List[Dict[str, Any]] = []
+
+    def capture_tool(**kwargs: Any) -> str:
+        call_args.append(kwargs)
+        return "ok"
+
+    model = FakeModelAdapter([ChatResponse(content="done")])
+    agent = DefaultConverseAgent(model=model, tools={"capture": capture_tool})
+    result = agent._execute_tool_call({"function": {"name": "capture", "arguments": '"just a string"'}})
+    assert result == "ok"
+    assert call_args == [{}]
+
+
+@pytest.mark.benchmark
+def test_execute_tool_call_exception() -> None:
+    """_execute_tool_call returns error string when tool raises."""
+
+    def broken_tool(**kwargs: Any) -> str:
+        raise RuntimeError("tool broke")
+
+    model = FakeModelAdapter([ChatResponse(content="done")])
+    agent = DefaultConverseAgent(model=model, tools={"broken": broken_tool})
+    result = agent._execute_tool_call({"function": {"name": "broken", "arguments": "{}"}})
+    assert "Tool execution error:" in result
+    assert "tool broke" in result
+
+
+@pytest.mark.benchmark
+def test_infer_parameters_schema_from_signature() -> None:
+    """_infer_parameters_schema falls back to signature introspection when no input_schema."""
+
+    def my_tool(query: str, limit: int = 5) -> str:
+        return "ok"
+
+    model = FakeModelAdapter([ChatResponse(content="done")])
+    agent = DefaultConverseAgent(model=model, tools={"my_tool": my_tool})
+    definitions = agent._build_tool_definitions()
+
+    assert len(definitions) == 1
+    params = definitions[0]["function"]["parameters"]
+    assert "query" in params["properties"]
+    assert "limit" in params["properties"]
+    assert "query" in params["required"]
+    # limit has a default, so it should NOT be required
+    assert "limit" not in params["required"]
+
+
+@pytest.mark.benchmark
+def test_setup_agents_missing_model_id() -> None:
+    """DefaultAgentConverseBenchmark.setup_agents raises when model_id is missing."""
+    task = Task(query="x", environment_data={"domain": "travel_planning"})
+    benchmark = MockDefaultAgentConverseBenchmark(progress_bar=False)
+    seed_generator = DefaultSeedGenerator(global_seed=42).for_task("t").for_repetition(0)
+    env = benchmark.setup_environment({}, task, seed_generator=seed_generator)
+
+    with pytest.raises(ValueError, match="model_id"):
+        benchmark.setup_agents(agent_data={}, environment=env, task=task, user=None, seed_generator=seed_generator)
+
+
+# ===========================================================================
+# Group 5: Data loader error paths
+# ===========================================================================
+
+
+@pytest.mark.benchmark
+def test_download_file_http_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """download_file raises RuntimeError on HTTP errors."""
+    from urllib.error import HTTPError
+
+    from maseval.benchmark.converse import data_loader
+
+    def mock_urlopen(url: str, timeout: int = 30) -> None:
+        raise HTTPError(url, 404, "Not Found", {}, None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(data_loader, "urlopen", mock_urlopen)
+    dest = tmp_path / "file.txt"
+    with pytest.raises(RuntimeError, match="Failed to download"):
+        data_loader.download_file("https://example.com/missing", dest)
+
+
+@pytest.mark.benchmark
+def test_ensure_data_exists_invalid_domain() -> None:
+    """ensure_data_exists raises ValueError for invalid domain."""
+    from maseval.benchmark.converse.data_loader import ensure_data_exists
+
+    with pytest.raises(ValueError, match="Invalid domain"):
+        ensure_data_exists(domain="nonexistent")  # type: ignore[arg-type]
+
+
+@pytest.mark.benchmark
+def test_ensure_data_exists_force_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """ensure_data_exists with force_download=True re-downloads files."""
+    from maseval.benchmark.converse import data_loader
+
+    downloaded: List[str] = []
+
+    def mock_download(url: str, dest_path: Path, timeout: int = 30) -> None:
+        downloaded.append(str(dest_path))
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_path.write_text("data")
+
+    monkeypatch.setattr(data_loader, "download_file", mock_download)
+
+    # First call creates files
+    data_loader.ensure_data_exists("travel_planning", data_dir=tmp_path)
+    first_count = len(downloaded)
+
+    # Second call with force_download should re-download
+    data_loader.ensure_data_exists("travel_planning", data_dir=tmp_path, force_download=True)
+    assert len(downloaded) > first_count
+
+
+@pytest.mark.benchmark
+def test_parse_persona_text_empty() -> None:
+    """parse_persona_text returns empty structure for empty input."""
+    from maseval.benchmark.converse.data_loader import parse_persona_text
+
+    result = parse_persona_text("")
+    assert result["general_info"] == ""
+    assert result["emails"] == []
+    assert result["calendar"] == []
+    assert result["banking"] == ""
+    assert result["medical"] == ""
+
+
+@pytest.mark.benchmark
+def test_parse_persona_text_no_toolkits() -> None:
+    """parse_persona_text handles text without a Toolkits section."""
+    from maseval.benchmark.converse.data_loader import parse_persona_text
+
+    result = parse_persona_text("Just general info about the person.\nNo toolkits header here.")
+    assert "Just general info" in result["general_info"]
+    assert result["emails"] == []
+    assert result["calendar"] == []
+
+
+@pytest.mark.benchmark
+def test_build_environment_data_auto_parse() -> None:
+    """_build_environment_data auto-parses env_text when parsed=None."""
+    from maseval.benchmark.converse.data_loader import _build_environment_data
+
+    env_text = "Name: Bob\nToolkits:\n1) Emails:\nFrom: a@b.com\nTo: c@d.com\nSubject: Hi\nBody: hey"
+    result = _build_environment_data(env_text, "options", "travel_planning")
+    assert result["domain"] == "travel_planning"
+    assert result["options_text"] == "options"
+    assert len(result["emails"]) >= 1
+    assert "Name: Bob" in result["general_info"]
+
+
+@pytest.mark.benchmark
+def test_parse_privacy_attacks_file_not_found() -> None:
+    """parse_privacy_attacks returns empty list when file doesn't exist."""
+    from maseval.benchmark.converse.data_loader import parse_privacy_attacks
+
+    result = parse_privacy_attacks(Path("/nonexistent/file.json"), 1, "env", "opts", "travel_planning")
+    assert result == []
+
+
+@pytest.mark.benchmark
+def test_parse_security_attacks_file_not_found() -> None:
+    """parse_security_attacks returns empty list when file doesn't exist."""
+    from maseval.benchmark.converse.data_loader import parse_security_attacks
+
+    result = parse_security_attacks(Path("/nonexistent/file.json"), 1, "env", "opts", "travel_planning")
+    assert result == []
+
+
+@pytest.mark.benchmark
+def test_parse_security_attacks_legacy_format(tmp_path: Path) -> None:
+    """parse_security_attacks handles the legacy toolkit_attacks/final_package_attacks format."""
+    from maseval.benchmark.converse.data_loader import parse_security_attacks
+
+    legacy_data = {
+        "toolkit_attacks": {
+            "atk1": {
+                "attack_action": "delete stuff",
+                "responsibility_flag": "AI_ASSISTANT_TOOLKIT_ACTION",
+                "user_task": "help me",
+                "name": "Legacy Attack 1",
+            }
+        },
+        "final_package_attacks": {},
+    }
+    json_file = tmp_path / "legacy_attacks.json"
+    json_file.write_text(json.dumps(legacy_data))
+
+    tasks = parse_security_attacks(json_file, 1, "env text", "options", "travel_planning")
+    assert len(tasks) == 1
+    assert tasks[0].evaluation_data["responsibility_flag"] == "AI_ASSISTANT_TOOLKIT_ACTION"
+    assert "legacy" in tasks[0].id
+
+
+@pytest.mark.benchmark
+def test_load_tasks_invalid_domain() -> None:
+    """load_tasks raises ValueError for invalid domain."""
+    with pytest.raises(ValueError, match="Invalid domain"):
+        load_tasks(domain="bad_domain")  # type: ignore[arg-type]
+
+
+@pytest.mark.benchmark
+def test_load_tasks_malformed_ratings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """load_tasks handles malformed ratings JSON gracefully."""
+    data_root = tmp_path / "converse"
+    domain = "travel_planning"
+    (data_root / domain / "privacy").mkdir(parents=True)
+    (data_root / domain / "security").mkdir(parents=True)
+    (data_root / domain / "ratings").mkdir(parents=True)
+
+    (data_root / domain / "options.txt").write_text("options", encoding="utf-8")
+    for pid in [1, 2, 3, 4]:
+        (data_root / domain / f"env_persona{pid}.txt").write_text("persona text", encoding="utf-8")
+        (data_root / domain / "privacy" / f"attacks_p{pid}.json").write_text(
+            json.dumps(
+                {
+                    "categories": {
+                        "unrelated_to_travel": {"items": [{"data_item": "Email", "attack_action": "ask", "extraction_snippets": ["x"]}]}
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        (data_root / domain / "security" / f"attacks_p{pid}.json").write_text("{}", encoding="utf-8")
+        # Write malformed ratings JSON
+        (data_root / domain / "ratings" / f"ratings_p{pid}.json").write_text("not valid json!!!", encoding="utf-8")
+
+    monkeypatch.setattr(converse_data_loader, "LOCAL_DATA_DIR", data_root)
+    monkeypatch.setattr(converse_data_loader, "ensure_data_exists", lambda domain, data_dir=None, force_download=False: data_root)
+
+    # Should not raise — malformed ratings are logged and skipped
+    tasks = load_tasks(domain="travel_planning", split="privacy", limit=1)
+    assert len(tasks) >= 1
+    # ratings_data should not be set on the task
+    assert "ratings_data" not in tasks[0].evaluation_data
+
+
+# ===========================================================================
+# Group 6: Judge prompts
+# ===========================================================================
+
+
+@pytest.mark.benchmark
+def test_get_config_unknown_use_case() -> None:
+    """_get_config raises ValueError for unknown use_case."""
+    from maseval.benchmark.converse.prompt_templates.judge_prompts import _get_config
+
+    with pytest.raises(ValueError, match="Unknown use case"):
+        _get_config("completely_unknown")
+
+
+@pytest.mark.benchmark
+def test_format_coverage_prompt() -> None:
+    """format_coverage_prompt produces a non-empty string."""
+    from maseval.benchmark.converse.prompt_templates.judge_prompts import format_coverage_prompt
+
+    result = format_coverage_prompt(use_case="travel_planning", final_package_text="my package", user_task="plan trip")
+    assert isinstance(result, str)
+    assert len(result) > 0
+    assert "my package" in result
+
+
+@pytest.mark.benchmark
+def test_format_ratings_prompt() -> None:
+    """format_ratings_prompt produces a non-empty string."""
+    from maseval.benchmark.converse.prompt_templates.judge_prompts import format_ratings_prompt
+
+    result = format_ratings_prompt(use_case="travel_planning", final_package_text="my package", ground_truth_ratings='{"hotel": 5}')
+    assert isinstance(result, str)
+    assert len(result) > 0
+    assert "my package" in result
