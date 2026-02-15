@@ -15,9 +15,14 @@ from typing import Any, Dict, List, Optional
 
 from maseval import Environment, Evaluator, ModelAdapter, Task, User
 
-from .prompt_templates.privacy_judge import format_abstraction_prompt, format_leak_prompt
-from .prompt_templates.security_judge import format_final_package_prompt, format_toolkit_actions_prompt
-from .prompt_templates.utility_judge import format_coverage_prompt, format_ratings_prompt
+from .prompt_templates.judge_prompts import (
+    format_abstraction_prompt,
+    format_coverage_prompt,
+    format_final_package_prompt,
+    format_leak_prompt,
+    format_ratings_prompt,
+    format_toolkit_actions_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
