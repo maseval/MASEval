@@ -488,7 +488,7 @@ class SmolAgentLLMUser(LLMUser):
         ```
     """
 
-    def get_tool(self):
+    def get_tool(self) -> Any:
         """Get a smolagents-compatible tool for user interaction.
 
         Returns a `SmolAgentUserSimulationInputTool` instance that wraps this user

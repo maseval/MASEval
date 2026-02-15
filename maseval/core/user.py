@@ -2,7 +2,7 @@ from .model import ModelAdapter
 from .simulator import UserLLMSimulator, AgenticUserLLMSimulator
 from .tracing import TraceableMixin
 from .config import ConfigurableMixin
-from typing import Dict, Any, Optional, List, Callable
+from typing import Any, Dict, Optional, List, Callable
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
@@ -455,7 +455,7 @@ class AgenticLLMUser(LLMUser):
         scenario: str,
         tools: Optional[Dict[str, Callable]] = None,
         max_internal_steps: int = 5,
-        **kwargs,
+        **kwargs: Any,
     ):
         """Initialize AgenticLLMUser.
 

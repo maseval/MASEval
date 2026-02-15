@@ -57,7 +57,7 @@ class ConfigurableMixin:
         task execution completes. The `gather_config()` method is called sequentially
         and should return static configuration data (not runtime state).
 
-    Attributes:
+    Note:
         Components should expose their configuration through instance variables or
         properties that can be accessed during configuration gathering.
     """

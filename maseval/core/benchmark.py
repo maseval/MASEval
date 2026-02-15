@@ -740,7 +740,7 @@ class Benchmark(ABC):
         pass
 
     @abstractmethod
-    def get_model_adapter(self, model_id: str, **kwargs) -> ModelAdapter:
+    def get_model_adapter(self, model_id: str, **kwargs: Any) -> ModelAdapter:
         """Provide a ModelAdapter for benchmark components that require LLM access.
 
         Many benchmark components beyond the agents themselves require access to language
@@ -772,7 +772,7 @@ class Benchmark(ABC):
             For proper tracing, register the adapter after creation using the kwargs:
 
             ```python
-            def get_model_adapter(self, model_id: str, **kwargs) -> ModelAdapter:
+            def get_model_adapter(self, model_id: str, **kwargs: Any) -> ModelAdapter:
                 adapter = GoogleGenAIModelAdapter(self.client, model_id=model_id)
 
                 # Register for tracing if registration info provided

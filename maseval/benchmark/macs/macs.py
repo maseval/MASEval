@@ -65,6 +65,7 @@ from maseval import (
 )
 from maseval.core.config import ConfigurableMixin
 from maseval.core.tracing import TraceableMixin
+from maseval.core.seeding import DefaultSeedGenerator
 
 
 # Statuses where agent is accountable (included in scoring)
@@ -147,7 +148,7 @@ class MACSGenericTool(TraceableMixin, ConfigurableMixin):
             }
         return inputs
 
-    def __call__(self, **kwargs) -> str:
+    def __call__(self, **kwargs: Any) -> str:
         """Execute the tool with simulated response.
 
         Args:
@@ -828,7 +829,7 @@ class MACSBenchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: MACSEnvironment,
         task: Task,
-        seed_generator,
+        seed_generator: DefaultSeedGenerator,
     ) -> MACSUser:
         """Create MACS user simulator.
 
@@ -872,7 +873,7 @@ class MACSBenchmark(Benchmark):
         environment: MACSEnvironment,
         task: Task,
         user: Optional[User],
-        seed_generator,
+        seed_generator: DefaultSeedGenerator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create agents for this task. Must be implemented by subclass.
 

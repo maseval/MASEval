@@ -68,6 +68,7 @@ from pydantic import BaseModel
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
 from maseval.core.user import AgenticLLMUser
 from maseval.core.callback import BenchmarkCallback
+from maseval.core.seeding import DefaultSeedGenerator, SeedGenerator
 
 from maseval.benchmark.tau2.environment import Tau2Environment
 from maseval.benchmark.tau2.evaluator import Tau2Evaluator
@@ -252,7 +253,7 @@ class Tau2Benchmark(Benchmark):
         fail_on_evaluation_error: bool = False,
         progress_bar: bool | str = True,
         seed: Optional[int] = None,
-        seed_generator=None,
+        seed_generator: Optional[SeedGenerator] = None,
     ):
         """Initialize benchmark with tau2-specific defaults.
 
@@ -328,7 +329,7 @@ class Tau2Benchmark(Benchmark):
         agent_data: Dict[str, Any],
         environment: Tau2Environment,
         task: Task,
-        seed_generator,
+        seed_generator: DefaultSeedGenerator,
     ) -> Optional[User]:
         """Create Tau2 user simulator.
 
@@ -964,7 +965,7 @@ class DefaultAgentTau2Benchmark(Tau2Benchmark):
         environment: Tau2Environment,
         task: Task,
         user: Optional[User],
-        seed_generator,
+        seed_generator: DefaultSeedGenerator,
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create the default tau2 agent.
 

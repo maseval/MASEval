@@ -67,11 +67,11 @@ class TraceableMixin:
         traces during concurrent execution, but the `gather_traces()` method
         itself is called sequentially.
 
-    Attributes:
-        Components can store traces in any internal data structure. Common patterns:
-        - `self.logs = []` for invocation histories
-        - `self._messages = MessageHistory()` for conversations
-        - `self.logs = []` for simulator attempts
+    Note:
+        Components can store traces in any internal data structure. Common patterns
+        include `self.logs = []` for invocation histories,
+        `self._messages = MessageHistory()` for conversations,
+        and `self.logs = []` for simulator attempts.
     """
 
     def gather_traces(self) -> Dict[str, Any]:

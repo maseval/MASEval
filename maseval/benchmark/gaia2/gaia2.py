@@ -124,7 +124,7 @@ class Gaia2Benchmark(Benchmark):
         fail_on_evaluation_error: bool = False,
         progress_bar: bool | str = True,
         seed: Optional[int] = None,
-        seed_generator=None,
+        seed_generator: Optional[SeedGenerator] = None,
     ):
         """Initialize benchmark with Gaia2-specific defaults.
 

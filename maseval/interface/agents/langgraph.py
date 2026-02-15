@@ -6,7 +6,7 @@ This module requires langgraph to be installed:
 
 import time
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
 
@@ -116,7 +116,7 @@ class LangGraphAgentAdapter(AgentAdapter):
         langgraph to be installed: `pip install maseval[langgraph]`
     """
 
-    def __init__(self, agent_instance, name: str, callbacks=None, config=None):
+    def __init__(self, agent_instance: Any, name: str, callbacks: Optional[List[Any]] = None, config: Optional[Dict[str, Any]] = None):
         """Initialize the LangGraph adapter.
 
         Args:

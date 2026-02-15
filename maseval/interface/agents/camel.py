@@ -171,7 +171,7 @@ class CamelAgentAdapter(AgentAdapter):
         camel-ai to be installed: `pip install maseval[camel]`
     """
 
-    def __init__(self, agent_instance, name: str, callbacks=None):
+    def __init__(self, agent_instance: Any, name: str, callbacks: Optional[List[Any]] = None):
         """Initialize the CAMEL adapter.
 
         Note: We don't call super().__init__() to avoid initializing self.logs as a list,
@@ -619,7 +619,7 @@ class CamelLLMUser(LLMUser):
         ```
     """
 
-    def get_tool(self):
+    def get_tool(self) -> Any:
         """Get a CAMEL-compatible tool for user interaction.
 
         Returns a CAMEL FunctionTool that wraps the respond method,
@@ -687,7 +687,7 @@ class CamelAgentUser(User):
 
     def __init__(
         self,
-        user_agent,
+        user_agent: Any,
         initial_query: str,
         name: str = "camel_agent_user",
         max_turns: int = 10,
@@ -775,7 +775,7 @@ class CamelAgentUser(User):
         """
         return self._turn_count >= self._max_turns
 
-    def get_tool(self):
+    def get_tool(self) -> Any:
         """Return a CAMEL FunctionTool for agent-to-user interaction.
 
         Returns:
@@ -833,8 +833,8 @@ class CamelAgentUser(User):
 
 
 def camel_role_playing_execution_loop(
-    role_playing,
-    task,
+    role_playing: Any,
+    task: Any,
     max_steps: int = 10,
     tracer: Optional["CamelRolePlayingTracer"] = None,
 ) -> Any:
@@ -959,7 +959,7 @@ class CamelRolePlayingTracer(TraceableMixin, ConfigurableMixin):
         ```
     """
 
-    def __init__(self, role_playing, name: str = "role_playing"):
+    def __init__(self, role_playing: Any, name: str = "role_playing"):
         """Initialize the RolePlaying tracer.
 
         Args:
@@ -973,7 +973,7 @@ class CamelRolePlayingTracer(TraceableMixin, ConfigurableMixin):
         self._termination_reason: Optional[str] = None
         self._step_logs: List[Dict[str, Any]] = []
 
-    def record_step(self, assistant_response, user_response) -> None:
+    def record_step(self, assistant_response: Any, user_response: Any) -> None:
         """Record data from a RolePlaying step.
 
         Call this after each role_playing.step() to track progress.
@@ -1093,7 +1093,7 @@ class CamelWorkforceTracer(TraceableMixin, ConfigurableMixin):
         ```
     """
 
-    def __init__(self, workforce, name: str = "workforce"):
+    def __init__(self, workforce: Any, name: str = "workforce"):
         """Initialize the Workforce tracer.
 
         Args:

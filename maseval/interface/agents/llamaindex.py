@@ -7,7 +7,7 @@ This module requires llama-index-core to be installed:
 import asyncio
 import time
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
 
@@ -111,7 +111,7 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         llama-index-core to be installed: `pip install maseval[llamaindex]`
     """
 
-    def __init__(self, agent_instance, name: str, callbacks=None):
+    def __init__(self, agent_instance: Any, name: str, callbacks: Optional[List[Any]] = None):
         """Initialize the LlamaIndex adapter.
 
         Args:
@@ -447,7 +447,7 @@ class LlamaIndexLLMUser(LLMUser):
         ```
     """
 
-    def get_tool(self):
+    def get_tool(self) -> Any:
         """Get a LlamaIndex-compatible tool for user interaction.
 
         Returns:
