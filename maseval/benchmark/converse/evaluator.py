@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional
 
 from maseval import Environment, Evaluator, ModelAdapter, Task, User
 
-from .config import DOMAIN_TO_USE_CASE
 from .prompt_templates.privacy_judge import format_abstraction_prompt, format_leak_prompt
 from .prompt_templates.security_judge import format_final_package_prompt, format_toolkit_actions_prompt
 from .prompt_templates.utility_judge import format_coverage_prompt, format_ratings_prompt
@@ -184,7 +183,7 @@ class PrivacyEvaluator(Evaluator):
             user: The adversarial user (optional, for context).
             model: Model adapter for LLM-based evaluation. When ``None``,
                 falls back to substring matching for leak categories.
-            domain: MASEval domain name (e.g. ``"travel"``). Used to
+            domain: Domain name (e.g. ``"travel_planning"``). Used to
                 select the correct use-case config for LLM prompts.
         """
         self.task = task
@@ -284,7 +283,7 @@ class PrivacyEvaluator(Evaluator):
         # ConVerse/judge/privacy_judge.py:229
         snippets_text = "\n".join([f"- {snippet}" for snippet in snippets])
         conversation = _format_conversation(traces.get("messages", []))
-        use_case = DOMAIN_TO_USE_CASE.get(self.domain or "", self.domain or "")
+        use_case = self.domain or ""
 
         prompt = format_leak_prompt(
             use_case=use_case,
@@ -334,7 +333,7 @@ class PrivacyEvaluator(Evaluator):
         # ConVerse/judge/privacy_judge.py:258
         raw_data_text = "\n".join([f"- {data}" for data in raw_data])
         conversation = _format_conversation(traces.get("messages", []))
-        use_case = DOMAIN_TO_USE_CASE.get(self.domain or "", self.domain or "")
+        use_case = self.domain or ""
 
         prompt = format_abstraction_prompt(
             use_case=use_case,
@@ -400,7 +399,7 @@ class SecurityEvaluator(Evaluator):
             user: The adversarial user (optional, for context).
             model: Model adapter for LLM-based evaluation. When ``None``,
                 security evaluation is skipped.
-            domain: MASEval domain name (e.g. ``"travel"``). Used to
+            domain: Domain name (e.g. ``"travel_planning"``). Used to
                 select the correct use-case config for LLM prompts.
         """
         self.task = task
@@ -461,7 +460,7 @@ class SecurityEvaluator(Evaluator):
         Matches ``ConVerse/judge/security_judge.py:188-230``.
         """
         eval_data = self.task.evaluation_data
-        use_case = DOMAIN_TO_USE_CASE.get(self.domain or "", self.domain or "")
+        use_case = self.domain or ""
 
         # Use final_answer as the package; fall back to last assistant message.
         package_text = str(final_answer) if final_answer is not None else ""
@@ -515,7 +514,7 @@ class SecurityEvaluator(Evaluator):
         Matches ``ConVerse/judge/security_judge.py:232-277``.
         """
         eval_data = self.task.evaluation_data
-        use_case = DOMAIN_TO_USE_CASE.get(self.domain or "", self.domain or "")
+        use_case = self.domain or ""
 
         # Extract assistant-environment communication from tool-related messages.
         # Adapts ConVerse/judge/security_judge.py:279-293 for MASEval's trace format.
@@ -621,7 +620,7 @@ class UtilityEvaluator(Evaluator):
             user: The adversarial user (optional, for context).
             model: Model adapter for LLM-based evaluation. When ``None``,
                 utility evaluation is skipped.
-            domain: MASEval domain name (e.g. ``"travel"``). Used to
+            domain: Domain name (e.g. ``"travel_planning"``). Used to
                 select the correct use-case config for LLM prompts.
         """
         self.task = task
@@ -659,7 +658,7 @@ class UtilityEvaluator(Evaluator):
                 "reason": "Utility evaluation requires an LLM model. Use configure_model_ids(tasks, evaluator_model_id=...) to enable.",
             }
 
-        use_case = DOMAIN_TO_USE_CASE.get(self.domain or "", self.domain or "")
+        use_case = self.domain or ""
 
         # Get final package text from final_answer or last assistant message.
         final_text = str(final_answer) if final_answer else ""

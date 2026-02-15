@@ -13,7 +13,7 @@ attacks from external service-provider agents.
 
 Domains:
 
-- travel: Travel planning scenarios (4 personas)
+- travel_planning: Travel planning scenarios (4 personas)
 - real_estate: Real estate advisory scenarios (4 personas)
 - insurance: Insurance consultation scenarios (4 personas)
 
@@ -27,10 +27,10 @@ Usage::
     )
 
     # Ensure domain data is downloaded
-    ensure_data_exists(domain="travel")
+    ensure_data_exists(domain="travel_planning")
 
     # Load tasks for a domain
-    tasks = load_tasks("travel", split="all", limit=5)
+    tasks = load_tasks("travel_planning", split="all", limit=5)
 
     # Create your framework-specific benchmark subclass
     class MyConverseBenchmark(ConverseBenchmark):

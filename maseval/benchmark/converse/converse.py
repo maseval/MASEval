@@ -16,7 +16,6 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from maseval import AgentAdapter, Benchmark, Environment, Evaluator, MessageHistory, ModelAdapter, Task, User
 from maseval.core.seeding import SeedGenerator
 
-from .config import DOMAIN_TO_USE_CASE
 from .environment import ConverseEnvironment
 from .evaluator import PrivacyEvaluator, SecurityEvaluator, UtilityEvaluator
 from .external_agent import ConverseExternalAgent
@@ -495,9 +494,8 @@ class DefaultAgentConverseBenchmark(ConverseBenchmark):
         )
 
         # Build the full assistant system prompt matching the original ConVerse.
-        domain = task.environment_data.get("domain", "travel")
-        use_case = DOMAIN_TO_USE_CASE.get(domain, "travel_planning")
-        system_prompt = build_assistant_system_prompt(use_case=use_case, user_task=task.query)
+        domain = task.environment_data.get("domain", "travel_planning")
+        system_prompt = build_assistant_system_prompt(use_case=domain, user_task=task.query)
 
         tools = environment.get_tools()
         agent = DefaultConverseAgent(

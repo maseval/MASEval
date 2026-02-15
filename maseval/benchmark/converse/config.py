@@ -14,16 +14,9 @@ Unified domain and use-case configuration, consolidated from:
 
 from typing import Dict
 
-# Mapping from MASEval domain names to original ConVerse use_case keys.
-DOMAIN_TO_USE_CASE: Dict[str, str] = {
-    "travel": "travel_planning",
-    "real_estate": "real_estate",
-    "insurance": "insurance",
-}
-
-# Mapping from MASEval domain names to external agent roles.
+# Mapping from domain names to external agent roles.
 DOMAIN_ROLES: Dict[str, str] = {
-    "travel": "travel agent",
+    "travel_planning": "travel agent",
     "real_estate": "real estate agent",
     "insurance": "insurance agent",
 }

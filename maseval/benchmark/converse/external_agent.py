@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 
 from maseval import LLMUser, ModelAdapter
 
-from .config import DOMAIN_ROLES, DOMAIN_TO_USE_CASE
+from .config import DOMAIN_ROLES
 from .prompt_templates.external_agent_prompts import build_adversarial_scenario
 
 
@@ -40,7 +40,7 @@ class ConverseExternalAgent(LLMUser):
             options_text: Package options text for the domain. When provided,
                 the full adversarial prompt from the original ConVerse is
                 used (matching ``get_external_aggregated_prompt_adv``).
-            domain: MASEval domain name (``"travel"``, ``"real_estate"``,
+            domain: MASEval domain name (``"travel_planning"``, ``"real_estate"``,
                 or ``"insurance"``). Used to select the correct role.
             **kwargs: Forwarded to :class:`LLMUser`.
         """
@@ -52,7 +52,7 @@ class ConverseExternalAgent(LLMUser):
         self.attack_goal = str(attack_goal)
 
         role = DOMAIN_ROLES.get(domain, "service provider")
-        use_case = DOMAIN_TO_USE_CASE.get(domain, "travel_planning")
+        use_case = domain or "travel_planning"
 
         if options_text:
             # Use full adversarial prompt matching original ConVerse.

@@ -21,18 +21,16 @@ from urllib.request import urlopen
 
 from maseval import Task, TaskProtocol, TaskQueue
 
-from .config import DOMAIN_TO_USE_CASE as DOMAIN_TO_USE_CASE  # re-exported for backwards compat
-
 logger = logging.getLogger(__name__)
 
-ConverseDomain = Literal["travel", "real_estate", "insurance"]
+ConverseDomain = Literal["travel_planning", "real_estate", "insurance"]
 
 GITHUB_BASE = "https://raw.githubusercontent.com/amrgomaaelhady/ConVerse"
 DEFAULT_VERSION = "main"
 REPO_BASE_URL = f"{GITHUB_BASE}/{DEFAULT_VERSION}/resources"
 LOCAL_DATA_DIR = Path(__file__).parent / "data"
 DOMAIN_MAP: Dict[ConverseDomain, str] = {
-    "travel": "travel_planning_usecase",
+    "travel_planning": "travel_planning_usecase",
     "real_estate": "real_estate_usecase",
     "insurance": "insurance_usecase",
 }
@@ -281,7 +279,7 @@ def parse_privacy_attacks(
         persona_id: Persona number (1–4).
         env_text: Persona-specific environment description text.
         options_text: Shared domain options text.
-        domain: Domain name (``"travel"``, ``"real_estate"``, or ``"insurance"``).
+        domain: Domain name (``"travel_planning"``, ``"real_estate"``, or ``"insurance"``).
         ratings_data: Optional ground-truth ratings for utility evaluation.
 
     Returns:
@@ -363,7 +361,7 @@ def parse_security_attacks(
         persona_id: Persona number (1–4).
         env_text: Persona-specific environment description text.
         options_text: Shared domain options text.
-        domain: Domain name (``"travel"``, ``"real_estate"``, or ``"insurance"``).
+        domain: Domain name (``"travel_planning"``, ``"real_estate"``, or ``"insurance"``).
         ratings_data: Optional ground-truth ratings for utility evaluation.
 
     Returns:
@@ -539,7 +537,7 @@ def configure_model_ids(
 
     Example:
         ```python
-        tasks = load_tasks("travel", split="all", limit=5)
+        tasks = load_tasks("travel_planning", split="all", limit=5)
         configure_model_ids(tasks, evaluator_model_id="gpt-4o")
         benchmark = MyConverseBenchmark(agent_data=agent_config)
         results = benchmark.run(tasks)

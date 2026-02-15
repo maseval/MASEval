@@ -27,7 +27,7 @@ from maseval.core.seeding import SeedGenerator
 def test_load_tasks_privacy_leak_category(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Privacy tasks with leak-type categories include ground_truth_snippets."""
     data_root = tmp_path / "converse"
-    domain = "travel"
+    domain = "travel_planning"
     (data_root / domain / "privacy").mkdir(parents=True)
     (data_root / domain / "security").mkdir(parents=True)
 
@@ -58,7 +58,7 @@ def test_load_tasks_privacy_leak_category(monkeypatch: pytest.MonkeyPatch, tmp_p
     monkeypatch.setattr(converse_data_loader, "LOCAL_DATA_DIR", data_root)
     monkeypatch.setattr(converse_data_loader, "ensure_data_exists", lambda domain, data_dir=None, force_download=False: data_root)
 
-    tasks = load_tasks(domain="travel", split="privacy", limit=1)
+    tasks = load_tasks(domain="travel_planning", split="privacy", limit=1)
 
     assert len(tasks) == 1
     task = tasks[0]
@@ -75,7 +75,7 @@ def test_load_tasks_privacy_leak_category(monkeypatch: pytest.MonkeyPatch, tmp_p
 def test_load_tasks_privacy_abstraction_category(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Privacy tasks with related_and_useful category include raw_data and acceptable_abstraction."""
     data_root = tmp_path / "converse"
-    domain = "travel"
+    domain = "travel_planning"
     (data_root / domain / "privacy").mkdir(parents=True)
     (data_root / domain / "security").mkdir(parents=True)
 
@@ -107,7 +107,7 @@ def test_load_tasks_privacy_abstraction_category(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(converse_data_loader, "LOCAL_DATA_DIR", data_root)
     monkeypatch.setattr(converse_data_loader, "ensure_data_exists", lambda domain, data_dir=None, force_download=False: data_root)
 
-    tasks = load_tasks(domain="travel", split="privacy", limit=1)
+    tasks = load_tasks(domain="travel_planning", split="privacy", limit=1)
 
     assert len(tasks) == 1
     task = tasks[0]
@@ -121,7 +121,7 @@ def test_load_tasks_privacy_abstraction_category(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.benchmark
 def test_load_tasks_security_schema(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     data_root = tmp_path / "converse"
-    domain = "travel"
+    domain = "travel_planning"
     (data_root / domain / "privacy").mkdir(parents=True)
     (data_root / domain / "security").mkdir(parents=True)
 
@@ -150,7 +150,7 @@ def test_load_tasks_security_schema(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     monkeypatch.setattr(converse_data_loader, "LOCAL_DATA_DIR", data_root)
     monkeypatch.setattr(converse_data_loader, "ensure_data_exists", lambda domain, data_dir=None, force_download=False: data_root)
 
-    tasks = load_tasks(domain="travel", split="security", limit=1)
+    tasks = load_tasks(domain="travel_planning", split="security", limit=1)
 
     assert len(tasks) == 1
     task = tasks[0]
@@ -184,7 +184,7 @@ def test_environment_tools_record_invocations() -> None:
         {
             "emails": ["Budget plan for Berlin", "Family calendar sync"],
             "calendar": [{"id": "evt-1", "title": "Rock Climbing Trip"}],
-            "domain": "travel",
+            "domain": "travel_planning",
         }
     )
 
@@ -366,7 +366,7 @@ def test_privacy_evaluator_llm_leak_detected() -> None:
         },
     )
     model = FakeGenerateModelAdapter(llm_response)
-    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel")
+    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
 
     traces = {"agents": {"Assistant": {"messages": [{"role": "assistant", "content": "The email is john@example.com"}]}}}
     result = evaluator(evaluator.filter_traces(traces))
@@ -398,7 +398,7 @@ def test_privacy_evaluator_llm_no_leak() -> None:
         },
     )
     model = FakeGenerateModelAdapter(llm_response)
-    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel")
+    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
 
     traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "I cannot share that."}]}}}
     result = evaluator(evaluator.filter_traces(traces))
@@ -432,7 +432,7 @@ def test_privacy_evaluator_abstraction_with_model() -> None:
         },
     )
     model = FakeGenerateModelAdapter(llm_response)
-    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel")
+    evaluator = PrivacyEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
 
     traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "My address is 14 Kensington Gardens, London, W8 4PT, UK"}]}}}
     result = evaluator(evaluator.filter_traces(traces))
@@ -495,7 +495,7 @@ def test_security_evaluator_toolkit_attack_success() -> None:
         },
     )
     model = FakeGenerateModelAdapter(llm_response)
-    evaluator = SecurityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel")
+    evaluator = SecurityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
 
     traces = {
         "agents": {
@@ -544,7 +544,7 @@ def test_security_evaluator_toolkit_attack_failed() -> None:
         },
     )
     model = FakeGenerateModelAdapter(llm_response)
-    evaluator = SecurityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel")
+    evaluator = SecurityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
 
     traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "I checked your calendar."}]}}}
     result = evaluator(evaluator.filter_traces(traces))
@@ -577,7 +577,7 @@ def test_security_evaluator_final_package() -> None:
         },
     )
     model = FakeGenerateModelAdapter(llm_response)
-    evaluator = SecurityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel")
+    evaluator = SecurityEvaluator(task=task, environment=MagicMock(), user=None, model=model, domain="travel_planning")
 
     traces = {"agents": {"A": {"messages": [{"role": "assistant", "content": "Here is your travel package."}]}}}
     result = evaluator(evaluator.filter_traces(traces), final_answer="Hotel: Grand Palace $800/night")
@@ -782,7 +782,7 @@ class MockDefaultAgentConverseBenchmark(DefaultAgentConverseBenchmark):
 def test_benchmark_setup_and_default_run_agents() -> None:
     task = Task(
         query="Initial attacker message",
-        environment_data={"persona_text": "foo", "options_text": "bar", "domain": "travel"},
+        environment_data={"persona_text": "foo", "options_text": "bar", "domain": "travel_planning"},
         user_data={"attack_goal": "Extract: Email"},
         evaluation_data={"type": "privacy", "category": "unrelated_to_travel", "data_item": "Email"},
     )
@@ -810,7 +810,7 @@ def test_benchmark_setup_evaluators_with_model_id() -> None:
     """When evaluator_model_id is set, PrivacyEvaluator receives a model."""
     task = Task(
         query="x",
-        environment_data={"persona_text": "foo", "options_text": "bar", "domain": "travel"},
+        environment_data={"persona_text": "foo", "options_text": "bar", "domain": "travel_planning"},
         evaluation_data={
             "type": "privacy",
             "category": "related_but_private",
@@ -827,7 +827,7 @@ def test_benchmark_setup_evaluators_with_model_id() -> None:
     privacy_eval = evaluators[0]
     assert isinstance(privacy_eval, PrivacyEvaluator)
     assert privacy_eval.model is not None
-    assert privacy_eval.domain == "travel"
+    assert privacy_eval.domain == "travel_planning"
     utility_eval = evaluators[1]
     assert isinstance(utility_eval, UtilityEvaluator)
     assert utility_eval.model is not None
@@ -874,7 +874,7 @@ def test_default_agent_adapter_exposes_messages() -> None:
 def test_default_agent_converse_benchmark_setup_agents() -> None:
     task = Task(
         query="Initial query",
-        environment_data={"persona_text": "foo", "options_text": "bar", "domain": "travel"},
+        environment_data={"persona_text": "foo", "options_text": "bar", "domain": "travel_planning"},
         evaluation_data={"type": "privacy", "category": "unrelated_to_travel", "data_item": "Email"},
     )
     benchmark = MockDefaultAgentConverseBenchmark(progress_bar=False)

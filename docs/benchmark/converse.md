@@ -49,8 +49,8 @@ class MyConverseBenchmark(ConverseBenchmark):
 
 
 # First call downloads source files to the local benchmark data cache.
-ensure_data_exists(domain="travel")
-tasks = load_tasks(domain="travel", split="privacy", limit=5)
+ensure_data_exists(domain="travel_planning")
+tasks = load_tasks(domain="travel_planning", split="privacy", limit=5)
 
 benchmark = MyConverseBenchmark(progress_bar=False)
 results = benchmark.run(
@@ -84,7 +84,7 @@ class MyDefaultConverseBenchmark(DefaultAgentConverseBenchmark):
         return adapter
 
 
-tasks = load_tasks(domain="travel", split="privacy", limit=5)
+tasks = load_tasks(domain="travel_planning", split="privacy", limit=5)
 benchmark = MyDefaultConverseBenchmark(progress_bar=False)
 results = benchmark.run(
     tasks=tasks,
