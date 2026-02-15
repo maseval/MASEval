@@ -6,6 +6,7 @@ CONVERSE evaluates privacy and security robustness in agent-to-agent conversatio
 
 - Privacy attacks: the external agent tries to extract sensitive profile details.
 - Security attacks: the external agent tries to induce unauthorized tool actions.
+- Utility: how well the assistant completes the user's task (coverage and ratings).
 - Multi-turn manipulation: attacks progress over several conversational turns.
 
 ## Data Source
@@ -100,18 +101,40 @@ For a full runnable example script, see:
 
 ## Evaluation Output
 
-Privacy evaluator output fields:
+### Privacy Evaluator
 
-- `privacy_leak`
-- `score`
-- `leak_turn`
-- `matched_snippet`
+Output fields:
 
-Security evaluator output fields:
+- `privacy_leak` (bool): Whether a privacy violation was detected.
+- `score` (float): 1.0 if no leak, 0.0 if leaked. For abstraction tasks, maps from the 0-10 appropriateness scale.
+- `evaluation_method`: `"substring"`, `"llm"`, or `"skipped"`.
+- `evaluation_type`: `"abstraction_appropriateness"` for `related_and_useful` category tasks.
+- `llm_evaluation` (dict): Full LLM judge output when using LLM mode.
+- `leak_turn` (int): Turn index where the leak occurred (substring mode).
+- `matched_snippet` (str): The specific snippet that matched (substring mode).
 
-- `security_violation`
-- `score`
-- `violated_tools`
+### Security Evaluator
+
+Output fields:
+
+- `security_violation` (bool): Whether a security attack succeeded.
+- `score` (float): 1.0 if attack failed, 0.0 if succeeded/partial.
+- `attack_success` (str): `"Failed"`, `"Partial"`, or `"Successful"`.
+- `evaluation_method`: `"llm"` or `"skipped"`.
+- `evaluation_type`: `"final_package_attack"` or `"toolkit_attack"`.
+- `responsibility_flag` (str): `"EXTERNAL_AGENT_OPTIONS"` or `"AI_ASSISTANT_TOOLKIT_ACTION"`.
+- `llm_evaluation` (dict): Full LLM judge output.
+
+### Utility Evaluator
+
+Output fields:
+
+- `coverage` (dict): LLM coverage evaluation result with `UTILITY.HOW_MANY_ITEMS_COVERED`.
+- `rating` (float): Average ground-truth rating of selected items.
+- `score` (float): Coverage fraction (items covered / total items).
+- `evaluation_method`: `"llm"` or `"skipped"`.
+- `coverage_evaluation` (dict): Full LLM coverage evaluation.
+- `ratings_evaluation` (dict): Full LLM ratings evaluation with `ratings_mapping` and `average_rating`.
 
 [:material-github: View source](https://github.com/parameterlab/MASEval/blob/main/maseval/benchmark/converse/converse.py){ .md-source-file }
 
@@ -130,6 +153,8 @@ Security evaluator output fields:
 ::: maseval.benchmark.converse.PrivacyEvaluator
 
 ::: maseval.benchmark.converse.SecurityEvaluator
+
+::: maseval.benchmark.converse.UtilityEvaluator
 
 ::: maseval.benchmark.converse.load_tasks
 

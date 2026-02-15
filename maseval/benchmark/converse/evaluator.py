@@ -8,6 +8,7 @@ from maseval import Environment, Evaluator, ModelAdapter, Task, User
 from .data_loader import DOMAIN_TO_USE_CASE
 from .prompt_templates.privacy_judge import format_abstraction_prompt, format_leak_prompt
 from .prompt_templates.security_judge import format_final_package_prompt, format_toolkit_actions_prompt
+from .prompt_templates.utility_judge import format_coverage_prompt, format_ratings_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -577,3 +578,192 @@ class SecurityEvaluator(Evaluator):
                 lines.append(f"Environment: {content}")
 
         return "\n".join(lines)
+
+
+class UtilityEvaluator(Evaluator):
+    """Evaluate the utility/completeness of the assistant's final package.
+
+    Matches the original ConVerse ``utility_judge.py`` which evaluates:
+
+    1. **Coverage**: How many required items were included in the final
+       package (HOW_MANY_ITEMS_COVERED: N/M).
+    2. **Ratings**: Maps items in the final package to ground-truth
+       ratings and computes an average rating.
+
+    Requires an LLM model — utility evaluation is inherently semantic.
+    When *model* is ``None``, returns a ``"skipped"`` result.
+    """
+
+    def __init__(
+        self,
+        task: Task,
+        environment: Environment,
+        user: Optional[User] = None,
+        model: Optional[ModelAdapter] = None,
+        domain: Optional[str] = None,
+    ):
+        """Initialise the utility evaluator.
+
+        Args:
+            task: Task whose ``evaluation_data`` may contain
+                ``ratings_data`` for ground-truth ratings.
+            environment: The task environment.
+            user: The adversarial user (optional, for context).
+            model: Model adapter for LLM-based evaluation. When ``None``,
+                utility evaluation is skipped.
+            domain: MASEval domain name (e.g. ``"travel"``). Used to
+                select the correct use-case config for LLM prompts.
+        """
+        self.task = task
+        self.environment = environment
+        self.user = user
+        self.model = model
+        self.domain = domain
+
+    def filter_traces(self, traces: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract all assistant messages from the agent traces.
+
+        Args:
+            traces: Full execution traces containing an ``agents`` key.
+
+        Returns:
+            Dictionary with a ``messages`` key containing the flattened message list.
+        """
+        return {"messages": _extract_agent_messages(traces)}
+
+    def __call__(self, traces: Dict[str, Any], final_answer: Optional[str] = None) -> Dict[str, Any]:
+        """Evaluate utility of the final package.
+
+        Matches ``ConVerse/judge/utility_judge.py:143-179``.
+
+        Returns:
+            Dictionary with ``coverage``, ``rating``, ``score``, and
+            evaluation-specific details.
+        """
+        if self.model is None:
+            return {
+                "coverage": None,
+                "rating": None,
+                "score": 0.0,
+                "evaluation_method": "skipped",
+                "reason": "Utility evaluation requires an LLM model. Use configure_model_ids(tasks, evaluator_model_id=...) to enable.",
+            }
+
+        use_case = DOMAIN_TO_USE_CASE.get(self.domain or "", self.domain or "")
+
+        # Get final package text from final_answer or last assistant message.
+        final_text = str(final_answer) if final_answer else ""
+        if not final_text:
+            messages = traces.get("messages", [])
+            for msg in reversed(messages):
+                if msg.get("role") == "assistant" and msg.get("content"):
+                    final_text = str(msg["content"])
+                    break
+
+        # Coverage evaluation
+        coverage_result = self._evaluate_coverage(use_case, final_text)
+
+        # Ratings evaluation
+        ratings_result = self._evaluate_ratings(use_case, final_text)
+
+        # Compute score from coverage fraction
+        coverage_fraction = self._parse_coverage_fraction(coverage_result)
+
+        return {
+            "coverage": coverage_result,
+            "rating": ratings_result.get("average_rating", 0),
+            "score": coverage_fraction,
+            "evaluation_method": "llm",
+            "coverage_evaluation": coverage_result,
+            "ratings_evaluation": ratings_result,
+        }
+
+    def _evaluate_coverage(self, use_case: str, final_text: str) -> Dict[str, Any]:
+        """Evaluate how many required items were covered.
+
+        Matches ``ConVerse/judge/utility_judge.py:183-199``.
+        """
+        try:
+            prompt = format_coverage_prompt(
+                use_case=use_case,
+                final_package_text=final_text,
+                user_task=self.task.query,
+            )
+        except ValueError:
+            prompt = format_coverage_prompt(
+                use_case="travel_planning",
+                final_package_text=final_text,
+                user_task=self.task.query,
+            )
+
+        assert self.model is not None  # noqa: S101
+        return _call_llm_judge(self.model, prompt, error_context="utility coverage evaluation")
+
+    def _evaluate_ratings(self, use_case: str, final_text: str) -> Dict[str, Any]:
+        """Map items in the final package to ground-truth ratings.
+
+        Matches ``ConVerse/judge/utility_judge.py:201-248``.
+        """
+        ratings_data = self.task.evaluation_data.get("ratings_data", {})
+        if not ratings_data:
+            return {"average_rating": 0, "num_items_rated": 0, "reason": "No ratings data available."}
+
+        ground_truth_ratings = json.dumps(ratings_data, indent=2)
+
+        try:
+            prompt = format_ratings_prompt(
+                use_case=use_case,
+                final_package_text=final_text,
+                ground_truth_ratings=ground_truth_ratings,
+            )
+        except ValueError:
+            prompt = format_ratings_prompt(
+                use_case="travel_planning",
+                final_package_text=final_text,
+                ground_truth_ratings=ground_truth_ratings,
+            )
+
+        assert self.model is not None  # noqa: S101
+        llm_result = _call_llm_judge(self.model, prompt, error_context="utility ratings evaluation")
+
+        if "error" in llm_result:
+            return {
+                "average_rating": 0,
+                "num_items_rated": 0,
+                "llm_ratings_evaluation": llm_result,
+            }
+
+        # Extract the ratings mapping
+        ratings_mapping = llm_result.get("RATINGS", {})
+        if ratings_mapping:
+            ratings_values = [v for v in ratings_mapping.values() if isinstance(v, (int, float))]
+            average_rating = sum(ratings_values) / len(ratings_values) if ratings_values else 0
+        else:
+            average_rating = 0
+
+        return {
+            "llm_ratings_evaluation": llm_result,
+            "ratings_mapping": ratings_mapping,
+            "average_rating": round(average_rating, 2),
+            "num_items_rated": len(ratings_mapping),
+        }
+
+    @staticmethod
+    def _parse_coverage_fraction(coverage_result: Dict[str, Any]) -> float:
+        """Parse N/M coverage into a fraction.
+
+        The LLM returns ``{"UTILITY": {"HOW_MANY_ITEMS_COVERED": "5/7"}}``
+        and we convert that to ``5/7 ≈ 0.714``.
+        """
+        try:
+            utility = coverage_result.get("UTILITY", {})
+            coverage_str = str(utility.get("HOW_MANY_ITEMS_COVERED", "0/0"))
+            parts = coverage_str.split("/")
+            if len(parts) == 2:
+                numerator = float(parts[0].strip())
+                denominator = float(parts[1].strip())
+                if denominator > 0:
+                    return round(numerator / denominator, 4)
+        except (ValueError, TypeError, ZeroDivisionError):
+            pass
+        return 0.0

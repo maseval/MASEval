@@ -15,6 +15,7 @@ from maseval.benchmark.converse import (
     DefaultConverseAgentAdapter,
     PrivacyEvaluator,
     SecurityEvaluator,
+    UtilityEvaluator,
     configure_model_ids,
     load_tasks,
 )
@@ -822,11 +823,14 @@ def test_benchmark_setup_evaluators_with_model_id() -> None:
     env = benchmark.setup_environment({}, task, seed_generator=seed_generator)
 
     evaluators = benchmark.setup_evaluators(env, task, [], None, seed_generator=seed_generator)
-    assert len(evaluators) == 1
+    assert len(evaluators) == 2
     privacy_eval = evaluators[0]
     assert isinstance(privacy_eval, PrivacyEvaluator)
     assert privacy_eval.model is not None
     assert privacy_eval.domain == "travel"
+    utility_eval = evaluators[1]
+    assert isinstance(utility_eval, UtilityEvaluator)
+    assert utility_eval.model is not None
 
 
 @pytest.mark.benchmark

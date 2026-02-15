@@ -198,7 +198,7 @@ class TestConverseTaskSchema:
             assert task.user_data.get("attack_goal"), f"Task {task.id} missing attack_goal"
 
             assert task.evaluation_data.get("type") == "privacy"
-            assert "target_info" in task.evaluation_data, f"Task {task.id} missing target_info"
+            assert task.evaluation_data.get("category"), f"Task {task.id} missing category"
 
     @pytest.mark.parametrize("domain", VALID_DOMAINS)
     def test_security_task_fields(self, converse_data_dir, domain):
@@ -213,5 +213,4 @@ class TestConverseTaskSchema:
             assert task.user_data.get("attack_type") == "security"
 
             assert task.evaluation_data.get("type") == "security"
-            assert "forbidden_tools" in task.evaluation_data, f"Task {task.id} missing forbidden_tools"
-            assert isinstance(task.evaluation_data["forbidden_tools"], list)
+            assert task.evaluation_data.get("responsibility_flag"), f"Task {task.id} missing responsibility_flag"

@@ -3031,7 +3031,7 @@ requires-dist = [
     { name = "waitress", marker = "extra == 'multiagentbench'", specifier = ">=3.0.0" },
     { name = "wandb", marker = "extra == 'wandb'", specifier = ">=0.15.0" },
 ]
-provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "gaia2", "macs", "multiagentbench", "tau2", "examples", "all"]
+provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "gaia2", "macs", "multiagentbench", "tau2", "converse", "examples", "all"]
 
 [package.metadata.requires-dev]
 dev = [

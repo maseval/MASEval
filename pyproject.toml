@@ -81,6 +81,7 @@ multiagentbench = [
     "sentence-transformers>=2.3.0",
 ]
 tau2 = ["docstring-parser>=0.16"]
+converse = []
 
 # Dependencies for running examples (only what's actually used)
 examples = [
@@ -192,7 +193,12 @@ testpaths = ["tests"]
 [tool.coverage.run]
 relative_files = true
 source = ["maseval"]
-omit = ["*/tests/*", "*/examples/*", "*/__pycache__/*", "maseval/benchmark/multiagentbench/marble/**"]
+omit = [
+    "*/tests/*",
+    "*/examples/*",
+    "*/__pycache__/*",
+    "maseval/benchmark/multiagentbench/marble/**",
+]
 branch = true
 
 [tool.coverage.report]

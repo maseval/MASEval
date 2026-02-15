@@ -49,7 +49,7 @@ Usage::
 from .converse import ConverseBenchmark, DefaultAgentConverseBenchmark, DefaultConverseAgent, DefaultConverseAgentAdapter
 from .data_loader import ConverseDomain, configure_model_ids, ensure_data_exists, load_tasks
 from .environment import ConverseEnvironment
-from .evaluator import PrivacyEvaluator, SecurityEvaluator
+from .evaluator import PrivacyEvaluator, SecurityEvaluator, UtilityEvaluator
 from .external_agent import ConverseExternalAgent
 
 __all__ = [
@@ -61,6 +61,7 @@ __all__ = [
     "ConverseExternalAgent",
     "PrivacyEvaluator",
     "SecurityEvaluator",
+    "UtilityEvaluator",
     "ConverseDomain",
     "configure_model_ids",
     "load_tasks",

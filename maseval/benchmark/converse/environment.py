@@ -62,7 +62,8 @@ class ConverseEnvironment(Environment):
 
         Args:
             task_data: Dictionary with keys such as ``persona_text``,
-                ``options_text``, ``domain``, ``emails``, ``calendar``, ``files``.
+                ``options_text``, ``domain``, ``emails``, ``calendar``,
+                ``general_info``, ``banking``, ``medical``.
 
         Returns:
             Mutable state dictionary used by the tools during execution.
@@ -71,9 +72,11 @@ class ConverseEnvironment(Environment):
             "persona_text": task_data.get("persona_text", ""),
             "options_text": task_data.get("options_text", ""),
             "domain": task_data.get("domain", ""),
+            "general_info": task_data.get("general_info", ""),
             "emails": task_data.get("emails", []),
             "calendar": task_data.get("calendar", []),
-            "files": task_data.get("files", []),
+            "banking": task_data.get("banking", ""),
+            "medical": task_data.get("medical", ""),
             "sent_emails": [],
             "insurance_actions": [],
             "financial_actions": [],
@@ -89,17 +92,56 @@ class ConverseEnvironment(Environment):
         def search_emails(query: str) -> str:
             """Search emails for messages that contain the query string."""
             matches = [email for email in self.state["emails"] if query.lower() in str(email).lower()]
-            return f"Found {len(matches)} email(s) matching '{query}'."
+            if not matches:
+                return f"No emails found matching '{query}'."
+            results = []
+            for email in matches:
+                if isinstance(email, dict):
+                    parts = []
+                    if email.get("from"):
+                        parts.append(f"From: {email['from']}")
+                    if email.get("to"):
+                        parts.append(f"To: {email['to']}")
+                    if email.get("subject"):
+                        parts.append(f"Subject: {email['subject']}")
+                    if email.get("body"):
+                        parts.append(f"Body: {email['body']}")
+                    results.append("\n".join(parts))
+                else:
+                    results.append(str(email))
+            return f"Found {len(matches)} email(s) matching '{query}':\n\n" + "\n---\n".join(results)
+
+        def read_calendar() -> str:
+            """Read all calendar events including dates, events, and participants."""
+            calendar: List[Dict[str, Any]] = self.state["calendar"]
+            if not calendar:
+                return "No calendar events found."
+            results = []
+            for event in calendar:
+                if isinstance(event, dict):
+                    parts = []
+                    for key in ("date", "event", "participants", "details", "id", "title"):
+                        if event.get(key):
+                            parts.append(f"{key.title()}: {event[key]}")
+                    results.append("\n".join(parts))
+                else:
+                    results.append(str(event))
+            return f"Found {len(calendar)} calendar event(s):\n\n" + "\n---\n".join(results)
 
         def delete_calendar_event(event_id: str) -> str:
-            """Delete a calendar event by identifier or title."""
+            """Delete a calendar event by identifier, title, date, or event name."""
             calendar: List[Dict[str, Any]] = self.state["calendar"]
             remaining = []
             deleted = False
             for event in calendar:
-                event_id_val = str(event.get("id", ""))
-                title_val = str(event.get("title", ""))
-                if event_id == event_id_val or event_id == title_val:
+                # Match against id, title, date, or event name
+                match_fields = [
+                    str(event.get("id", "")),
+                    str(event.get("title", "")),
+                    str(event.get("date", "")),
+                    str(event.get("event", "")),
+                ]
+                if any(event_id.lower() in field.lower() for field in match_fields if field):
                     deleted = True
                     continue
                 remaining.append(event)
@@ -107,6 +149,20 @@ class ConverseEnvironment(Environment):
             if deleted:
                 return f"Deleted calendar event '{event_id}'."
             return f"No calendar event found for '{event_id}'."
+
+        def get_user_info(query: str) -> str:
+            """Search for user's general information (name, phone, address, hobbies, etc.)."""
+            general_info = self.state.get("general_info", "")
+            if not general_info:
+                return "No general user information available."
+            # Search for relevant lines
+            query_lower = query.lower()
+            lines = general_info.split("\n")
+            matches = [line.strip() for line in lines if line.strip() and query_lower in line.lower()]
+            if matches:
+                return "\n".join(matches)
+            # If no specific matches, return all general info
+            return general_info
 
         def send_email(recipient: str, body: str) -> str:
             """Send an email on behalf of the user."""
@@ -126,7 +182,7 @@ class ConverseEnvironment(Environment):
         return {
             "search_emails": ConverseFunctionTool(
                 name="search_emails",
-                description="Search through the user's emails.",
+                description="Search through the user's emails by keyword.",
                 fn=search_emails,
                 input_schema={
                     "type": "object",
@@ -134,14 +190,34 @@ class ConverseEnvironment(Environment):
                     "required": ["query"],
                 },
             ),
+            "read_calendar": ConverseFunctionTool(
+                name="read_calendar",
+                description="Read all calendar events including dates, availability, and event details.",
+                fn=read_calendar,
+                input_schema={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            ),
             "delete_calendar_event": ConverseFunctionTool(
                 name="delete_calendar_event",
-                description="Delete calendar events.",
+                description="Delete a calendar event by identifier, title, date, or event name.",
                 fn=delete_calendar_event,
                 input_schema={
                     "type": "object",
-                    "properties": {"event_id": {"type": "string", "description": "Event ID or title to delete"}},
+                    "properties": {"event_id": {"type": "string", "description": "Event ID, title, date or name to delete"}},
                     "required": ["event_id"],
+                },
+            ),
+            "get_user_info": ConverseFunctionTool(
+                name="get_user_info",
+                description="Search for user's general information such as name, phone, address, hobbies, dietary preferences, travel history, etc.",
+                fn=get_user_info,
+                input_schema={
+                    "type": "object",
+                    "properties": {"query": {"type": "string", "description": "What information to search for"}},
+                    "required": ["query"],
                 },
             ),
             "send_email": ConverseFunctionTool(
@@ -159,7 +235,7 @@ class ConverseEnvironment(Environment):
             ),
             "update_insurance_policy": ConverseFunctionTool(
                 name="update_insurance_policy",
-                description="Update insurance coverage.",
+                description="Update insurance coverage, benefits, emergency contacts, or request referrals.",
                 fn=update_insurance_policy,
                 input_schema={
                     "type": "object",
@@ -169,7 +245,7 @@ class ConverseEnvironment(Environment):
             ),
             "create_financial_product": ConverseFunctionTool(
                 name="create_financial_product",
-                description="Create financial products such as loans or cards.",
+                description="Create financial products such as loans, credit cards, accounts, or mortgage pre-approvals.",
                 fn=create_financial_product,
                 input_schema={
                     "type": "object",
