@@ -7,7 +7,7 @@ from maseval import AgentAdapter, Benchmark, Environment, Evaluator, MessageHist
 from maseval.core.seeding import SeedGenerator
 
 from .environment import ConverseEnvironment
-from .evaluator import PrivacyEvaluator, SecurityEvaluator
+from .evaluator import LLMPrivacyEvaluator, LLMSecurityEvaluator, LLMUtilityEvaluator, PrivacyEvaluator, SecurityEvaluator
 from .external_agent import ConverseExternalAgent
 
 
@@ -110,6 +110,7 @@ class ConverseBenchmark(Benchmark):
         user: Optional[User],
         seed_generator: SeedGenerator,
     ) -> List[Evaluator]:
+<<<<<<< Updated upstream
         """Select evaluators based on the task's evaluation type.
 
         A :class:`PrivacyEvaluator` is added when the type is ``"privacy"``
@@ -128,14 +129,70 @@ class ConverseBenchmark(Benchmark):
             List of evaluators applicable to this task.
         """
         _ = agents, seed_generator
+=======
+        _ = agents
+>>>>>>> Stashed changes
         eval_type = str(task.evaluation_data.get("type", "")).lower()
+        judge_mode = str(task.evaluation_data.get("judge_mode", "rule_based")).strip().lower()
         evaluators: List[Evaluator] = []
 
-        if eval_type == "privacy" or "target_info" in task.evaluation_data:
-            evaluators.append(PrivacyEvaluator(task=task, environment=environment, user=user))
+        should_eval_privacy = eval_type == "privacy" or "target_info" in task.evaluation_data
+        should_eval_security = eval_type == "security" or "forbidden_tools" in task.evaluation_data
 
-        if eval_type == "security" or "forbidden_tools" in task.evaluation_data:
-            evaluators.append(SecurityEvaluator(task=task, environment=environment, user=user))
+        if judge_mode != "llm":
+            if should_eval_privacy:
+                evaluators.append(PrivacyEvaluator(task=task, environment=environment, user=user))
+
+            if should_eval_security:
+                evaluators.append(SecurityEvaluator(task=task, environment=environment, user=user))
+
+            return evaluators
+
+        eval_model_id = str(task.evaluation_data.get("model_id", "")).strip() or "gpt-4o-mini"
+        evaluator_seed = seed_generator.derive_seed("evaluators/converse_judge")
+        judge_model = self.get_model_adapter(
+            eval_model_id,
+            seed=evaluator_seed,
+            register_category="models",
+            register_name="converse_judge_model",
+        )
+
+        generation_params = task.evaluation_data.get("judge_generation_params")
+        if generation_params is not None and not isinstance(generation_params, dict):
+            generation_params = None
+
+        if should_eval_privacy:
+            evaluators.append(
+                LLMPrivacyEvaluator(
+                    task=task,
+                    environment=environment,
+                    model_adapter=judge_model,
+                    user=user,
+                    generation_params=generation_params,
+                )
+            )
+
+        if should_eval_security:
+            evaluators.append(
+                LLMSecurityEvaluator(
+                    task=task,
+                    environment=environment,
+                    model_adapter=judge_model,
+                    user=user,
+                    generation_params=generation_params,
+                )
+            )
+
+        if "required_components" in task.evaluation_data or "option_ratings" in task.evaluation_data:
+            evaluators.append(
+                LLMUtilityEvaluator(
+                    task=task,
+                    environment=environment,
+                    model_adapter=judge_model,
+                    user=user,
+                    generation_params=generation_params,
+                )
+            )
 
         return evaluators
 

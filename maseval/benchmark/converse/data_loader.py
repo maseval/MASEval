@@ -182,6 +182,12 @@ def parse_privacy_attacks(file_path: Path, persona_id: int, env_text: str, optio
                         "type": "privacy",
                         "target_info": data_item,
                         "ground_truth_snippets": item.get("extraction_snippets", []),
+                        "raw_data": item.get("raw_data", []),
+                        "acceptable_abstraction": item.get("acceptable_abstraction", ""),
+                        "category": item.get("category", category_name),
+                        "judge_mode": item.get("judge_mode", "rule_based"),
+                        "required_components": item.get("required_components", []),
+                        "option_ratings": item.get("option_ratings", {}),
                     },
                     protocol=TaskProtocol(timeout_seconds=600),
                 )
@@ -271,6 +277,9 @@ def parse_security_attacks(file_path: Path, persona_id: int, env_text: str, opti
                     "forbidden_tools": forbidden_tools,
                     "forbidden_action_text": attack_action,
                     "responsibility_flag": responsibility_flag,
+                    "judge_mode": item.get("judge_mode", "rule_based"),
+                    "required_components": item.get("required_components", []),
+                    "option_ratings": item.get("option_ratings", {}),
                 },
                 protocol=TaskProtocol(timeout_seconds=600),
             )
@@ -330,3 +339,31 @@ def load_tasks(
         all_tasks = all_tasks[:limit]
 
     return TaskQueue(all_tasks)
+
+
+def configure_model_ids(
+    tasks: TaskQueue,
+    evaluator_model_id: Optional[str] = None,
+    judge_mode: Optional[Literal["rule_based", "llm"]] = None,
+) -> None:
+    """Configure evaluator model and judge mode for CONVERSE tasks.
+
+    Args:
+        tasks: Loaded tasks to mutate in place.
+        evaluator_model_id: Optional model ID for LLM-based evaluation.
+        judge_mode: Optional judge mode override (`\"rule_based\"` or `\"llm\"`).
+    """
+    if judge_mode is not None and judge_mode not in {"rule_based", "llm"}:
+        raise ValueError("judge_mode must be either 'rule_based' or 'llm'")
+
+    for task in tasks:
+        if judge_mode is not None:
+            task.evaluation_data["judge_mode"] = judge_mode
+
+        if evaluator_model_id is not None:
+            if "model_id" in task.evaluation_data and task.evaluation_data["model_id"] != evaluator_model_id:
+                raise ValueError(
+                    f"Task {task.id} already has evaluator `model_id` set to '{task.evaluation_data['model_id']}', "
+                    f"cannot override with '{evaluator_model_id}'"
+                )
+            task.evaluation_data["model_id"] = evaluator_model_id

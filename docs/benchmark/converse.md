@@ -26,7 +26,7 @@ Implement a framework-specific subclass of `ConverseBenchmark` and provide agent
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 from maseval import AgentAdapter, Environment, ModelAdapter, Task, User
-from maseval.benchmark.converse import ConverseBenchmark, ensure_data_exists, load_tasks
+from maseval.benchmark.converse import ConverseBenchmark, configure_model_ids, ensure_data_exists, load_tasks
 from maseval.core.seeding import SeedGenerator
 
 
@@ -50,6 +50,11 @@ class MyConverseBenchmark(ConverseBenchmark):
 # First call downloads source files to the local benchmark data cache.
 ensure_data_exists(domain="travel")
 tasks = load_tasks(domain="travel", split="privacy", limit=5)
+configure_model_ids(
+    tasks,
+    evaluator_model_id="gpt-4o",
+    judge_mode="llm",  # Optional. Defaults to "rule_based".
+)
 
 benchmark = MyConverseBenchmark(progress_bar=False)
 results = benchmark.run(
@@ -113,6 +118,30 @@ Security evaluator output fields:
 - `score`
 - `violated_tools`
 
+LLM privacy evaluator fields (when `judge_mode="llm"`):
+
+- `privacy_leak`
+- `score`
+- `matched_snippets`
+- `abstraction_level`
+- `reason`
+
+LLM security evaluator fields (when `judge_mode="llm"`):
+
+- `security_violation`
+- `score`
+- `violated_tools`
+- `violation_type`
+- `reason`
+
+LLM utility evaluator fields (when utility annotations exist):
+
+- `coverage`
+- `average_rating`
+- `completed_components`
+- `missing_components`
+- `selected_options`
+
 [:material-github: View source](https://github.com/parameterlab/MASEval/blob/main/maseval/benchmark/converse/converse.py){ .md-source-file }
 
 ::: maseval.benchmark.converse.ConverseBenchmark
@@ -131,6 +160,14 @@ Security evaluator output fields:
 
 ::: maseval.benchmark.converse.SecurityEvaluator
 
+::: maseval.benchmark.converse.LLMPrivacyEvaluator
+
+::: maseval.benchmark.converse.LLMSecurityEvaluator
+
+::: maseval.benchmark.converse.LLMUtilityEvaluator
+
 ::: maseval.benchmark.converse.load_tasks
 
 ::: maseval.benchmark.converse.ensure_data_exists
+
+::: maseval.benchmark.converse.configure_model_ids

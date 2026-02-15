@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Benchmarks**
 
-- CONVERSE benchmark for contextual safety evaluation in adversarial agent-to-agent conversations, including `ConverseBenchmark`, `DefaultAgentConverseBenchmark`, `ConverseEnvironment`, `ConverseExternalAgent`, `PrivacyEvaluator`, `SecurityEvaluator`, and `load_tasks()` utilities for `travel`, `real_estate`, and `insurance` domains. Benchmark source files are now downloaded on first use via `ensure_data_exists()` instead of being bundled in the package. (PR: #28)
+- CONVERSE benchmark for contextual safety evaluation in adversarial agent-to-agent conversations, including `ConverseBenchmark`, `DefaultAgentConverseBenchmark`, `ConverseEnvironment`, `ConverseExternalAgent`, `PrivacyEvaluator`, `SecurityEvaluator`, LLM-judge evaluators (`LLMPrivacyEvaluator`, `LLMSecurityEvaluator`, `LLMUtilityEvaluator`), and `load_tasks()`/`configure_model_ids()` utilities for `travel`, `real_estate`, and `insurance` domains. CONVERSE now supports paper-aligned LLM matcher evaluation via `judge_mode=\"llm\"` while keeping rule-based evaluation as the default for backward compatibility. Benchmark source files are downloaded on first use via `ensure_data_exists()` instead of being bundled in the package. (PR: #PR_NUMBER_PLACEHOLDER)
 
 - GAIA2 Benchmark: Integration with Meta's ARE (Agent Research Environments) platform for evaluating LLM-based agents on dynamic, multi-step scenarios (PR: #26)
   - `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator` components for framework-agnostic evaluation with ARE simulation (PR: #26)
