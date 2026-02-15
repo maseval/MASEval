@@ -1,7 +1,9 @@
 """Tests for MultiAgentBench benchmark classes."""
 
+import sys
+
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from maseval import Task
 from maseval.benchmark.multiagentbench import (
@@ -9,6 +11,8 @@ from maseval.benchmark.multiagentbench import (
     MultiAgentBenchEnvironment,
     MultiAgentBenchEvaluator,
 )
+
+pytestmark = pytest.mark.benchmark
 
 
 class TestMultiAgentBenchBenchmark:
@@ -450,10 +454,18 @@ class TestMarbleMultiAgentBenchBenchmark:
         benchmark = marble_benchmark_class(progress_bar=False)
         env = benchmark.setup_environment({}, sample_research_task, seed_gen)
 
-        with pytest.raises(ImportError, match="MARBLE is not available"):
-            benchmark.setup_agents({}, env, sample_research_task, None, seed_gen)
+        # Temporarily remove marble modules to simulate MARBLE not being available
+        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
+        for module_name in marble_modules:
+            sys.modules.pop(module_name, None)
 
-    @pytest.mark.xfail(reason="MARBLE is vendored and always available; test assumes it is not installed")
+        try:
+            with patch.dict("sys.modules", {"marble.agent.base_agent": None}):
+                with pytest.raises(ImportError, match="MARBLE is not available"):
+                    benchmark.setup_agents({}, env, sample_research_task, None, seed_gen)
+        finally:
+            sys.modules.update(marble_modules)
+
     def test_create_marble_env_raises_import_error(
         self,
         marble_benchmark_class,
@@ -462,19 +474,36 @@ class TestMarbleMultiAgentBenchBenchmark:
         """_create_marble_env should raise ImportError when MARBLE not available."""
         benchmark = marble_benchmark_class(progress_bar=False)
 
-        with pytest.raises(ImportError, match="MARBLE is not available"):
-            benchmark._create_marble_env(sample_research_task)
+        # Mock MARBLE import to simulate it not being available
+        # Temporarily remove marble modules from sys.modules
+        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
+        for module_name in marble_modules:
+            sys.modules.pop(module_name, None)
 
-    def test_setup_agent_graph_silently_fails(
+        try:
+            # Patch the import to raise ImportError
+            with patch.dict("sys.modules", {"marble.environments.base_env": None}):
+                with pytest.raises(ImportError, match="MARBLE is not available"):
+                    benchmark._create_marble_env(sample_research_task)
+        finally:
+            # Restore marble modules
+            sys.modules.update(marble_modules)
+
+    def test_setup_agent_graph_with_missing_agents_raises(
         self,
         marble_benchmark_class,
         sample_research_task: Task,
     ):
-        """_setup_agent_graph should not raise when MARBLE not available."""
+        """_setup_agent_graph should raise when agents referenced in relationships don't exist."""
         benchmark = marble_benchmark_class(progress_bar=False)
 
-        # Should not raise, just return silently
-        benchmark._setup_agent_graph({}, sample_research_task, None)
+        # Mock AgentGraph so this test works without MARBLE installed.
+        # The real AgentGraph validates that relationship agents exist; simulate that.
+        mock_agent_graph_cls = MagicMock(side_effect=ValueError("Agent 'agent1' does not exist in the graph"))
+
+        with patch.dict("sys.modules", {"marble.graph.agent_graph": MagicMock(AgentGraph=mock_agent_graph_cls)}):
+            with pytest.raises(ValueError, match="does not exist"):
+                benchmark._setup_agent_graph({}, sample_research_task, None)
 
     def test_run_agents_returns_structured_output(
         self,
@@ -640,3 +669,68 @@ class TestBenchmarkWithEmptyAgents:
 
         assert len(agents_list) == 0
         assert len(agents_dict) == 0
+
+
+# =============================================================================
+# MarbleAgentAdapter Tests
+# =============================================================================
+
+
+class TestMarbleAgentAdapterTraces:
+    """Tests for MarbleAgentAdapter.gather_traces() structure."""
+
+    def test_gather_traces_includes_all_fields(self):
+        """gather_traces should include all MARBLE-specific trace fields."""
+        from maseval.benchmark.multiagentbench.adapters.marble_adapter import MarbleAgentAdapter
+
+        mock_marble = MagicMock()
+        mock_marble.profile = "Expert in NLP"
+        mock_marble.get_token_usage.return_value = 500
+        mock_marble.relationships = {"agent2": "collaborates"}
+        mock_marble.task_history = [{"task": "research", "result": "done"}]
+        mock_marble.memory = MagicMock()
+        mock_marble.memory.get_memory_str.return_value = "past context"
+
+        adapter = MarbleAgentAdapter(marble_agent=mock_marble, agent_id="nlp_agent")
+        traces = adapter.gather_traces()
+
+        assert traces["agent_id"] == "nlp_agent"
+        assert traces["profile"] == "Expert in NLP"
+        assert traces["token_usage"] == 500
+        assert traces["action_log"] == []
+        assert traces["communication_log"] == []
+        assert traces["memory"] == "past context"
+        assert traces["relationships"] == {"agent2": "collaborates"}
+        assert traces["task_history"] == [{"task": "research", "result": "done"}]
+
+    def test_gather_traces_handles_missing_attributes(self):
+        """gather_traces should handle MARBLE agents with missing optional attributes."""
+        from maseval.benchmark.multiagentbench.adapters.marble_adapter import MarbleAgentAdapter
+
+        # Agent with no optional attributes
+        mock_marble = MagicMock(spec=[])
+        adapter = MarbleAgentAdapter(marble_agent=mock_marble, agent_id="basic_agent")
+        traces = adapter.gather_traces()
+
+        assert traces["agent_id"] == "basic_agent"
+        assert traces["token_usage"] == 0
+        assert traces["memory"] == ""
+        assert traces["relationships"] == {}
+        assert traces["task_history"] == []
+
+    def test_gather_config_includes_all_fields(self):
+        """gather_config should include agent configuration fields."""
+        from maseval.benchmark.multiagentbench.adapters.marble_adapter import MarbleAgentAdapter
+
+        mock_marble = MagicMock()
+        mock_marble.profile = "Data analyst"
+        mock_marble.strategy = "divide_and_conquer"
+        mock_marble.llm = "gpt-4o"
+
+        adapter = MarbleAgentAdapter(marble_agent=mock_marble, agent_id="data_agent")
+        config = adapter.gather_config()
+
+        assert config["agent_id"] == "data_agent"
+        assert config["profile"] == "Data analyst"
+        assert config["strategy"] == "divide_and_conquer"
+        assert config["llm"] == "gpt-4o"

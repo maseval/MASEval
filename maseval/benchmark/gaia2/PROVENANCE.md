@@ -44,16 +44,16 @@ MASEval provides:
 
 | MASEval Method                   | ARE Method/Component                  | Notes                                |
 | -------------------------------- | ------------------------------------- | ------------------------------------ |
-| `Gaia2Environment.setup_state()` | `Environment.initialize_scenario()`   | Initializes ARE simulation           |
+| `Gaia2Environment.setup_state()` | `Environment.run(scenario, wait_for_end=False)` | Starts ARE simulation in background  |
 | `Gaia2Environment.create_tools()`| `App.get_tools()` for all apps        | Wraps all app tools with tracing     |
 | `Gaia2Environment.cleanup()`     | `Environment.stop()`                  | Ensures proper resource cleanup      |
-| `get_simulation_time()`          | `TimeManager.current_time`            | Exposes simulation time for tracing  |
+| `get_simulation_time()`          | `Environment.current_time`            | Exposes simulation time for tracing  |
 
 ### Evaluator Integration
 
 | MASEval Method                  | ARE Component                           | Notes                                |
 | ------------------------------- | --------------------------------------- | ------------------------------------ |
-| `Gaia2Evaluator.__call__()`     | `GraphPerEventJudge.evaluate()`         | Delegates to ARE's deterministic judge |
+| `Gaia2Evaluator.__call__()`     | `GraphPerEventJudge.validate(env)`      | Delegates to ARE's deterministic judge |
 | `filter_traces()`               | N/A                                     | MASEval-specific trace extraction    |
 | `compute_gaia2_metrics()`       | N/A                                     | MASEval-specific metrics aggregation |
 
@@ -73,16 +73,15 @@ Scenarios are loaded from HuggingFace:
 https://huggingface.co/datasets/meta-agents-research-environments/gaia2
 ```
 
-| Config      | Description                                | Split      |
-| ----------- | ------------------------------------------ | ---------- |
-| `validation`| Full validation set (all capabilities)     | validation |
-| `execution` | Execution capability only                  | validation |
-| `search`    | Search capability only                     | validation |
-| `adaptability` | Adaptability capability only            | validation |
-| `time`      | Temporal reasoning only                    | validation |
-| `ambiguity` | Ambiguity handling only                    | validation |
-| `agent2agent` | Multi-agent collaboration only           | validation |
-| `noise`     | Noise handling only                        | validation |
+Revision: `78ea3bdbdeec2bdcd6afa5420915d8a22f23ed99`
+
+| Config         | Description                    | Split      |
+| -------------- | ------------------------------ | ---------- |
+| `execution`    | Execution capability only      | validation |
+| `search`       | Search capability only         | validation |
+| `adaptability` | Adaptability capability only   | validation |
+| `time`         | Temporal reasoning only        | validation |
+| `ambiguity`    | Ambiguity handling only        | validation |
 
 ## MASEval-Specific Additions
 

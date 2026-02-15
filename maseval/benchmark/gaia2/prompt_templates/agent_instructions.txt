@@ -50,7 +50,3 @@ Action:
 Observation: The current temperature in Paris is 20 degrees Celsius and the weather is sunny.
 
 ============================
-EXECUTION GUIDELINES:
-Take one action at a time and complete the thought/action/observation cycle before proceeding. Never generate the Observation field - it will be provided after each action.
-If an action fails, analyze the error and try a different approach. Don't call tools unnecessarily - use your reasoning when you can solve something directly.
-Continue iterating until the task is complete or you determine it's impossible with available tools. Pay attention to tool outputs and use them to inform subsequent actions.

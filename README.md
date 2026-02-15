@@ -13,6 +13,7 @@
 [![PyPI version](https://badge.fury.io/py/maseval.svg)](https://badge.fury.io/py/maseval)
 [![Documentation](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://maseval.readthedocs.io/en/stable/)
 [![Tests](https://github.com/parameterlab/MASEval/actions/workflows/test.yml/badge.svg)](https://github.com/parameterlab/MASEval/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/parameterlab/MASEval/graph/badge.svg?token=HMFU71QVB2)](https://codecov.io/gh/parameterlab/MASEval)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 MASEval is an evaluation library that provides a unified interface for benchmarking (multi-)agent systems. It offers standardized abstractions for running any agent implementation—whether built with AutoGen, LangChain, custom frameworks, or direct API calls—against established benchmarks like GAIA and AgentBench, or your own custom evaluation tasks.

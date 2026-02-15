@@ -6,7 +6,11 @@ Framework-agnostic implementation of the MultiAgentBench benchmark suite from MA
 **Original Paper**: "MultiAgentBench: Evaluating the Collaboration and Competition of LLM agents"
 (arXiv:2503.01935)
 
-**Original Repository**: https://github.com/ulab-uiuc/MARBLE
+**Original Repository**: https://github.com/ulab-uiuc/MARBLE (where the original work was done)
+
+**Fork Used**: https://github.com/cemde/MARBLE (contains bug fixes for MASEval integration)
+
+> **Note**: We use a fork of MARBLE that contains critical bug fixes needed for integration. All credit for the original work goes to the MARBLE team (Zhu et al., 2025).
 
 ## Setup
 
@@ -33,7 +37,7 @@ If you prefer to clone manually:
 
 ```bash
 cd maseval/benchmark/multiagentbench
-git clone https://github.com/ulab-uiuc/MARBLE.git marble
+git clone https://github.com/cemde/MARBLE.git marble
 cd marble
 # Pin to tested version (recommended)
 git checkout <pinned-commit-hash>
@@ -133,24 +137,24 @@ for result in results:
 
 ## Domains
 
-MultiAgentBench includes 7 domains with different requirements:
+MultiAgentBench includes 6 domains with different requirements:
 
-| Domain          | External Dependencies | Initial Support |
-| --------------- | --------------------- | --------------- |
-| Research        | None                  | Yes             |
-| Bargaining      | None                  | Yes             |
-| Coding          | Filesystem access     | Yes             |
-| Web             | Network access        | Yes             |
-| WorldSimulation | None                  | Yes             |
-| Database        | Docker + PostgreSQL   | Optional        |
-| Minecraft       | External game server  | Deferred        |
+| Domain     | External Dependencies                 | Support  |
+| ---------- | ------------------------------------- | -------- |
+| Research   | None                                  | Full     |
+| Bargaining | None                                  | Full     |
+| Coding     | Filesystem access                     | Full     |
+| Werewolf   | None                                  | Full     |
+| Database   | Docker with PostgreSQL image          | Full     |
+| Minecraft  | Minecraft Server 1.19.2, Node.js, npm | Untested |
 
 ### Domain-Specific Notes
 
 - **Research/Bargaining**: Recommended for initial testing - no infrastructure required
 - **Coding**: Creates files in a workspace directory
-- **Database**: Requires Docker with PostgreSQL image
-- **Minecraft**: Not currently supported (requires external game server)
+- **Werewolf**: Config-based social deduction game (no JSONL task data; uses MARBLE's WerewolfEnv engine)
+- **Database**: Requires Docker with a PostgreSQL image. Ensure Docker is installed and running before using this domain.
+- **Minecraft**: **Untested.** Requires a running Minecraft Server (version 1.19.2) on `localhost:25565`, plus Node.js and npm for the Mineflayer bot framework. MARBLE's MinecraftEnvironment connects real Minecraft bots to the server over the Minecraft protocol. You must set up and run your own Minecraft server before using this domain. See the MARBLE documentation for full server setup instructions.
 
 ## Known Limitations
 

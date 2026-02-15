@@ -17,11 +17,10 @@ FUNDAMENTAL RULES FOR TASK EXECUTION:
 5. INFORMATION: Use available tools to gather missing information before asking user.
 6. AMBIGUITY: Execute all clear and unambiguous parts of a request immediately. When you encounter ambiguities, contradictions, or impossible elements, finish unambiguous subtasks and then stop and explicitly ask the user for clarification before proceeding with those specific parts.
 
-NOTIFICATION SYSTEM:
-The environment has a notification system. When you need to wait for something (e.g., a response from another user, a scheduled event), use the SystemApp__wait_for_notification tool. This will advance simulation time and return any notifications that occur.
+{environment_hints}
 
-TIME AWARENESS:
-Use SystemApp__get_current_time to check the current time when needed for scheduling or time-sensitive tasks.
+<<notification_system_description>>
 
-TASK COMPLETION:
-When you have completed the task, use AgentUserInterface__send_message_to_user to send your final response to the user.
+<<agent_reminder_description>>
+
+<<curent_time_description>>

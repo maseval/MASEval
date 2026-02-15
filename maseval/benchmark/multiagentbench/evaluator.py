@@ -14,6 +14,11 @@ from maseval import Evaluator, ModelAdapter
 # Using None instead of -1 to avoid confusion with valid scores
 SCORE_NOT_EVALUATED: None = None
 
+# Default per-agent result truncation length (in characters) before LLM summarization.
+# Matches MARBLE's _summarize_results() in engine.py which truncates each formatted
+# result line to 1000 characters. Set to None to disable truncation and LLM summarization.
+DEFAULT_RESULT_TRUNCATION_LENGTH = 1000
+
 
 @dataclass
 class MultiAgentBenchMetrics:
@@ -70,6 +75,7 @@ class MultiAgentBenchEvaluator(Evaluator):
         model_adapter: ModelAdapter,
         metrics_config: Optional[Dict[str, Any]] = None,
         output_format: str = "",
+        result_truncation_length: Optional[int] = DEFAULT_RESULT_TRUNCATION_LENGTH,
     ):
         """Initialize the evaluator.
 
@@ -78,11 +84,19 @@ class MultiAgentBenchEvaluator(Evaluator):
             model_adapter: Model adapter for LLM evaluation
             metrics_config: Configuration for evaluation metrics
             output_format: Expected output format for task evaluation
+            result_truncation_length: Maximum characters per agent result before LLM
+                summarization. Matches MARBLE's ``_summarize_results()`` which truncates
+                each result to 1000 chars, then passes the truncated output through an
+                LLM summarization call (``planner.summarize_output()``). Set to ``None``
+                to disable both truncation and LLM summarization, passing raw agent
+                results directly to the evaluator (not recommended for domains with
+                large outputs like research).
         """
         self.domain = domain.lower()
         self.model_adapter = model_adapter
         self.metrics_config = metrics_config or {}
         self.output_format = output_format
+        self.result_truncation_length = result_truncation_length
         self._evaluation_prompts = self._load_evaluation_prompts()
 
     def _load_template(self, filename: str) -> str:
@@ -117,6 +131,16 @@ class MultiAgentBenchEvaluator(Evaluator):
             "coding": {
                 "task_evaluation": {
                     "prompt": self._load_template("coding.txt"),
+                }
+            },
+            "werewolf": {
+                "task_evaluation": {
+                    "prompt": self._load_template("werewolf.txt"),
+                }
+            },
+            "minecraft": {
+                "task_evaluation": {
+                    "prompt": self._load_template("minecraft.txt"),
                 }
             },
         }
@@ -206,16 +230,30 @@ class MultiAgentBenchEvaluator(Evaluator):
 
         # Domain-specific evaluation
         task_desc = self._get_task_description(traces)
-        final_result = self._format_final_answer(final_answer)
+
+        # MARBLE-compatible result summarization: truncate per-agent results then
+        # pass through an LLM summarization call before domain evaluation. This
+        # prevents token explosions for domains with large outputs (e.g. research).
+        # See MARBLE's Engine._summarize_results() and EnginePlanner.summarize_output().
+        agent_results = self._extract_agent_results(final_answer)
+        if self.result_truncation_length is not None and agent_results:
+            truncated = self._summarize_results(agent_results)
+            final_result = self._summarize_output(truncated, task_desc, self.output_format)
+        else:
+            final_result = self._format_final_answer(final_answer)
 
         if self.domain == "research":
             metrics.task_evaluation = self._evaluate_research(task_desc, final_result)
-        elif self.domain in ("bargaining", "worldsimulation"):
+        elif self.domain == "bargaining":
             metrics.task_evaluation = self._evaluate_bargaining(task_desc, final_result)
         elif self.domain == "coding":
             metrics.task_evaluation = self._evaluate_coding(task_desc, final_result)
         elif self.domain == "database":
             metrics.task_evaluation = self._evaluate_database(task_desc, final_result)
+        elif self.domain == "werewolf":
+            metrics.task_evaluation = self._evaluate_werewolf(task_desc, final_result)
+        elif self.domain == "minecraft":
+            metrics.task_evaluation = self._evaluate_minecraft(task_desc, final_result)
         else:
             # Default: check if task has a completion marker
             metrics.task_completion = bool(final_result)
@@ -235,6 +273,23 @@ class MultiAgentBenchEvaluator(Evaluator):
         state = env_traces.get("marble_state", {})
         return state.get("task_description", "")
 
+    def _extract_agent_results(self, final_answer: Any) -> List[Dict[str, Any]]:
+        """Extract the agent_results list from final_answer, if present.
+
+        Args:
+            final_answer: Final output from agents (dict, list, str, or None).
+
+        Returns:
+            List of agent result dicts, or empty list if not extractable.
+        """
+        if isinstance(final_answer, dict):
+            results = final_answer.get("agent_results", [])
+            if results and isinstance(results, list):
+                return results
+        elif isinstance(final_answer, list):
+            return [r for r in final_answer if isinstance(r, dict)]
+        return []
+
     def _format_final_answer(self, final_answer: Any) -> str:
         """Format final answer for evaluation."""
         if isinstance(final_answer, dict):
@@ -246,6 +301,57 @@ class MultiAgentBenchEvaluator(Evaluator):
         elif isinstance(final_answer, list):
             return "\n".join(f"[{r.get('agent_id', 'unknown')}]: {r.get('result', '')}" for r in final_answer if isinstance(r, dict))
         return str(final_answer) if final_answer else ""
+
+    def _summarize_results(self, agent_results: List[Dict[str, Any]]) -> str:
+        """Truncate and concatenate agent results for LLM summarization.
+
+        Matches MARBLE's ``Engine._summarize_results()`` (engine.py). Each agent's
+        result is formatted as ``"- {result}"`` and truncated to
+        ``self.result_truncation_length`` characters before concatenation.
+
+        Args:
+            agent_results: List of dicts with ``agent_id`` and ``result`` keys,
+                as returned in ``final_answer["agent_results"]``.
+
+        Returns:
+            Concatenated summary string with truncated per-agent results.
+        """
+        summary = "Agents' Results Summary:\n"
+        for entry in agent_results:
+            result_str = str(entry.get("result", ""))
+            line = f"- {result_str}"
+            assert self.result_truncation_length is not None
+            summary += f"{line[: self.result_truncation_length]}\n"
+        return summary
+
+    def _summarize_output(self, summary: str, task: str, output_format: str) -> str:
+        """Summarize truncated agent results via LLM call.
+
+        Matches MARBLE's ``EnginePlanner.summarize_output()`` (engine_planner.py).
+        Uses temperature=0.0 and max_tokens=2048 for deterministic, compact output.
+
+        Note:
+            The prompt text preserves MARBLE's original wording (including the
+            ``"thr"`` typo) to maintain reproduction fidelity with the reference
+            implementation.
+
+        Args:
+            summary: Truncated results string from ``_summarize_results()``.
+            task: Task description string.
+            output_format: Expected JSON output format specification.
+
+        Returns:
+            LLM-generated summary string.
+        """
+        prompt = (
+            f"Summarize the output of the agents for the task: {task}\n\n"
+            f"Now here is some result of thr agent: {summary}, please analyze it. "
+            f"Return the final output into a json following the format: {output_format}"
+        )
+        return self.model_adapter.generate(
+            prompt,
+            generation_params={"temperature": 0.0, "max_tokens": 2048},
+        )
 
     def _calculate_token_consumption(self, traces: Dict[str, Any]) -> int:
         """Calculate total token consumption."""
@@ -259,27 +365,21 @@ class MultiAgentBenchEvaluator(Evaluator):
 
         return total
 
-    def _evaluate_communication(self, task: str, communications: str) -> Optional[float]:
+    def _evaluate_communication(self, task: str, communications: str) -> float:
         """Evaluate communication quality using LLM."""
         prompt_template = self._evaluation_prompts["communication"]["prompt"]
         prompt = prompt_template.format(task=task, communications=communications)
 
-        try:
-            response = self.model_adapter.generate(prompt)
-            return self._parse_score(response)
-        except Exception:
-            return None
+        response = self.model_adapter.generate(prompt)
+        return self._parse_score(response)
 
     def _evaluate_research(self, task: str, result: str) -> Dict[str, Any]:
         """Evaluate research task output."""
         prompt_template = self._evaluation_prompts["research"]["task_evaluation"]["prompt"]
         prompt = prompt_template.format(task=task, result=result)
 
-        try:
-            response = self.model_adapter.generate(prompt)
-            return self._parse_research_ratings(response)
-        except Exception:
-            return {"innovation": None, "safety": None, "feasibility": None}
+        response = self.model_adapter.generate(prompt)
+        return self._parse_research_ratings(response)
 
     def _evaluate_bargaining(self, task: str, result: str) -> Dict[str, Any]:
         """Evaluate bargaining/world simulation task output."""
@@ -287,29 +387,13 @@ class MultiAgentBenchEvaluator(Evaluator):
         buyer_prompt = self._evaluation_prompts["bargaining"]["task_evaluation"]["buyer_prompt"]
         seller_prompt = self._evaluation_prompts["bargaining"]["task_evaluation"]["seller_prompt"]
 
-        ratings = {"buyer": {}, "seller": {}}
+        buyer_response = self.model_adapter.generate(buyer_prompt.format(task=task, result=result))
+        seller_response = self.model_adapter.generate(seller_prompt.format(task=task, result=result))
 
-        try:
-            buyer_response = self.model_adapter.generate(buyer_prompt.format(task=task, result=result))
-            ratings["buyer"] = self._parse_bargaining_ratings(buyer_response)
-        except Exception:
-            ratings["buyer"] = {
-                "effectiveness_of_strategies": None,
-                "progress_and_outcome": None,
-                "interaction_dynamics": None,
-            }
-
-        try:
-            seller_response = self.model_adapter.generate(seller_prompt.format(task=task, result=result))
-            ratings["seller"] = self._parse_bargaining_ratings(seller_response)
-        except Exception:
-            ratings["seller"] = {
-                "effectiveness_of_strategies": None,
-                "progress_and_outcome": None,
-                "interaction_dynamics": None,
-            }
-
-        return ratings
+        return {
+            "buyer": self._parse_bargaining_ratings(buyer_response),
+            "seller": self._parse_bargaining_ratings(seller_response),
+        }
 
     def _evaluate_coding(self, task: str, result: str) -> Dict[str, Any]:
         """Evaluate coding task output."""
@@ -323,16 +407,8 @@ class MultiAgentBenchEvaluator(Evaluator):
             solution=result,
         )
 
-        try:
-            response = self.model_adapter.generate(prompt)
-            return self._parse_coding_ratings(response)
-        except Exception:
-            return {
-                "instruction_following": None,
-                "executability": None,
-                "consistency": None,
-                "quality": None,
-            }
+        response = self.model_adapter.generate(prompt)
+        return self._parse_coding_ratings(response)
 
     def _evaluate_database(self, task: str, result: str) -> Dict[str, Any]:
         """Evaluate database task output.
@@ -345,141 +421,224 @@ class MultiAgentBenchEvaluator(Evaluator):
             "root_cause": [],  # Would be filled from task data
         }
 
-    def _parse_score(self, response: str) -> Optional[float]:
+    def _evaluate_werewolf(self, task: str, result: str) -> Dict[str, Any]:
+        """Evaluate werewolf game output."""
+        prompt_template = self._evaluation_prompts["werewolf"]["task_evaluation"]["prompt"]
+        prompt = prompt_template.format(task=task, result=result)
+
+        response = self.model_adapter.generate(prompt)
+        return self._parse_werewolf_ratings(response)
+
+    def _evaluate_minecraft(self, task: str, result: str) -> Dict[str, Any]:
+        """Evaluate minecraft building task output.
+
+        Warning:
+            Minecraft evaluation is untested. It requires a running Minecraft
+            Server (1.19.2) and Node.js/npm for Mineflayer bot dependencies.
+        """
+        prompt_template = self._evaluation_prompts["minecraft"]["task_evaluation"]["prompt"]
+        prompt = prompt_template.format(task=task, result=result)
+
+        response = self.model_adapter.generate(prompt)
+        return self._parse_minecraft_ratings(response)
+
+    def _parse_score(self, response: str) -> float:
         """Parse a single score from LLM response.
 
         Returns:
-            Score as float (1-5), or None if parsing fails
+            Score as float (1-5)
+
+        Raises:
+            ValueError: If the response cannot be parsed into a valid score
         """
-        try:
-            content = response.strip()
+        content = response.strip()
 
-            # Remove markdown code block markers
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
+        # Remove markdown code block markers
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
 
-            # Find JSON object
-            json_start = content.find("{")
-            json_end = content.rfind("}") + 1
+        # Find JSON object
+        json_start = content.find("{")
+        json_end = content.rfind("}") + 1
 
-            if json_start >= 0 and json_end > json_start:
-                json_str = content[json_start:json_end]
-                rating_data = json.loads(json_str)
-                if isinstance(rating_data, dict) and "rating" in rating_data:
-                    score = int(rating_data["rating"])
-                    if 1 <= score <= 5:
-                        return float(score)
+        if json_start < 0 or json_end <= json_start:
+            raise ValueError(f"No JSON object found in evaluator response: {response!r}")
 
-            return None
+        json_str = content[json_start:json_end]
+        rating_data = json.loads(json_str)
 
-        except Exception:
-            return None
+        if not isinstance(rating_data, dict) or "rating" not in rating_data:
+            raise ValueError(f"Expected {{'rating': ...}} in evaluator response, got: {rating_data!r}")
 
-    def _parse_research_ratings(self, response: str) -> Dict[str, Optional[int]]:
-        """Parse research evaluation ratings."""
-        try:
-            content = response.strip()
-            json_start = content.find("{")
-            json_end = content.rfind("}") + 1
+        score = int(rating_data["rating"])
+        if not 1 <= score <= 5:
+            raise ValueError(f"Score {score} out of valid range 1-5 in evaluator response")
 
-            if json_start >= 0 and json_end > json_start:
-                json_str = content[json_start:json_end]
-                ratings = json.loads(json_str)
-                return {k: int(v) for k, v in ratings.items()}
-        except Exception:
-            pass
+        return float(score)
 
-        return {"innovation": None, "safety": None, "feasibility": None}
+    def _parse_research_ratings(self, response: str) -> Dict[str, int]:
+        """Parse research evaluation ratings.
 
-    def _parse_bargaining_ratings(self, response: str) -> Dict[str, Optional[int]]:
-        """Parse bargaining evaluation ratings."""
-        try:
-            content = response.strip()
-            json_start = content.find("{")
-            json_end = content.rfind("}") + 1
+        Raises:
+            ValueError: If the response cannot be parsed into valid ratings
+        """
+        content = response.strip()
+        json_start = content.find("{")
+        json_end = content.rfind("}") + 1
 
-            if json_start >= 0 and json_end > json_start:
-                json_str = content[json_start:json_end]
-                ratings = json.loads(json_str)
-                return {
-                    "effectiveness_of_strategies": int(ratings["effectiveness_of_strategies"])
-                    if "effectiveness_of_strategies" in ratings
-                    else None,
-                    "progress_and_outcome": int(ratings["progress_and_outcome"]) if "progress_and_outcome" in ratings else None,
-                    "interaction_dynamics": int(ratings["interaction_dynamics"]) if "interaction_dynamics" in ratings else None,
-                }
-        except Exception:
-            pass
+        if json_start < 0 or json_end <= json_start:
+            raise ValueError(f"No JSON object found in evaluator response: {response!r}")
 
+        json_str = content[json_start:json_end]
+        ratings = json.loads(json_str)
+        return {k: int(v) for k, v in ratings.items()}
+
+    def _parse_bargaining_ratings(self, response: str) -> Dict[str, int]:
+        """Parse bargaining evaluation ratings.
+
+        Raises:
+            ValueError: If the response cannot be parsed into valid ratings
+        """
+        content = response.strip()
+        json_start = content.find("{")
+        json_end = content.rfind("}") + 1
+
+        if json_start < 0 or json_end <= json_start:
+            raise ValueError(f"No JSON object found in evaluator response: {response!r}")
+
+        json_str = content[json_start:json_end]
+        ratings = json.loads(json_str)
         return {
-            "effectiveness_of_strategies": None,
-            "progress_and_outcome": None,
-            "interaction_dynamics": None,
+            "effectiveness_of_strategies": int(ratings["effectiveness_of_strategies"]),
+            "progress_and_outcome": int(ratings["progress_and_outcome"]),
+            "interaction_dynamics": int(ratings["interaction_dynamics"]),
         }
 
-    def _parse_coding_ratings(self, response: str) -> Dict[str, Optional[int]]:
-        """Parse coding evaluation ratings."""
-        try:
-            content = response.strip()
-            json_start = content.find("{")
-            json_end = content.rfind("}") + 1
+    def _parse_coding_ratings(self, response: str) -> Dict[str, int]:
+        """Parse coding evaluation ratings.
 
-            if json_start >= 0 and json_end > json_start:
-                json_str = content[json_start:json_end]
-                ratings = json.loads(json_str)
-                return {
-                    "instruction_following": int(ratings["instruction_following"]) if "instruction_following" in ratings else None,
-                    "executability": int(ratings["executability"]) if "executability" in ratings else None,
-                    "consistency": int(ratings["consistency"]) if "consistency" in ratings else None,
-                    "quality": int(ratings["quality"]) if "quality" in ratings else None,
-                }
-        except Exception:
-            pass
+        Raises:
+            ValueError: If the response cannot be parsed into valid ratings
+        """
+        content = response.strip()
+        json_start = content.find("{")
+        json_end = content.rfind("}") + 1
 
+        if json_start < 0 or json_end <= json_start:
+            raise ValueError(f"No JSON object found in evaluator response: {response!r}")
+
+        json_str = content[json_start:json_end]
+        ratings = json.loads(json_str)
         return {
-            "instruction_following": None,
-            "executability": None,
-            "consistency": None,
-            "quality": None,
+            "instruction_following": int(ratings["instruction_following"]),
+            "executability": int(ratings["executability"]),
+            "consistency": int(ratings["consistency"]),
+            "quality": int(ratings["quality"]),
         }
+
+    def _parse_werewolf_ratings(self, response: str) -> Dict[str, int]:
+        """Parse werewolf evaluation ratings.
+
+        Raises:
+            ValueError: If the response cannot be parsed into valid ratings
+        """
+        keys = [
+            "game_outcome",
+            "deception_detection",
+            "voting_strategy",
+            "role_fulfillment",
+            "information_usage",
+            "collaboration",
+            "survival_rate",
+        ]
+        content = response.strip()
+        json_start = content.find("{")
+        json_end = content.rfind("}") + 1
+
+        if json_start < 0 or json_end <= json_start:
+            raise ValueError(f"No JSON object found in evaluator response: {response!r}")
+
+        json_str = content[json_start:json_end]
+        ratings = json.loads(json_str)
+        return {k: int(ratings[k]) for k in keys}
+
+    def _parse_minecraft_ratings(self, response: str) -> Dict[str, int]:
+        """Parse minecraft evaluation ratings.
+
+        Raises:
+            ValueError: If the response cannot be parsed into valid ratings
+        """
+        keys = [
+            "structural_completeness",
+            "blueprint_accuracy",
+            "coordination",
+            "efficiency",
+        ]
+        content = response.strip()
+        json_start = content.find("{")
+        json_end = content.rfind("}") + 1
+
+        if json_start < 0 or json_end <= json_start:
+            raise ValueError(f"No JSON object found in evaluator response: {response!r}")
+
+        json_str = content[json_start:json_end]
+        ratings = json.loads(json_str)
+        return {k: int(ratings[k]) for k in keys}
 
     def _determine_completion(self, metrics: MultiAgentBenchMetrics) -> bool:
         """Determine if task was completed based on metrics.
 
-        A task is considered completed if all required scores are present (not None)
-        and positive (> 0).
+        For LLM-evaluated domains, scores are always positive ints if we reach this
+        point (parse failures raise before getting here), so this just checks > 0.
         """
         eval_data = metrics.task_evaluation
 
         if not eval_data:
             return False
 
-        def _all_scores_valid(scores: List[Any]) -> bool:
-            """Check all scores are present and positive."""
+        # Parse methods guarantee int scores or raise, so None checks are
+        # prob dead code — remove later if no edge cases surface.
+        def _all_scores_positive(scores: List[Any]) -> bool:
             return all(s is not None and s > 0 for s in scores)
 
         if self.domain == "research":
-            scores = [eval_data.get(k) for k in ["innovation", "safety", "feasibility"]]
-            return _all_scores_valid(scores)
+            return _all_scores_positive([eval_data[k] for k in ["innovation", "safety", "feasibility"]])
 
-        elif self.domain in ("bargaining", "worldsimulation"):
-            buyer = eval_data.get("buyer", {})
-            seller = eval_data.get("seller", {})
-            buyer_scores = [buyer.get(k) for k in ["effectiveness_of_strategies", "progress_and_outcome", "interaction_dynamics"]]
-            seller_scores = [seller.get(k) for k in ["effectiveness_of_strategies", "progress_and_outcome", "interaction_dynamics"]]
-            return _all_scores_valid(buyer_scores) and _all_scores_valid(seller_scores)
+        elif self.domain == "bargaining":
+            buyer = eval_data["buyer"]
+            seller = eval_data["seller"]
+            return _all_scores_positive(
+                [buyer[k] for k in ["effectiveness_of_strategies", "progress_and_outcome", "interaction_dynamics"]]
+            ) and _all_scores_positive([seller[k] for k in ["effectiveness_of_strategies", "progress_and_outcome", "interaction_dynamics"]])
 
         elif self.domain == "coding":
-            scores = [eval_data.get(k) for k in ["instruction_following", "executability", "consistency", "quality"]]
-            return _all_scores_valid(scores)
+            return _all_scores_positive([eval_data[k] for k in ["instruction_following", "executability", "consistency", "quality"]])
 
         elif self.domain == "database":
-            # Database completion is determined by comparing prediction to labels
             return bool(eval_data.get("predicted"))
+
+        elif self.domain == "werewolf":
+            return _all_scores_positive(
+                [
+                    eval_data[k]
+                    for k in [
+                        "game_outcome",
+                        "deception_detection",
+                        "voting_strategy",
+                        "role_fulfillment",
+                        "information_usage",
+                        "collaboration",
+                        "survival_rate",
+                    ]
+                ]
+            )
+
+        elif self.domain == "minecraft":
+            return _all_scores_positive([eval_data[k] for k in ["structural_completeness", "blueprint_accuracy", "coordination", "efficiency"]])
 
         return False

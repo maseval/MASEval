@@ -27,6 +27,30 @@ from maseval.core.seeding import SeedGenerator
 
 
 # =============================================================================
+# Session-Scoped Setup
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def ensure_gaia2_data():
+    """Download GAIA2 validation data to the HuggingFace cache.
+
+    Downloads and parses the full validation split once per test session.
+    Uses HuggingFace's built-in caching: skips download when data is already cached.
+
+    Tests that need real data should depend on this fixture and be marked @pytest.mark.live.
+    Tests that don't need data (structural, mock-based) should NOT depend on this fixture.
+
+    Returns:
+        List of Task objects from the validation split
+    """
+    from maseval.benchmark.gaia2.data_loader import load_tasks
+
+    tasks = load_tasks(split="validation")
+    return list(tasks)
+
+
+# =============================================================================
 # Mock ARE Components
 # =============================================================================
 
@@ -34,24 +58,64 @@ from maseval.core.seeding import SeedGenerator
 class MockARETool:
     """Mock for ARE's AppTool class.
 
-    Simulates an ARE tool for testing AREToolWrapper and Gaia2Environment.
+    Simulates an ARE tool for testing Gaia2GenericTool and Gaia2Environment.
+    Matches ARE's AppTool dataclass (tool_utils.py:56-78) with attributes:
+    name, app_name, _public_name, _public_description, function_description,
+    args (list of AppToolArg), return_type.
     """
 
     def __init__(
         self,
         name: str = "mock_tool",
         description: str = "A mock tool for testing",
-        inputs: Optional[Dict[str, Any]] = None,
+        app_name: str = "MockApp",
+        return_type: Any = str,
+        args: Optional[List[Any]] = None,
         return_value: Any = "mock result",
     ):
+        # ARE AppTool core attributes (tool_utils.py:56-69)
         self.name = name
-        self.description = description
-        self.inputs = inputs or {
-            "properties": {"arg1": {"type": "string", "description": "First argument"}},
-            "required": ["arg1"],
-        }
+        self.app_name = app_name
+        self._public_name = name
+        self._public_description = description
+        self.function_description = description
+        self.return_type = return_type
+
+        # ARE AppTool args (list of AppToolArg)
+        self.args = args if args is not None else self._default_args()
+
         self._return_value = return_value
         self._calls: List[Dict[str, Any]] = []
+
+    @staticmethod
+    def _default_args() -> List[Any]:
+        """Create default args matching ARE's AppToolArg format (tool_utils.py:38-52)."""
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(
+                name="arg1",
+                arg_type="str",
+                description="First argument",
+                has_default=False,
+            ),
+        ]
+
+    @staticmethod
+    def make_arg(
+        name: str,
+        arg_type: str = "str",
+        description: str = "",
+        has_default: bool = False,
+        default: Any = None,
+    ) -> Any:
+        """Create a mock AppToolArg matching ARE's format (tool_utils.py:38-52)."""
+        from types import SimpleNamespace
+
+        arg = SimpleNamespace(name=name, arg_type=arg_type, description=description, has_default=has_default)
+        if has_default:
+            arg.default = default
+        return arg
 
     def __call__(self, **kwargs) -> Any:
         self._calls.append(kwargs)
@@ -75,6 +139,17 @@ class MockAREApp:
         return self._tools
 
 
+class MockEventLog:
+    """Mock for ARE's EventLog class."""
+
+    def __init__(self, events: Optional[List[Any]] = None):
+        self._events = events or []
+
+    def list_view(self) -> List[Any]:
+        """Return list of completed events."""
+        return self._events
+
+
 class MockAREEnvironment:
     """Mock for ARE's simulation Environment.
 
@@ -89,11 +164,11 @@ class MockAREEnvironment:
         current_time: float = 0.0,
     ):
         default_tools = tools or [
-            MockARETool("Calendar__get_events", "Get calendar events"),
-            MockARETool("Email__send", "Send an email"),
-            MockARETool("SystemApp__get_current_time", "Get current time", return_value="2024-01-15T10:00:00"),
-            MockARETool("SystemApp__wait_for_notification", "Wait for notification", return_value="No notifications"),
-            MockARETool("AgentUserInterface__send_message_to_user", "Send message to user"),
+            MockARETool("Calendar__get_events", "Get calendar events", app_name="Calendar"),
+            MockARETool("Email__send", "Send an email", app_name="Email"),
+            MockARETool("SystemApp__get_current_time", "Get current time", app_name="SystemApp", return_value="2024-01-15T10:00:00"),
+            MockARETool("SystemApp__wait_for_notification", "Wait for notification", app_name="SystemApp", return_value="No notifications"),
+            MockARETool("AgentUserInterface__send_message_to_user", "Send message to user", app_name="AgentUserInterface"),
         ]
         # Group tools by app name (part before __) to match real ARE structure
         apps_dict: Dict[str, List[MockARETool]] = {}
@@ -106,50 +181,50 @@ class MockAREEnvironment:
         self.apps = {name: MockAREApp(tool_list) for name, tool_list in apps_dict.items()}
         self._completed_events = completed_events or []
         self._current_time = current_time
-        self._initialized = False
+        self._running = False
         self._stopped = False
 
-        # Also expose time_manager for compatibility
-        self.time_manager = MagicMock()
-        self.time_manager.current_time = current_time
+        # Match real ARE instance attributes
+        self.current_time = current_time
+        self.event_log = MockEventLog(self._completed_events)
 
-    def initialize_scenario(self, scenario: Any) -> None:
-        """Initialize scenario."""
-        self._initialized = True
-
-    def get_completed_events(self) -> List[Any]:
-        """Get completed events for evaluation."""
-        return self._completed_events
+    def run(self, scenario: Any, wait_for_end: bool = True, schedule_events: bool = True) -> None:
+        """Run scenario (registers apps, schedules events, starts event loop)."""
+        self._running = True
 
     def stop(self) -> None:
         """Stop the environment."""
         self._stopped = True
 
     @property
-    def is_initialized(self) -> bool:
-        return self._initialized
+    def is_running(self) -> bool:
+        return self._running
 
     @property
     def is_stopped(self) -> bool:
         return self._stopped
 
 
-class MockJudgeResult:
-    """Mock for ARE's judge evaluation result."""
+class MockScenarioValidationResult:
+    """Mock for ARE's ScenarioValidationResult."""
 
-    def __init__(self, passed: bool = True, partial_score: float = 1.0, event_results: Optional[List] = None):
-        self.passed = passed
-        self.partial_score = partial_score
-        self.event_results = event_results or []
+    def __init__(self, success: bool = True, rationale: Optional[str] = None):
+        self.success = success
+        self.rationale = rationale
 
 
 class MockGraphPerEventJudge:
     """Mock for ARE's GraphPerEventJudge."""
 
-    def __init__(self, result: Optional[MockJudgeResult] = None):
-        self._result = result or MockJudgeResult()
+    def __init__(self, result: Optional[MockScenarioValidationResult] = None):
+        self._result = result or MockScenarioValidationResult()
 
-    def evaluate(self, oracle_events: Any, completed_events: Any, scenario: Any) -> MockJudgeResult:
+    def initialize_state(self, scenario: Any) -> None:
+        """Initialize judge with scenario."""
+        pass
+
+    def validate(self, env: Any) -> MockScenarioValidationResult:
+        """Validate against environment."""
         return self._result
 
 
@@ -258,17 +333,16 @@ class ConcreteGaia2Benchmark:
 
 @pytest.fixture
 def mock_are_tool() -> MockARETool:
-    """Create a single mock ARE tool."""
+    """Create a single mock ARE tool matching ARE's AppTool format."""
     return MockARETool(
         name="TestTool__do_something",
         description="A test tool that does something",
-        inputs={
-            "properties": {
-                "param1": {"type": "string", "description": "First parameter"},
-                "param2": {"type": "integer", "description": "Second parameter"},
-            },
-            "required": ["param1"],
-        },
+        app_name="TestTool",
+        return_type=str,
+        args=[
+            MockARETool.make_arg("param1", arg_type="str", description="First parameter"),
+            MockARETool.make_arg("param2", arg_type="int", description="Second parameter", has_default=True, default=0),
+        ],
         return_value="Tool executed successfully",
     )
 
@@ -277,15 +351,17 @@ def mock_are_tool() -> MockARETool:
 def mock_are_tools() -> List[MockARETool]:
     """Create a set of mock ARE tools matching GAIA2 apps."""
     return [
-        MockARETool("Calendar__get_events", "Get calendar events", return_value=[]),
-        MockARETool("Calendar__create_event", "Create calendar event", return_value={"id": "evt_123"}),
-        MockARETool("Email__send", "Send an email", return_value={"status": "sent"}),
-        MockARETool("Email__read", "Read emails", return_value=[]),
-        MockARETool("Messaging__send", "Send a message", return_value={"status": "sent"}),
-        MockARETool("Contacts__search", "Search contacts", return_value=[]),
-        MockARETool("SystemApp__get_current_time", "Get current time", return_value="2024-01-15T10:00:00Z"),
-        MockARETool("SystemApp__wait_for_notification", "Wait for notification", return_value="No notifications"),
-        MockARETool("AgentUserInterface__send_message_to_user", "Send message to user", return_value="Message sent"),
+        MockARETool("Calendar__get_events", "Get calendar events", app_name="Calendar", return_value=[]),
+        MockARETool("Calendar__create_event", "Create calendar event", app_name="Calendar", return_value={"id": "evt_123"}),
+        MockARETool("Email__send", "Send an email", app_name="Email", return_value={"status": "sent"}),
+        MockARETool("Email__read", "Read emails", app_name="Email", return_value=[]),
+        MockARETool("Messaging__send", "Send a message", app_name="Messaging", return_value={"status": "sent"}),
+        MockARETool("Contacts__search", "Search contacts", app_name="Contacts", return_value=[]),
+        MockARETool("SystemApp__get_current_time", "Get current time", app_name="SystemApp", return_value="2024-01-15T10:00:00Z"),
+        MockARETool("SystemApp__wait_for_notification", "Wait for notification", app_name="SystemApp", return_value="No notifications"),
+        MockARETool(
+            "AgentUserInterface__send_message_to_user", "Send message to user", app_name="AgentUserInterface", return_value="Message sent"
+        ),
     ]
 
 
@@ -297,42 +373,37 @@ def mock_are_environment(mock_are_tools) -> MockAREEnvironment:
 
 @pytest.fixture
 def mock_judge_passed() -> MockGraphPerEventJudge:
-    """Create a mock judge that returns passed=True."""
-    return MockGraphPerEventJudge(MockJudgeResult(passed=True, partial_score=1.0))
+    """Create a mock judge that returns success=True."""
+    return MockGraphPerEventJudge(MockScenarioValidationResult(success=True))
 
 
 @pytest.fixture
 def mock_judge_failed() -> MockGraphPerEventJudge:
-    """Create a mock judge that returns passed=False."""
-    return MockGraphPerEventJudge(MockJudgeResult(passed=False, partial_score=0.0))
+    """Create a mock judge that returns success=False."""
+    return MockGraphPerEventJudge(MockScenarioValidationResult(success=False))
 
 
 @pytest.fixture
 def sample_gaia2_task() -> Task:
-    """Create a sample GAIA2 task for testing."""
+    """Create a sample GAIA2 task for testing.
+
+    GAIA2 tasks have empty query (event-driven) and minimal evaluation_data
+    (judge is created at runtime by preprocess_scenario).
+    """
     return Task(
         id="gaia2_test_001",
-        query="Schedule a meeting with John tomorrow at 2pm and send him an email confirmation.",
+        query="",
         environment_data={
-            "scenario_json": {
-                "id": "test_scenario",
-                "initial_state": {},
-                "oracle_events": [
-                    {"type": "calendar_event_created", "data": {"title": "Meeting with John"}},
-                    {"type": "email_sent", "data": {"recipient": "john@example.com"}},
-                ],
-            },
+            "scenario": MagicMock(scenario_id="test_scenario"),
+            "capability": "execution",
         },
         evaluation_data={
-            "oracle_events": [
-                {"type": "calendar_event_created"},
-                {"type": "email_sent"},
-            ],
+            "judge_type": "graph_per_event",
         },
         user_data={},
         metadata={
+            "scenario_id": "test_scenario",
             "capability": "execution",
-            "difficulty": "medium",
         },
     )
 
@@ -344,19 +415,19 @@ def sample_gaia2_task_queue(sample_gaia2_task) -> TaskQueue:
         sample_gaia2_task,
         Task(
             id="gaia2_test_002",
-            query="Check my calendar for today's events.",
-            environment_data={"scenario_json": {"id": "test_2", "initial_state": {}, "oracle_events": []}},
-            evaluation_data={"oracle_events": []},
+            query="",
+            environment_data={"scenario": MagicMock(scenario_id="test_2"), "capability": "search"},
+            evaluation_data={"judge_type": "graph_per_event"},
             user_data={},
-            metadata={"capability": "search"},
+            metadata={"scenario_id": "test_2", "capability": "search"},
         ),
         Task(
             id="gaia2_test_003",
-            query="Wait for a notification from the system.",
-            environment_data={"scenario_json": {"id": "test_3", "initial_state": {}, "oracle_events": []}},
-            evaluation_data={"oracle_events": []},
+            query="",
+            environment_data={"scenario": MagicMock(scenario_id="test_3"), "capability": "time"},
+            evaluation_data={"judge_type": "graph_per_event"},
             user_data={},
-            metadata={"capability": "time"},
+            metadata={"scenario_id": "test_3", "capability": "time"},
         ),
     ]
     return TaskQueue(tasks)
@@ -401,11 +472,17 @@ def gaia2_model_termination() -> DummyModelAdapter:
 
 @pytest.fixture
 def gaia2_model_wait_notification() -> DummyModelAdapter:
-    """Create a model that waits for notification."""
+    """Create a model that waits for notification then terminates.
+
+    wait_for_notification is NOT a termination signal — the agent must
+    continue its loop. This fixture provides two responses: the wait call
+    followed by the real termination call (send_message_to_user).
+    """
     return DummyModelAdapter(
         model_id="test-wait-model",
         responses=[
             'Thought: I need to wait for a notification.\n\nAction:\n{"action": "SystemApp__wait_for_notification", "action_input": {"timeout_seconds": 30}}<end_action>',
+            'Thought: Done waiting, reporting back.\n\nAction:\n{"action": "AgentUserInterface__send_message_to_user", "action_input": {"content": "Finished waiting for notification."}}<end_action>',
         ],
     )
 

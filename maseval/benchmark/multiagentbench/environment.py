@@ -3,15 +3,16 @@
 This module provides the MASEval Environment wrapper for MARBLE environments.
 """
 
+import importlib
 import shutil
 from typing import Any, Callable, Dict, Optional
 
 from maseval import Environment, EnvironmentError, ToolInvocationHistory
-from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR
+from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR, ensure_marble_on_path
 
 
 # Domains requiring external infrastructure
-INFRASTRUCTURE_DOMAINS = frozenset({"database", "minecraft"})
+INFRASTRUCTURE_DOMAINS = frozenset({"database"})
 
 
 class MultiAgentBenchEnvironment(Environment):
@@ -37,9 +38,10 @@ class MultiAgentBenchEnvironment(Environment):
 
         Raises:
             EnvironmentError: If required infrastructure is unavailable
+            ImportError: If MARBLE is not available
         """
         self.domain = task_data.get("scenario", "")
-        self._marble_env: Optional[Any] = None
+        self._marble_env: Any = None
         self._tool_histories: Dict[str, ToolInvocationHistory] = {}
         super().__init__(task_data)
 
@@ -75,18 +77,17 @@ class MultiAgentBenchEnvironment(Environment):
             "max_iterations": env_config.get("max_iterations") or task_data.get("max_iterations", 10),
         }
 
-        # Try to create MARBLE environment (may fail if MARBLE not available)
-        try:
-            self._marble_env = self._create_marble_environment(domain, marble_config)
-        except ImportError:
-            # MARBLE not available - store config for later use
-            self._marble_env = None
+        # Pass werewolf config path for WerewolfEnv (different constructor)
+        if domain.lower() == "werewolf":
+            marble_config["werewolf_config_path"] = task_data.get("werewolf_config_path", "")
+
+        self._marble_env = self._create_marble_environment(domain, marble_config)
 
         return {
             "domain": domain,
             "env_config": env_config,
             "task_config": task_config,
-            "marble_env_type": type(self._marble_env).__name__ if self._marble_env else "None",
+            "marble_env_type": type(self._marble_env).__name__,
             "max_iterations": marble_config["max_iterations"],
         }
 
@@ -104,10 +105,6 @@ class MultiAgentBenchEnvironment(Environment):
         if domain_lower == "database":
             # Check Docker availability
             return shutil.which("docker") is not None
-
-        if domain_lower == "minecraft":
-            # Minecraft requires external server - always fail for now
-            return False
 
         return True
 
@@ -131,9 +128,11 @@ class MultiAgentBenchEnvironment(Environment):
         domain_lower = domain.lower()
         env_name = config.get("name", domain_lower)
 
+        ensure_marble_on_path()
+
         # Import MARBLE environments
         try:
-            from .marble.marble.environments.base_env import BaseEnvironment  # type: ignore[unresolved-import]
+            from marble.environments.base_env import BaseEnvironment  # type: ignore[import-untyped]
         except ImportError as e:
             raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 
@@ -142,10 +141,9 @@ class MultiAgentBenchEnvironment(Environment):
             "coding": "marble.environments.coding_env.CodingEnvironment",
             "database": "marble.environments.db_env.DBEnvironment",
             "research": "marble.environments.research_env.ResearchEnvironment",
-            "bargaining": "marble.environments.bargaining_env.BargainingEnvironment",
-            "web": "marble.environments.web_env.WebEnvironment",
-            "worldsimulation": "marble.environments.world_env.WorldSimulationEnvironment",
+            "bargaining": "marble.environments.world_env.WorldSimulationEnvironment",
             "minecraft": "marble.environments.minecraft_env.MinecraftEnvironment",
+            "werewolf": "marble.environments.werewolf_env.WerewolfEnv",
         }
 
         env_class_path = env_mapping.get(domain_lower)
@@ -154,17 +152,18 @@ class MultiAgentBenchEnvironment(Environment):
             # Use base environment for unknown domains
             return BaseEnvironment(env_name, config)
 
-        try:
-            # Dynamic import of domain-specific environment
-            module_path, class_name = env_class_path.rsplit(".", 1)
-            # Adjust import path for vendored MARBLE
-            module_path = module_path.replace("marble.", ".marble.marble.", 1)
-            module = __import__(module_path, globals(), locals(), [class_name], 1)
-            env_class = getattr(module, class_name)
-            return env_class(env_name, config)
-        except (ImportError, AttributeError):
-            # Fall back to base environment
-            return BaseEnvironment(env_name, config)
+        # Dynamic import of domain-specific environment
+        module_path, class_name = env_class_path.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        env_class = getattr(module, class_name)
+
+        # WerewolfEnv has a different constructor: (name, config_path, log_dir)
+        if domain_lower == "werewolf":
+            config_path = config.get("werewolf_config_path", "")
+            return env_class(env_name, config_path)
+
+        # MARBLE domain envs take (config, name) while BaseEnvironment takes (name, config)
+        return env_class(config=config, name=env_name)
 
     def create_tools(self) -> Dict[str, Callable]:
         """Create tools from MARBLE environment for MASEval tracing.
@@ -175,9 +174,6 @@ class MultiAgentBenchEnvironment(Environment):
         Returns:
             Dict mapping tool names to wrapped callables
         """
-        if self._marble_env is None:
-            return {}
-
         tools: Dict[str, Callable] = {}
 
         # Get action handlers from MARBLE environment
@@ -251,9 +247,6 @@ class MultiAgentBenchEnvironment(Environment):
         Returns:
             Dict mapping tool names to their OpenAI-format descriptions
         """
-        if self._marble_env is None:
-            return {}
-
         return getattr(self._marble_env, "action_handler_descriptions", {})
 
     def apply_action(
@@ -272,15 +265,7 @@ class MultiAgentBenchEnvironment(Environment):
         Returns:
             Action result dictionary
 
-        Raises:
-            EnvironmentError: If MARBLE environment is not available
         """
-        if self._marble_env is None:
-            raise EnvironmentError(
-                "MARBLE environment not available. Cannot execute actions.",
-                component="MultiAgentBenchEnvironment",
-            )
-
         return self._marble_env.apply_action(agent_id, action_name, arguments)
 
     def is_done(self) -> bool:
@@ -289,8 +274,6 @@ class MultiAgentBenchEnvironment(Environment):
         Returns:
             True if done, False otherwise
         """
-        if self._marble_env is None:
-            return False
         return self._marble_env.is_done()
 
     def is_task_completed(self) -> bool:
@@ -299,8 +282,6 @@ class MultiAgentBenchEnvironment(Environment):
         Returns:
             True if task completed, False otherwise
         """
-        if self._marble_env is None:
-            return False
         return self._marble_env.is_task_completed()
 
     def get_marble_state(self) -> Dict[str, Any]:
@@ -309,8 +290,6 @@ class MultiAgentBenchEnvironment(Environment):
         Returns:
             State dictionary from MARBLE environment
         """
-        if self._marble_env is None:
-            return {}
         return self._marble_env.get_state()
 
     def gather_traces(self) -> Dict[str, Any]:
@@ -323,13 +302,10 @@ class MultiAgentBenchEnvironment(Environment):
 
         # Add domain-specific info
         traces["domain"] = self.domain
-        traces["marble_env_type"] = type(self._marble_env).__name__ if self._marble_env else "None"
-
-        # Add MARBLE state if available
-        if self._marble_env is not None:
-            traces["marble_state"] = self.get_marble_state()
-            traces["is_done"] = self.is_done()
-            traces["is_task_completed"] = self.is_task_completed()
+        traces["marble_env_type"] = type(self._marble_env).__name__
+        traces["marble_state"] = self.get_marble_state()
+        traces["is_done"] = self.is_done()
+        traces["is_task_completed"] = self.is_task_completed()
 
         # Collect tool invocation histories
         tool_traces = {}
@@ -352,7 +328,7 @@ class MultiAgentBenchEnvironment(Environment):
         config = super().gather_config()
 
         config["domain"] = self.domain
-        config["marble_env_type"] = type(self._marble_env).__name__ if self._marble_env else "None"
+        config["marble_env_type"] = type(self._marble_env).__name__
 
         # Add tool descriptions
         config["tool_descriptions"] = self.get_tool_descriptions()

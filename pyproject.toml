@@ -25,7 +25,7 @@ dependencies = [
     "gitpython>=3.1.0",
     "tqdm>=4.66.0",
     "rich>=14.1.0",
-    "pydantic>=2.12.5",
+    "pydantic>=2.10.6",
 ]
 
 # Enable optional dependencies for end users
@@ -48,11 +48,43 @@ wandb = ["wandb>=0.15.0"]
 langfuse = ["langfuse>=3.3.4"]
 
 # Benchmarks
-gaia2 = ["are>=1.2.0", "datasets>=3.0.0"]
+gaia2 = ["meta-agents-research-environments>=1.2.0", "datasets>=3.0.0"]
+macs = []
+multiagentbench = [
+    # Core MARBLE runtime
+    "litellm>=1.0.0",
+    "pyyaml>=6.0",
+    "ruamel.yaml>=0.17.0",
+    "beartype",
+    "colorlog>=6.0.0",
+    "requests>=2.28.0",
+    # Research domain
+    "beautifulsoup4>=4.12.0",
+    "keybert>=0.8.0",
+    "arxiv>=2.1.0",
+    "pypdf2>=3.0.0",
+    "semanticscholar>=0.8.0",
+    # Coding domain
+    "levenshtein>=0.20.0",
+    # Database domain
+    "psycopg2-binary>=2.9.0",
+    "pymysql>=1.1.0",
+    # Werewolf domain
+    "names>=0.3.0",
+    # Minecraft domain
+    "flask>=3.0.0",
+    "javascript>=1!1.2.0",
+    "waitress>=3.0.0",
+    # Evaluation
+    "scikit-learn>=1.3.0",
+    # dependency of keybert. Lower versions are incompatible with huggingfacehub
+    "sentence-transformers>=2.3.0",
+]
+tau2 = ["docstring-parser>=0.16"]
 
 # Dependencies for running examples (only what's actually used)
 examples = [
-    "maseval[smolagents,langgraph,llamaindex,camel,anthropic,openai,google-genai,litellm,langfuse,gaia2]",
+    "maseval[smolagents,langgraph,llamaindex,camel,anthropic,openai,google-genai,litellm,langfuse,gaia2,macs,tau2]",
     # Additional integrations used in examples
     "langchain>=0.3.27",
     "langchain-google-genai>=2.1.12",
@@ -66,7 +98,7 @@ examples = [
 ]
 
 # Complete installation with absolutely everything (uses self-reference for DRY)
-all = ["maseval[examples,transformers,wandb]"]
+all = ["maseval[examples,transformers,wandb,multiagentbench]"]
 
 [project.urls]
 "Homepage" = "https://github.com/parameterlab/MASEval"
@@ -79,6 +111,7 @@ all = ["maseval[examples,transformers,wandb]"]
 dev = [
     "pytest>=9.0.0",
     "pytest-cov>=7.0.0",
+    "coverage>=7.0.0",
     "ruff>=0.14.0",
     "ty>=0.0.5",
     "pre-commit>=4.0.0",
@@ -93,6 +126,40 @@ docs = [
     "pymdown-extensions>=10.0.0",
     "mkdocs-jupyter>=0.24.0",
     "mkdocs-git-revision-date-localized-plugin>=1.5.0",
+]
+
+[tool.uv]
+# ARE (meta-agents-research-environments) pins all 22 of its runtime dependencies
+# to exact versions (==), which conflicts with other extras in this project.
+# Override the most problematic pins with compatible ranges until Meta relaxes
+# their constraints upstream.
+override-dependencies = [
+    # ARE pins all deps with ==. Relax every pin to a compatible range.
+    "click>=8.1.0",
+    "datasets>=3.0.0",
+    "docstring-parser>=0.16",
+    "fsspec>=2024.12.0",
+    # # Compromise between ARE (wants >=0.28.0) and multiagentbench (needs <0.20.0)
+    # # Using >=0.19 allows 0.19.x which satisfies multiagentbench's <0.20.0 requirement
+    # # TODO: Verify ARE actually works with huggingface-hub 0.19.x (it pins to 0.28.0 originally)
+    # "huggingface-hub>=0.19",
+    "inputimeout>=1.0.4",
+    "jinja2>=3.1.0",
+    "litellm>=1.0.0",
+    "mammoth>=1.8.0",
+    "markdownify>=0.14.1",
+    "mcp>=1.11.0",
+    "numpy>=2.2.0",
+    "pandas>=2.2.0",
+    "pdfminer-six>=20231228",
+    "pillow>=10.4.0",
+    "polars-lts-cpu>=1.33.1",
+    "puremagic>=1.27",
+    "pydantic>=2.10.6",
+    "python-dotenv>=1.0.0",
+    "python-pptx>=1.0.2",
+    "rapidfuzz>=3.12.1",
+    "termcolor>=2.5.0",
 ]
 
 [tool.setuptools]
@@ -125,7 +192,7 @@ testpaths = ["tests"]
 [tool.coverage.run]
 relative_files = true
 source = ["maseval"]
-omit = ["*/tests/*", "*/examples/*", "*/__pycache__/*"]
+omit = ["*/tests/*", "*/examples/*", "*/__pycache__/*", "maseval/benchmark/multiagentbench/marble/**"]
 branch = true
 
 [tool.coverage.report]
@@ -137,6 +204,7 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
     "@abstractmethod",
+    "@overload",
 ]
 precision = 2
 

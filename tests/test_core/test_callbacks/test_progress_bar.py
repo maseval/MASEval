@@ -15,6 +15,8 @@ from maseval.core.callbacks.progress_bar import (
 )
 from maseval.core.task import Task
 
+pytestmark = pytest.mark.core
+
 
 @pytest.fixture
 def mock_benchmark():

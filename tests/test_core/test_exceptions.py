@@ -7,6 +7,7 @@ failures.
 """
 
 import pytest
+
 from maseval import (
     TaskQueue,
     TaskExecutionStatus,
@@ -18,6 +19,8 @@ from maseval import (
     validate_no_extra_arguments,
     validate_arguments_from_schema,
 )
+
+pytestmark = pytest.mark.core
 
 
 class TestExceptionClassification:

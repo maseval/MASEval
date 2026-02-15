@@ -98,14 +98,14 @@ class TestTelecomUserWriteTools:
         # Enable
         telecom_user_toolkit.use_tool("toggle_airplane_mode", enable=True)
         assert telecom_user_toolkit.db.user_db.device.airplane_mode is True
-        assert telecom_user_toolkit.db.user_db.device.network_status == NetworkStatus.NO_SERVICE
+        assert telecom_user_toolkit.db.user_db.device.network_connection_status == NetworkStatus.NO_SERVICE
 
         # Disable
         telecom_user_toolkit.use_tool("toggle_airplane_mode", enable=False)
         assert telecom_user_toolkit.db.user_db.device.airplane_mode is False
         # Should reconnect if SIM is active
         if telecom_user_toolkit.db.user_db.device.sim_status == SimStatus.ACTIVE:
-            assert telecom_user_toolkit.db.user_db.device.network_status == NetworkStatus.CONNECTED
+            assert telecom_user_toolkit.db.user_db.device.network_connection_status == NetworkStatus.CONNECTED
 
     def test_toggle_data(self, telecom_user_toolkit):
         """toggle_data changes state."""
@@ -204,7 +204,7 @@ class TestSimCardOperations:
     def test_reseat_sim_card(self, telecom_user_toolkit):
         """Reseats SIM card."""
         result = telecom_user_toolkit.use_tool("reseat_sim_card")
-        assert "reseat" in result.lower() or "no" in result.lower()
+        assert "re-seated" in result.lower()
 
 
 # =============================================================================

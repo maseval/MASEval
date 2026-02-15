@@ -7,7 +7,7 @@ MASEval's tracing and evaluation infrastructure.
 from typing import Any, Dict, List, Sequence, Tuple
 
 from maseval import AgentAdapter, AgentError, MessageHistory
-from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR
+from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR, ensure_marble_on_path
 
 
 class MarbleAgentAdapter(AgentAdapter):
@@ -197,8 +197,9 @@ def create_marble_agents(
     Raises:
         ImportError: If MARBLE is not available
     """
+    ensure_marble_on_path()
     try:
-        from ..marble.marble.agent.base_agent import BaseAgent  # type: ignore[unresolved-import]
+        from marble.agent.base_agent import BaseAgent  # type: ignore[import-untyped]
     except ImportError as e:
         raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 

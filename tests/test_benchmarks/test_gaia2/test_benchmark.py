@@ -106,10 +106,34 @@ class TestGaia2BenchmarkSetupEnvironment:
         mock_are_env_instance = MagicMock()
         mock_are.simulation.environment.Environment.return_value = mock_are_env_instance
         mock_are_env_instance.get_tools.return_value = []
-        mock_are_env_instance.get_completed_events.return_value = []
+        mock_are_env_instance.event_log.list_view.return_value = []
+        mock_are_env_instance.apps = {}
+
+        # Mock preprocess_scenario as a no-op
+        def mock_preprocess_scenario(scenario, judge_config, max_scenario_duration):
+            scenario.duration = max_scenario_duration
+            # In real ARE, start_time and time_increment_in_seconds are set from
+            # JSON data before preprocess_scenario runs. Ensure real values so
+            # environment.py guards (e.g. start_time > 0) don't fail on MagicMock.
+            if not isinstance(getattr(scenario, "start_time", None), (int, float)):
+                scenario.start_time = 1728975600.0  # 2024-10-15 07:00:00 UTC
+            if not isinstance(getattr(scenario, "time_increment_in_seconds", None), (int, float)):
+                scenario.time_increment_in_seconds = 1
+
+        mock_are.simulation.scenarios.scenario_imported_from_json.utils.preprocess_scenario = mock_preprocess_scenario
+
+        # Mock get_scenario_duration
+        def mock_get_scenario_duration(scenario, max_time_duration, max_duration):
+            return max_duration
+
+        mock_are.simulation.scenarios.scenario_imported_from_json.utils.get_scenario_duration = mock_get_scenario_duration
+
+        # Mock scenario config constants
+        mock_are.simulation.scenarios.config.MAX_SCENARIO_DURATION = 1800
+        mock_are.simulation.scenarios.config.MAX_TIME_SCENARIO_DURATION = 420
 
         mock_scenario = MagicMock()
-        mock_scenario.duration = 86400
+        mock_scenario.duration = 1800
 
         # Patch sys.modules for ARE imports
         with patch.dict(
@@ -118,6 +142,13 @@ class TestGaia2BenchmarkSetupEnvironment:
                 "are": mock_are,
                 "are.simulation": mock_are.simulation,
                 "are.simulation.environment": mock_are.simulation.environment,
+                "are.simulation.notification_system": mock_are.simulation.notification_system,
+                "are.simulation.validation": mock_are.simulation.validation,
+                "are.simulation.scenarios": mock_are.simulation.scenarios,
+                "are.simulation.scenarios.config": mock_are.simulation.scenarios.config,
+                "are.simulation.scenarios.scenario_imported_from_json": mock_are.simulation.scenarios.scenario_imported_from_json,
+                "are.simulation.scenarios.scenario_imported_from_json.utils": mock_are.simulation.scenarios.scenario_imported_from_json.utils,
+                "are.simulation.types": mock_are.simulation.types,
             },
         ):
             # Add scenario to task environment_data

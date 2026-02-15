@@ -33,10 +33,13 @@ MultiAgentBench is a comprehensive benchmark suite for evaluating multi-agent co
 
 ### Source and License
 
-- **Original Repository:** [https://github.com/ulab-uiuc/MARBLE](https://github.com/ulab-uiuc/MARBLE)
+- **Original Repository:** [https://github.com/ulab-uiuc/MARBLE](https://github.com/ulab-uiuc/MARBLE) (where the original work was done)
+- **Fork Used:** [https://github.com/cemde/MARBLE](https://github.com/cemde/MARBLE) (contains bug fixes for MASEval integration)
 - **Paper:** [MultiAgentBench: Evaluating the Collaboration and Competition of LLM agents](https://arxiv.org/abs/2503.01935)
 - **Code License:** MIT
 - **Data License:** MIT
+
+> **Note**: MASEval uses a fork with bug fixes. All credit for the original work goes to the MARBLE team (Zhu et al., 2025).
 
 ---
 

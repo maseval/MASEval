@@ -22,7 +22,7 @@ from maseval import (
 from maseval.core.callback import BenchmarkCallback
 from maseval.core.seeding import SeedGenerator
 
-from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR
+from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR, ensure_marble_on_path
 from maseval.benchmark.multiagentbench.environment import MultiAgentBenchEnvironment
 from maseval.benchmark.multiagentbench.evaluator import (
     MultiAgentBenchEvaluator,
@@ -449,8 +449,9 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         Returns:
             MARBLE environment instance
         """
+        ensure_marble_on_path()
         try:
-            from .marble.marble.environments.base_env import BaseEnvironment  # type: ignore[unresolved-import]
+            from marble.environments.base_env import BaseEnvironment  # type: ignore[import-untyped]
         except ImportError as e:
             raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 
@@ -478,11 +479,11 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             task: Task with relationship data
             marble_env: MARBLE environment
         """
+        ensure_marble_on_path()
         try:
-            from .marble.marble.graph.agent_graph import AgentGraph  # type: ignore[unresolved-import]
-        except ImportError:
-            # MARBLE not available, skip graph setup
-            return
+            from marble.graph.agent_graph import AgentGraph  # type: ignore[import-untyped]
+        except ImportError as e:
+            raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 
         # Extract MARBLE agents from adapters
         marble_agents = [adapter.marble_agent for adapter in agents_dict.values()]
@@ -492,17 +493,12 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         coordination_mode = task.environment_data.get("coordinate_mode", "cooperative")
         config = SimpleNamespace(coordination_mode=coordination_mode, relationships=relationships)
 
-        try:
-            # Create agent graph
-            graph = AgentGraph(marble_agents, config)  # type: ignore
+        # Create agent graph
+        graph = AgentGraph(marble_agents, config)  # type: ignore
 
-            # Set graph on all agents
-            for agent in marble_agents:
-                agent.set_agent_graph(graph)
-
-        except (ValueError, KeyError, AttributeError) as e:
-            # Graph creation failed, agents will work without inter-agent communication
-            logger.warning("AgentGraph setup failed, agents will run without inter-agent communication: %s", e)
+        # Set graph on all agents
+        for agent in marble_agents:
+            agent.set_agent_graph(graph)
 
     @abstractmethod
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> ModelAdapter:

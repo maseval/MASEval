@@ -4,9 +4,12 @@ import pytest
 
 from conftest import DummyModelAdapter
 from maseval.benchmark.multiagentbench.evaluator import (
+    DEFAULT_RESULT_TRUNCATION_LENGTH,
     MultiAgentBenchEvaluator,
     MultiAgentBenchMetrics,
 )
+
+pytestmark = pytest.mark.benchmark
 
 
 class TestMultiAgentBenchMetrics:
@@ -136,20 +139,17 @@ class TestMultiAgentBenchEvaluator:
 
         assert score == 5.0
 
-    def test_parse_score_no_json_returns_none(self, research_evaluator):
-        """_parse_score should return None when no valid JSON found."""
+    def test_parse_score_no_json_raises(self, research_evaluator):
+        """_parse_score should raise when no valid JSON found."""
         response = "The rating is 4 out of 5"
-        score = research_evaluator._parse_score(response)
+        with pytest.raises(ValueError, match="No JSON object found"):
+            research_evaluator._parse_score(response)
 
-        # No regex fallback - returns None for non-JSON responses
-        assert score is None
-
-    def test_parse_score_default(self, research_evaluator):
-        """_parse_score should return None when parsing fails."""
-        response = "No score here"
-        score = research_evaluator._parse_score(response)
-
-        assert score is None
+    def test_parse_score_no_rating_key_raises(self, research_evaluator):
+        """_parse_score should raise when JSON has no rating key."""
+        response = '{"score": 4}'
+        with pytest.raises(ValueError, match="Expected"):
+            research_evaluator._parse_score(response)
 
     def test_parse_research_ratings_valid(self, research_evaluator):
         """_parse_research_ratings should parse valid ratings."""
@@ -161,13 +161,9 @@ class TestMultiAgentBenchEvaluator:
         assert ratings["feasibility"] == 5
 
     def test_parse_research_ratings_invalid(self, research_evaluator):
-        """_parse_research_ratings should return None for invalid."""
-        response = "Invalid response"
-        ratings = research_evaluator._parse_research_ratings(response)
-
-        assert ratings["innovation"] is None
-        assert ratings["safety"] is None
-        assert ratings["feasibility"] is None
+        """_parse_research_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            research_evaluator._parse_research_ratings("Invalid response")
 
     def test_determine_completion_research_positive(self, research_evaluator):
         """_determine_completion should return True for positive research scores."""
@@ -187,10 +183,13 @@ class TestMultiAgentBenchEvaluator:
         }
         final_answer = [{"agent_id": "agent1", "result": "Done"}]
 
-        # Mock model adapter to return research ratings
+        # Needs two responses: one for LLM summarization, one for research evaluation
         research_evaluator.model_adapter = DummyModelAdapter(
             model_id="test",
-            responses=['{"innovation": 4, "safety": 4, "feasibility": 4}'],
+            responses=[
+                '{"summary": "Agent completed the task"}',
+                '{"innovation": 4, "safety": 4, "feasibility": 4}',
+            ],
         )
 
         result = research_evaluator(traces, final_answer)
@@ -329,12 +328,9 @@ class TestCodingEvaluation:
         assert coding_evaluator._determine_completion(metrics) is False
 
     def test_parse_coding_ratings_invalid(self, coding_evaluator):
-        """_parse_coding_ratings should return None for invalid response."""
-        ratings = coding_evaluator._parse_coding_ratings("Invalid JSON")
-        assert ratings["instruction_following"] is None
-        assert ratings["executability"] is None
-        assert ratings["consistency"] is None
-        assert ratings["quality"] is None
+        """_parse_coding_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            coding_evaluator._parse_coding_ratings("Invalid JSON")
 
 
 class TestDatabaseEvaluation:
@@ -379,61 +375,181 @@ class TestDatabaseEvaluation:
         }
         final_answer = [{"agent_id": "agent1", "result": "SELECT * FROM orders"}]
 
+        # Needs a response for the LLM summarization call
+        database_evaluator.model_adapter = DummyModelAdapter(
+            model_id="test",
+            responses=["SELECT * FROM orders"],
+        )
+
         result = database_evaluator(traces, final_answer)
 
         assert result["domain"] == "database"
         assert "passed" in result
 
 
-class TestWorldSimulationEvaluation:
-    """Tests for worldsimulation domain (alias for bargaining)."""
+class TestWerewolfEvaluation:
+    """Tests for werewolf-specific evaluation."""
 
     @pytest.fixture
-    def worldsim_evaluator(self):
-        """Create evaluator for worldsimulation domain."""
+    def werewolf_evaluator(self):
+        """Create evaluator with werewolf-specific responses."""
         adapter = DummyModelAdapter(
             model_id="test",
             responses=[
-                '{"effectiveness_of_strategies": 4, "progress_and_outcome": 4, "interaction_dynamics": 4}',
-                '{"effectiveness_of_strategies": 4, "progress_and_outcome": 4, "interaction_dynamics": 4}',
+                '{"game_outcome": 4, "deception_detection": 3, "voting_strategy": 4, '
+                '"role_fulfillment": 5, "information_usage": 3, "collaboration": 4, "survival_rate": 3}',
             ],
         )
         return MultiAgentBenchEvaluator(
-            domain="worldsimulation",
+            domain="werewolf",
             model_adapter=adapter,
         )
 
-    def test_worldsimulation_uses_bargaining_eval(self, worldsim_evaluator):
-        """worldsimulation domain should use bargaining evaluation."""
+    def test_evaluate_werewolf_returns_all_metrics(self, werewolf_evaluator):
+        """_evaluate_werewolf should return all werewolf metrics."""
+        ratings = werewolf_evaluator._evaluate_werewolf("Task", "Result")
+
+        assert "game_outcome" in ratings
+        assert "deception_detection" in ratings
+        assert "voting_strategy" in ratings
+        assert "role_fulfillment" in ratings
+        assert "information_usage" in ratings
+        assert "collaboration" in ratings
+        assert "survival_rate" in ratings
+
+    def test_determine_completion_werewolf_positive(self, werewolf_evaluator):
+        """_determine_completion should work for werewolf domain."""
+        metrics = MultiAgentBenchMetrics(
+            task_evaluation={
+                "game_outcome": 4,
+                "deception_detection": 3,
+                "voting_strategy": 4,
+                "role_fulfillment": 5,
+                "information_usage": 3,
+                "collaboration": 4,
+                "survival_rate": 3,
+            }
+        )
+        assert werewolf_evaluator._determine_completion(metrics) is True
+
+    def test_determine_completion_werewolf_negative(self, werewolf_evaluator):
+        """_determine_completion should return False for None werewolf scores."""
+        metrics = MultiAgentBenchMetrics(
+            task_evaluation={
+                "game_outcome": 4,
+                "deception_detection": None,
+                "voting_strategy": 4,
+                "role_fulfillment": 5,
+                "information_usage": 3,
+                "collaboration": 4,
+                "survival_rate": 3,
+            }
+        )
+        assert werewolf_evaluator._determine_completion(metrics) is False
+
+    def test_call_werewolf_domain(self, werewolf_evaluator):
+        """__call__ should work for werewolf domain."""
         traces = {
             "agents": {"agent1": {"token_usage": 100, "action_log": [], "communication_log": []}},
             "environment": {},
         }
-        final_answer = "Simulation result"
+        final_answer = "Villagers won the game"
 
-        result = worldsim_evaluator(traces, final_answer)
+        result = werewolf_evaluator(traces, final_answer)
 
-        assert result["domain"] == "worldsimulation"
-        assert "buyer" in result["metrics"]["task_evaluation"]
-        assert "seller" in result["metrics"]["task_evaluation"]
+        assert result["domain"] == "werewolf"
+        assert "passed" in result
+        assert "game_outcome" in result["metrics"]["task_evaluation"]
 
-    def test_determine_completion_worldsimulation(self, worldsim_evaluator):
-        """_determine_completion should work for worldsimulation domain."""
+    def test_parse_werewolf_ratings_invalid(self, werewolf_evaluator):
+        """_parse_werewolf_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            werewolf_evaluator._parse_werewolf_ratings("Invalid JSON")
+
+
+class TestMinecraftEvaluation:
+    """Tests for minecraft-specific evaluation."""
+
+    @pytest.fixture
+    def minecraft_evaluator(self):
+        """Create evaluator with minecraft-specific responses."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            responses=[
+                '{"structural_completeness": 4, "blueprint_accuracy": 3, "coordination": 5, "efficiency": 4}',
+            ],
+        )
+        return MultiAgentBenchEvaluator(
+            domain="minecraft",
+            model_adapter=adapter,
+        )
+
+    def test_evaluate_minecraft_returns_all_metrics(self, minecraft_evaluator):
+        """_evaluate_minecraft should return all minecraft metrics."""
+        ratings = minecraft_evaluator._evaluate_minecraft("Task", "Result")
+
+        assert "structural_completeness" in ratings
+        assert "blueprint_accuracy" in ratings
+        assert "coordination" in ratings
+        assert "efficiency" in ratings
+
+    def test_determine_completion_minecraft_positive(self, minecraft_evaluator):
+        """_determine_completion should work for minecraft domain."""
         metrics = MultiAgentBenchMetrics(
             task_evaluation={
-                "buyer": {
-                    "effectiveness_of_strategies": 4,
-                    "progress_and_outcome": 4,
-                    "interaction_dynamics": 4,
-                },
-                "seller": {
-                    "effectiveness_of_strategies": 4,
-                    "progress_and_outcome": 4,
-                    "interaction_dynamics": 4,
-                },
+                "structural_completeness": 4,
+                "blueprint_accuracy": 3,
+                "coordination": 5,
+                "efficiency": 4,
             }
         )
-        assert worldsim_evaluator._determine_completion(metrics) is True
+        assert minecraft_evaluator._determine_completion(metrics) is True
+
+    def test_determine_completion_minecraft_negative(self, minecraft_evaluator):
+        """_determine_completion should return False for None minecraft scores."""
+        metrics = MultiAgentBenchMetrics(
+            task_evaluation={
+                "structural_completeness": 4,
+                "blueprint_accuracy": None,
+                "coordination": 5,
+                "efficiency": 4,
+            }
+        )
+        assert minecraft_evaluator._determine_completion(metrics) is False
+
+    def test_call_minecraft_domain(self, minecraft_evaluator):
+        """__call__ should work for minecraft domain."""
+        traces = {
+            "agents": {"agent1": {"token_usage": 100, "action_log": [], "communication_log": []}},
+            "environment": {},
+        }
+        final_answer = "Structure built successfully"
+
+        result = minecraft_evaluator(traces, final_answer)
+
+        assert result["domain"] == "minecraft"
+        assert "passed" in result
+        assert "structural_completeness" in result["metrics"]["task_evaluation"]
+
+    def test_parse_minecraft_ratings_invalid(self, minecraft_evaluator):
+        """_parse_minecraft_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            minecraft_evaluator._parse_minecraft_ratings("Invalid JSON")
+
+    def test_evaluate_minecraft_on_error(self):
+        """_evaluate_minecraft should propagate LLM errors."""
+        from unittest.mock import MagicMock
+
+        mock_adapter = MagicMock()
+        mock_adapter.generate.side_effect = RuntimeError("Model failed")
+
+        evaluator = MultiAgentBenchEvaluator(
+            domain="minecraft",
+            model_adapter=mock_adapter,
+        )
+
+        with pytest.raises(RuntimeError, match="Model failed"):
+            evaluator._evaluate_minecraft("Task", "Result")
 
 
 class TestUnknownDomainEvaluation:
@@ -492,7 +608,7 @@ class TestCommunicationEvaluation:
         assert score == 4.0
 
     def test_evaluate_communication_on_error(self):
-        """_evaluate_communication should return None on error."""
+        """_evaluate_communication should propagate LLM errors."""
         from unittest.mock import MagicMock
 
         # Create mock that raises exception on generate
@@ -504,8 +620,8 @@ class TestCommunicationEvaluation:
             model_adapter=mock_adapter,
         )
 
-        score = evaluator._evaluate_communication("Task", "Comms")
-        assert score is None
+        with pytest.raises(RuntimeError, match="Model failed"):
+            evaluator._evaluate_communication("Task", "Comms")
 
     def test_call_with_communications(self, evaluator_with_comm_response):
         """__call__ should evaluate communications when present."""
@@ -544,25 +660,21 @@ class TestExceptionHandling:
         )
 
     def test_evaluate_research_on_error(self, failing_evaluator):
-        """_evaluate_research should return default values on error."""
-        result = failing_evaluator._evaluate_research("Task", "Result")
-        assert result["innovation"] is None
-        assert result["safety"] is None
-        assert result["feasibility"] is None
+        """_evaluate_research should propagate LLM errors."""
+        with pytest.raises(RuntimeError, match="Model failed"):
+            failing_evaluator._evaluate_research("Task", "Result")
 
     def test_evaluate_bargaining_on_error(self, failing_evaluator):
-        """_evaluate_bargaining should return default values on error."""
+        """_evaluate_bargaining should propagate LLM errors."""
         failing_evaluator.domain = "bargaining"
-        result = failing_evaluator._evaluate_bargaining("Task", "Result")
-        assert result["buyer"]["effectiveness_of_strategies"] is None
-        assert result["seller"]["effectiveness_of_strategies"] is None
+        with pytest.raises(RuntimeError, match="Model failed"):
+            failing_evaluator._evaluate_bargaining("Task", "Result")
 
     def test_evaluate_coding_on_error(self, failing_evaluator):
-        """_evaluate_coding should return default values on error."""
+        """_evaluate_coding should propagate LLM errors."""
         failing_evaluator.domain = "coding"
-        result = failing_evaluator._evaluate_coding("Task", "Result")
-        assert result["instruction_following"] is None
-        assert result["executability"] is None
+        with pytest.raises(RuntimeError, match="Model failed"):
+            failing_evaluator._evaluate_coding("Task", "Result")
 
 
 class TestParsingEdgeCases:
@@ -578,11 +690,10 @@ class TestParsingEdgeCases:
         )
 
     def test_parse_score_out_of_range(self, evaluator):
-        """_parse_score should reject scores outside 1-5 range."""
+        """_parse_score should raise for scores outside 1-5 range."""
         response = '{"rating": 10}'
-        score = evaluator._parse_score(response)
-        # Should return None since score is out of range
-        assert score is None
+        with pytest.raises(ValueError, match="out of valid range"):
+            evaluator._parse_score(response)
 
     def test_parse_score_with_just_code_block(self, evaluator):
         """_parse_score should handle code block without json marker."""
@@ -596,17 +707,16 @@ class TestParsingEdgeCases:
         score = evaluator._parse_score(response)
         assert score == 5.0
 
-    def test_parse_bargaining_ratings_partial(self, evaluator):
-        """_parse_bargaining_ratings should handle partial ratings."""
+    def test_parse_bargaining_ratings_missing_keys(self, evaluator):
+        """_parse_bargaining_ratings should raise when required keys are missing."""
         response = '{"effectiveness_of_strategies": 4}'  # Missing other fields
-        ratings = evaluator._parse_bargaining_ratings(response)
-        assert ratings["effectiveness_of_strategies"] == 4
-        assert ratings["progress_and_outcome"] is None
+        with pytest.raises(KeyError):
+            evaluator._parse_bargaining_ratings(response)
 
     def test_parse_bargaining_ratings_invalid(self, evaluator):
-        """_parse_bargaining_ratings should return None for invalid."""
-        ratings = evaluator._parse_bargaining_ratings("Invalid")
-        assert ratings["effectiveness_of_strategies"] is None
+        """_parse_bargaining_ratings should raise for invalid response."""
+        with pytest.raises(ValueError, match="No JSON object found"):
+            evaluator._parse_bargaining_ratings("Invalid")
 
 
 class TestFormatFinalAnswerEdgeCases:
@@ -853,3 +963,155 @@ class TestDetermineCompletionEdgeCases:
             }
         )
         assert evaluator._determine_completion(metrics) is False
+
+
+class TestResultSummarization:
+    """Tests for MARBLE-compatible result truncation and LLM summarization.
+
+    MARBLE's evaluation pipeline truncates each agent result to 1000 chars
+    (_summarize_results) then summarizes via an LLM call (summarize_output)
+    before passing to the domain evaluator.
+    """
+
+    @pytest.fixture
+    def evaluator(self):
+        """Create evaluator with summarization enabled (default)."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            responses=["Summarized output"],
+        )
+        return MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+            output_format="Present the idea in 5Q format.",
+        )
+
+    def test_summarize_results_truncates_long_results(self, evaluator):
+        """Each agent result line should be truncated to result_truncation_length chars."""
+        long_result = "x" * 2000
+        agent_results = [{"agent_id": "a1", "result": long_result}]
+        summary = evaluator._summarize_results(agent_results)
+
+        # Header line + one result line
+        lines = summary.strip().split("\n")
+        assert lines[0] == "Agents' Results Summary:"
+        # "- " prefix + content, truncated to DEFAULT_RESULT_TRUNCATION_LENGTH total
+        assert len(lines[1]) == DEFAULT_RESULT_TRUNCATION_LENGTH
+
+    def test_summarize_results_short_results_unchanged(self, evaluator):
+        """Short results should not be truncated."""
+        agent_results = [{"agent_id": "a1", "result": "short"}]
+        summary = evaluator._summarize_results(agent_results)
+
+        lines = summary.strip().split("\n")
+        assert lines[1] == "- short"
+
+    def test_summarize_results_multiple_agents(self, evaluator):
+        """Multiple agent results should all appear in the summary."""
+        agent_results = [
+            {"agent_id": "a1", "result": "Result 1"},
+            {"agent_id": "a2", "result": "Result 2"},
+        ]
+        summary = evaluator._summarize_results(agent_results)
+
+        assert "Result 1" in summary
+        assert "Result 2" in summary
+        assert summary.startswith("Agents' Results Summary:\n")
+
+    def test_summarize_results_empty_list(self, evaluator):
+        """Empty results should produce header-only summary."""
+        summary = evaluator._summarize_results([])
+        assert summary == "Agents' Results Summary:\n"
+
+    def test_summarize_results_custom_truncation_length(self):
+        """Custom result_truncation_length should be respected."""
+        adapter = DummyModelAdapter(model_id="test", responses=[])
+        evaluator = MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+            result_truncation_length=50,
+        )
+        agent_results = [{"agent_id": "a1", "result": "x" * 200}]
+        summary = evaluator._summarize_results(agent_results)
+
+        lines = summary.strip().split("\n")
+        assert len(lines[1]) == 50
+
+    def test_summarize_output_calls_model(self, evaluator):
+        """_summarize_output should call the model adapter and return its response."""
+        result = evaluator._summarize_output("truncated summary", "research task", "5Q format")
+        assert isinstance(result, str)
+        assert result == "Summarized output"
+
+    def test_call_with_summarization_uses_both_steps(self):
+        """__call__ with agent results should use truncation + LLM summarization."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            responses=[
+                '{"summary": "Agents collaborated on federated learning"}',
+                '{"innovation": 4, "safety": 4, "feasibility": 4}',
+            ],
+        )
+        evaluator = MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+            output_format="5Q format",
+        )
+        traces = {
+            "agents": {"a1": {"token_usage": 100, "action_log": [], "communication_log": []}},
+            "environment": {"marble_state": {"task_description": "Research task"}},
+        }
+        final_answer = {
+            "agent_results": [{"agent_id": "a1", "result": "Raw paper search JSON " * 100}],
+        }
+
+        result = evaluator(traces, final_answer)
+
+        assert result["passed"] is True
+        assert result["metrics"]["task_evaluation"]["innovation"] == 4
+
+    def test_call_with_summarization_disabled(self):
+        """__call__ with result_truncation_length=None should skip summarization."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            # Only one response needed: no summarization call, just domain eval
+            responses=['{"innovation": 4, "safety": 4, "feasibility": 4}'],
+        )
+        evaluator = MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+            result_truncation_length=None,
+        )
+        traces = {
+            "agents": {"a1": {"token_usage": 100, "action_log": [], "communication_log": []}},
+            "environment": {},
+        }
+        final_answer = {
+            "agent_results": [{"agent_id": "a1", "result": "Raw result"}],
+        }
+
+        result = evaluator(traces, final_answer)
+
+        assert result["domain"] == "research"
+        assert result["passed"] is True
+
+    def test_call_string_final_answer_bypasses_summarization(self):
+        """String final_answer should bypass summarization (no agent_results to extract)."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            # Only one response needed: domain eval only
+            responses=['{"innovation": 4, "safety": 4, "feasibility": 4}'],
+        )
+        evaluator = MultiAgentBenchEvaluator(
+            domain="research",
+            model_adapter=adapter,
+        )
+        traces = {
+            "agents": {},
+            "environment": {},
+        }
+
+        result = evaluator(traces, "plain string result")
+
+        assert result["domain"] == "research"
+        assert result["passed"] is True

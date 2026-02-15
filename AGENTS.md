@@ -494,3 +494,50 @@ MASEval provides a seeding system for reproducible benchmark runs. Seeds cascade
 - Focus on getting it right, not keeping it the same
 
 We have zero obligation to maintain backwards compatibility. If you find code messy, propose a fix.
+
+## Scientific Integrity
+
+MASEval is a scientific library. Scientific integrity is paramount. **Never introduce defaults that could silently alter benchmark behavior or experimental outcomes.**
+
+### The Boundary
+
+**Guiding principle:** If a researcher would need to report a parameter in a paper's "Experimental Setup" section, **do not invent a default for it.**
+
+**Acceptable (infrastructure/convenience):** `TaskQueue(limit=None)`, `Logger(verbose=False)`, `num_workers=1`, `print_results(color=True)` — these don't affect scientific results.
+
+**Unacceptable (experimental parameters):** Temperature, seed, model version, prompt format, simulation duration, agent limits, dataset splits, scoring functions — these alter what's being measured.
+
+### Reproducing Benchmarks
+
+When integrating external benchmarks, match the source implementation exactly. Never invent fallback values.
+
+```python
+# BAD: Invented defaults
+config = EnvironmentConfig(
+    duration=getattr(scenario, "duration", 86400),  # Made-up fallback!
+)
+start_time = getattr(scenario, "start_time", None)  # Hides missing attributes
+
+# GOOD: Pass through directly, let errors surface
+config = EnvironmentConfig(
+    duration=scenario.duration,  # Trust the source
+)
+start_time = scenario.start_time  # AttributeError if missing
+
+# GOOD: Copy source defaults with documentation
+# Default value copied from original_library/evaluator.py:L45
+EVAL_TEMPERATURE = 0.7
+
+class Evaluator:
+    def run(self, temperature: Optional[float] = None):
+        if temperature is None:
+            temperature = EVAL_TEMPERATURE  # From source:L45
+
+# also good:
+class Evaluator:
+    # default temperature from source:L45
+    def run(self, temperature: Optional[float] = 0.7):
+        ...
+```
+
+**Rule:** Only copy defaults that exist in the source. If the original doesn't provide a default, neither should you. Always document the source file and line number.

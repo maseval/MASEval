@@ -5,7 +5,6 @@ Note: load_tasks requires ARE package which may not be installed.
 """
 
 import pytest
-from unittest.mock import MagicMock
 
 from maseval import Task, TaskQueue
 
@@ -26,12 +25,26 @@ class TestDataLoaderConstants:
         assert HF_DATASET_ID == "meta-agents-research-environments/gaia2"
 
     def test_valid_capabilities_includes_expected(self):
-        """Test VALID_CAPABILITIES includes expected capabilities."""
+        """Test VALID_CAPABILITIES includes capabilities that exist on HuggingFace."""
         from maseval.benchmark.gaia2.data_loader import VALID_CAPABILITIES
 
-        expected = ["execution", "search", "adaptability", "time", "ambiguity", "agent2agent", "noise"]
+        expected = ["execution", "search", "adaptability", "time", "ambiguity"]
         for cap in expected:
             assert cap in VALID_CAPABILITIES
+
+    def test_valid_capabilities_excludes_nonexistent(self):
+        """Test VALID_CAPABILITIES does not include configs absent from HuggingFace."""
+        from maseval.benchmark.gaia2.data_loader import VALID_CAPABILITIES
+
+        for cap in ("agent2agent", "noise"):
+            assert cap not in VALID_CAPABILITIES
+
+    def test_hf_dataset_revision_is_pinned(self):
+        """Test HF_DATASET_REVISION is set for reproducibility."""
+        from maseval.benchmark.gaia2.data_loader import HF_DATASET_REVISION
+
+        assert HF_DATASET_REVISION, "HF_DATASET_REVISION must be set for reproducibility"
+        assert isinstance(HF_DATASET_REVISION, str)
 
     def test_valid_splits_includes_validation(self):
         """Test VALID_SPLITS includes validation."""
@@ -135,54 +148,83 @@ class TestConfigureModelIds:
         assert result is tasks
         assert all(t.evaluation_data.get("model_id") == "test-model" for t in tasks)
 
+    def test_sets_judge_engine_config(self, sample_gaia2_task_queue):
+        """Test configure_model_ids stores judge_engine_config in evaluation_data."""
+        from maseval.benchmark.gaia2.data_loader import Gaia2JudgeEngineConfig, configure_model_ids
+
+        config = Gaia2JudgeEngineConfig(provider="openrouter")
+        configure_model_ids(sample_gaia2_task_queue, judge_engine_config=config)
+
+        for task in sample_gaia2_task_queue:
+            assert task.evaluation_data.get("judge_engine_config") is config
+
+    def test_judge_engine_config_none_does_not_set(self, sample_gaia2_task_queue):
+        """Test configure_model_ids with None judge_engine_config does not modify evaluation_data."""
+        from maseval.benchmark.gaia2.data_loader import configure_model_ids
+
+        configure_model_ids(sample_gaia2_task_queue)
+
+        for task in sample_gaia2_task_queue:
+            assert "judge_engine_config" not in task.evaluation_data
+
+    def test_both_evaluator_and_judge_config(self, sample_gaia2_task_queue):
+        """Test configure_model_ids sets both evaluator model_id and judge_engine_config."""
+        from maseval.benchmark.gaia2.data_loader import Gaia2JudgeEngineConfig, configure_model_ids
+
+        config = Gaia2JudgeEngineConfig(model_name="gpt-4o", provider="openai")
+        configure_model_ids(
+            sample_gaia2_task_queue,
+            evaluator_model_id="gpt-4o",
+            judge_engine_config=config,
+        )
+
+        for task in sample_gaia2_task_queue:
+            assert task.evaluation_data.get("model_id") == "gpt-4o"
+            assert task.evaluation_data.get("judge_engine_config") is config
+
 
 # =============================================================================
-# Test _get_scenario_metadata helper
+# Test Gaia2JudgeEngineConfig
 # =============================================================================
 
 
 @pytest.mark.benchmark
-class TestGetScenarioMetadata:
-    """Tests for _get_scenario_metadata helper function."""
+class TestGaia2JudgeEngineConfig:
+    """Tests for Gaia2JudgeEngineConfig dataclass."""
 
-    def test_extracts_from_dict_metadata(self):
-        """Test extraction from dict-style metadata."""
-        from maseval.benchmark.gaia2.data_loader import _get_scenario_metadata
+    def test_default_values_match_are(self):
+        """Test defaults match ARE's validation/configs.py:28-29."""
+        from maseval.benchmark.gaia2.data_loader import Gaia2JudgeEngineConfig
 
-        scenario = MagicMock()
-        scenario.metadata = {"capability": "execution", "universe_id": "test"}
+        config = Gaia2JudgeEngineConfig()
+        assert config.model_name == "meta-llama/Meta-Llama-3.3-70B-Instruct"
+        assert config.provider == "huggingface"
+        assert config.endpoint is None
 
-        assert _get_scenario_metadata(scenario, "capability") == "execution"
-        assert _get_scenario_metadata(scenario, "universe_id") == "test"
+    def test_custom_provider(self):
+        """Test custom provider can be set."""
+        from maseval.benchmark.gaia2.data_loader import Gaia2JudgeEngineConfig
 
-    def test_returns_default_for_missing_key(self):
-        """Test returns default when key not found."""
-        from maseval.benchmark.gaia2.data_loader import _get_scenario_metadata
+        config = Gaia2JudgeEngineConfig(provider="openrouter")
+        assert config.provider == "openrouter"
+        assert config.model_name == "meta-llama/Meta-Llama-3.3-70B-Instruct"
 
-        scenario = MagicMock()
-        scenario.metadata = {"other": "value"}
+    def test_custom_model_and_provider(self):
+        """Test custom model and provider can be set together."""
+        from maseval.benchmark.gaia2.data_loader import Gaia2JudgeEngineConfig
 
-        assert _get_scenario_metadata(scenario, "missing") is None
-        assert _get_scenario_metadata(scenario, "missing", "default") == "default"
+        config = Gaia2JudgeEngineConfig(
+            model_name="openai/gpt-4o",
+            provider="openrouter",
+            endpoint="https://openrouter.ai/api/v1",
+        )
+        assert config.model_name == "openai/gpt-4o"
+        assert config.provider == "openrouter"
+        assert config.endpoint == "https://openrouter.ai/api/v1"
 
-    def test_handles_none_metadata(self):
-        """Test handles None metadata attribute."""
-        from maseval.benchmark.gaia2.data_loader import _get_scenario_metadata
+    def test_importable_from_package(self):
+        """Test Gaia2JudgeEngineConfig is importable from the gaia2 package."""
+        from maseval.benchmark.gaia2 import Gaia2JudgeEngineConfig
 
-        scenario = MagicMock()
-        scenario.metadata = None
-
-        assert _get_scenario_metadata(scenario, "any_key") is None
-        assert _get_scenario_metadata(scenario, "any_key", "default") == "default"
-
-    def test_handles_object_metadata(self):
-        """Test handles object-style metadata with attributes."""
-        from maseval.benchmark.gaia2.data_loader import _get_scenario_metadata
-
-        metadata = MagicMock()
-        metadata.capability = "search"
-        scenario = MagicMock()
-        scenario.metadata = metadata
-
-        # Note: dict access will fail, falls back to attribute
-        assert _get_scenario_metadata(scenario, "capability") == "search"
+        config = Gaia2JudgeEngineConfig()
+        assert config is not None

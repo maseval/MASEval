@@ -8,6 +8,8 @@ from maseval.benchmark.multiagentbench.adapters.marble_adapter import (
 )
 from maseval import AgentError
 
+pytestmark = pytest.mark.benchmark
+
 
 class TestMarbleAgentAdapter:
     """Tests for MarbleAgentAdapter class."""
@@ -194,14 +196,25 @@ class TestCreateMarbleAgentsImportError:
 
     def test_create_marble_agents_import_error(self):
         """create_marble_agents should raise ImportError when MARBLE not available."""
+        import sys
+        from unittest.mock import patch
+
         from maseval.benchmark.multiagentbench.adapters.marble_adapter import (
             create_marble_agents,
         )
 
-        # This will fail because MARBLE is not installed
-        with pytest.raises(ImportError, match="MARBLE is not available"):
-            create_marble_agents(
-                agent_configs=[{"agent_id": "test"}],
-                marble_env=MagicMock(),
-                model="gpt-4o",
-            )
+        # Temporarily remove marble modules to simulate MARBLE not being available
+        marble_modules = {k: v for k, v in sys.modules.items() if "marble" in k}
+        for module_name in marble_modules:
+            sys.modules.pop(module_name, None)
+
+        try:
+            with patch.dict("sys.modules", {"marble.agent.base_agent": None}):
+                with pytest.raises(ImportError, match="MARBLE is not available"):
+                    create_marble_agents(
+                        agent_configs=[{"agent_id": "test"}],
+                        marble_env=MagicMock(),
+                        model="gpt-4o",
+                    )
+        finally:
+            sys.modules.update(marble_modules)

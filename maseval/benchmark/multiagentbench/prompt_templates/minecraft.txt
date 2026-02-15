@@ -1,0 +1,15 @@
+Evaluate the following Minecraft collaborative building task performance.
+
+Task: {task}
+
+Result:
+{result}
+
+Rate each dimension on a scale of 1-5:
+- structural_completeness: Were all required blocks placed to complete the structure?
+- blueprint_accuracy: How closely does the final build match the blueprint specifications (materials, positions, facing)?
+- coordination: How well did agents coordinate block placement, material retrieval, and scaffolding?
+- efficiency: How efficiently was the task completed (minimal wasted actions, good division of labor)?
+
+Respond with a JSON object:
+{{"structural_completeness": <score>, "blueprint_accuracy": <score>, "coordination": <score>, "efficiency": <score>}}

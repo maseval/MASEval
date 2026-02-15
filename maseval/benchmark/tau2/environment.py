@@ -13,8 +13,9 @@ This environment uses real tools that modify actual database state,
 providing deterministic and reproducible evaluation.
 """
 
+import functools
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, cast
 
 from maseval import Environment
 
@@ -149,7 +150,15 @@ class Tau2Environment(Environment):
             user_toolkit_class = DOMAIN_USER_TOOLKIT_CLASSES[self._domain]
             user_toolkit = user_toolkit_class(db)
 
-        # Store initial hash for comparison
+        # Execute initialization_actions AFTER toolkits are created
+        # These are tool calls (e.g., turn_data_off, set_data_usage) that set up
+        # the task's initial device/environment state.
+        if self._initial_state_config:
+            init_actions = self._initial_state_config.get("initialization_actions")
+            if init_actions:
+                self._execute_initialization_actions(init_actions, toolkit, user_toolkit, db)
+
+        # Store initial hash for comparison (AFTER init_actions)
         initial_db_hash = db.get_hash()
 
         # Get policy from embedded data or fallback to loading
@@ -167,47 +176,212 @@ class Tau2Environment(Environment):
         }
 
     def _apply_initial_state(self, db: DB, initial_state: Dict[str, Any]) -> DB:
-        """Apply initial state modifications to database.
+        """Apply initialization_data updates to database.
+
+        Only applies static data updates (agent_data, user_data).
+        initialization_actions are executed separately in setup_state()
+        after toolkits are created.
 
         Args:
             db: Database instance
-            initial_state: Initial state configuration with:
-                - initialization_data: Dict with agent_data/user_data updates
-                - initialization_actions: List of tool calls to execute
+            initial_state: Initial state configuration
 
         Returns:
             Modified database
         """
-        # Apply initialization data updates
         init_data = initial_state.get("initialization_data")
         if init_data:
             agent_data = init_data.get("agent_data")
             if agent_data:
                 db = update_pydantic_model_with_dict(db, agent_data)
-
-        # Note: initialization_actions (tool calls) are handled during
-        # evaluation replay, not during environment setup
+            user_data = init_data.get("user_data")
+            if user_data and hasattr(db, "user_db"):
+                telecom_db = cast(TelecomDB, db)
+                if telecom_db.user_db is not None:
+                    telecom_db.user_db = update_pydantic_model_with_dict(telecom_db.user_db, user_data)
 
         return db
+
+    def _execute_initialization_actions(
+        self,
+        actions: List[Dict[str, Any]],
+        toolkit: ToolKitBase,
+        user_toolkit: Optional[ToolKitBase],
+        db: DB,
+    ) -> None:
+        """Execute initialization actions to set up task state.
+
+        Routes each action to the appropriate toolkit based on env_type,
+        then calls _sync_tools_internal() after each action.
+
+        Matches tau2-bench Environment.run_env_function_call() behavior.
+
+        Args:
+            actions: List of action dicts with env_type, func_name, arguments
+            toolkit: Agent-side toolkit
+            user_toolkit: User-side toolkit (may be None)
+            db: Database instance
+        """
+        for action in actions:
+            env_type = action.get("env_type", "assistant")
+            func_name = action["func_name"]
+            arguments = action.get("arguments", {})
+
+            if env_type == "user":
+                if user_toolkit is None:
+                    raise ValueError(f"No user toolkit available for user action: {func_name}")
+                func = getattr(user_toolkit, func_name, None)
+                if func is None:
+                    raise ValueError(f"User function '{func_name}' not found on user toolkit")
+                func(**arguments)
+            elif env_type == "assistant":
+                func = getattr(toolkit, func_name, None)
+                if func is None:
+                    raise ValueError(f"Assistant function '{func_name}' not found on toolkit")
+                func(**arguments)
+            else:
+                raise ValueError(f"Unknown env_type: {env_type}")
+
+            # Sync state after each action (matching tau2-bench behavior)
+            self._sync_tools_internal(toolkit, user_toolkit, db)
+
+    def _sync_tools_internal(
+        self,
+        toolkit: ToolKitBase,
+        user_toolkit: Optional[ToolKitBase],
+        db: DB,
+    ) -> None:
+        """Synchronize agent-side and user-side state for telecom domain.
+
+        Bridges state between agent DB and user surroundings. Called after
+        every tool invocation and each initialization action.
+        Only applies to telecom domain.
+
+        Matches tau2-bench TelecomEnvironment.sync_tools()
+        (telecom/environment.py:40-94).
+
+        Args:
+            toolkit: Agent-side toolkit
+            user_toolkit: User-side toolkit
+            db: Database instance
+        """
+        if self._domain != "telecom":
+            return
+        if user_toolkit is None:
+            return
+        if not hasattr(db, "user_db") or db.user_db is None:
+            return
+
+        # Narrow types after domain + hasattr guards
+        telecom_db = cast(TelecomDB, db)
+        telecom_tools = cast(TelecomTools, toolkit)
+        user_db = telecom_db.user_db
+        if user_db is None or user_db.surroundings.phone_number is None:
+            return
+
+        phone_number = user_db.surroundings.phone_number
+
+        try:
+            line = telecom_tools._get_line_by_phone(phone_number)
+        except (ValueError, AttributeError):
+            return
+
+        from maseval.benchmark.tau2.domains.telecom.models import LineStatus
+
+        # Sync line active status (agent DB → user surroundings)
+        user_db.surroundings.line_active = line.status == LineStatus.ACTIVE
+
+        # Sync roaming capability (agent DB → user surroundings)
+        user_db.surroundings.roaming_allowed_in_location = line.roaming_enabled
+
+        # Sync data usage exceeded (agent DB → user surroundings)
+        try:
+            plan = telecom_tools._get_plan_by_id(line.plan_id)
+            data_limit = plan.data_limit_gb + getattr(line, "data_refueling_gb", 0.0)
+            user_db.surroundings.mobile_data_usage_exceeded = line.data_used_gb >= data_limit
+        except (ValueError, AttributeError):
+            pass
+
+        # Sync paid bills (user surroundings → agent DB)
+        # Original: tau2-bench telecom/environment.py:76-81
+        from maseval.benchmark.tau2.domains.telecom.user_models import PaymentRequest
+
+        paid_ids = set()
+        for req in user_db.surroundings.payment_requests:
+            if req.paid:
+                try:
+                    telecom_tools._set_bill_to_paid(req.bill_id)
+                except (ValueError, AttributeError):
+                    pass
+                paid_ids.add(req.bill_id)
+        if paid_ids:
+            user_db.surroundings.payment_requests = [r for r in user_db.surroundings.payment_requests if r.bill_id not in paid_ids]
+
+        # Sync payment requests (agent DB → user surroundings)
+        # Original: tau2-bench telecom/environment.py:83-94
+        has_pending = any(not r.paid for r in user_db.surroundings.payment_requests)
+        if not has_pending:
+            try:
+                customer = telecom_tools.get_customer_by_phone(phone_number)
+                bills = telecom_tools._get_bills_awaiting_payment(customer)
+                if bills:
+                    bill = bills[0]
+                    user_db.surroundings.payment_requests.append(PaymentRequest(bill_id=bill.bill_id, amount_due=bill.total_due))
+            except (ValueError, AttributeError):
+                pass
+
+    def sync_tools(self) -> None:
+        """Synchronize agent-side and user-side state.
+
+        Called automatically after every tool invocation via wrapped callables.
+        Currently only applies to telecom domain (no-op for retail/airline).
+
+        Matches tau2-bench orchestrator.py:361 behavior where ``sync_tools()``
+        is called after every orchestration step.
+        """
+        self._sync_tools_internal(self.toolkit, self.user_toolkit, self.db)
+
+    def _wrap_with_sync(self, func: Callable) -> Callable:
+        """Wrap a tool callable to call ``sync_tools()`` after each invocation.
+
+        Args:
+            func: The original tool callable
+
+        Returns:
+            Wrapped callable that syncs state after execution
+        """
+
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = func(*args, **kwargs)
+            self.sync_tools()
+            return result
+
+        return wrapper
 
     def create_tools(self) -> Dict[str, Callable]:  # type: ignore[override]
         """Create tools from the domain toolkit.
 
         These are real Python methods that modify database state.
+        Each tool is wrapped with a post-invocation ``sync_tools()`` call
+        to keep agent-side and user-side state synchronized.
 
         Returns:
             Dict mapping tool names to callable methods
         """
-        return self.toolkit.tools
+        return {name: self._wrap_with_sync(func) for name, func in self.toolkit.tools.items()}
 
     def create_user_tools(self) -> Dict[str, Callable]:
         """Create user tools from the domain user toolkit.
+
+        Each tool is wrapped with a post-invocation ``sync_tools()`` call
+        to keep agent-side and user-side state synchronized.
 
         Returns:
             Dict mapping tool names to callable methods
         """
         if self.user_toolkit:
-            return self.user_toolkit.tools
+            return {name: self._wrap_with_sync(func) for name, func in self.user_toolkit.tools.items()}
         return {}
 
     def get_db_hash(self) -> str:
