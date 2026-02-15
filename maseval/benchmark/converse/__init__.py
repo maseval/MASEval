@@ -1,12 +1,15 @@
 """CONVERSE Benchmark — Contextual Safety in Agent-to-Agent Conversations.
 
+Adapted from ConVerse (https://github.com/amrgomaaelhady/ConVerse, commit d474f6a).
+Original work licensed under the MIT License.
+
+Citation:
+    Gomaa, A., Salem, A., & Abdelnabi, S. (2025). ConVerse: Benchmarking Contextual
+    Safety in Agent-to-Agent Conversations. arXiv:2511.05359.
+
 Framework-agnostic implementation of the CONVERSE benchmark for evaluating
 the resilience of LLM-based assistants against adversarial social-engineering
 attacks from external service-provider agents.
-
-Original benchmark: https://github.com/amrgomaaelhady/ConVerse
-Reference Paper: "ConVerse: Contextual Safety in Agent-to-Agent Conversations"
-https://arxiv.org/abs/2506.15753
 
 Domains:
 

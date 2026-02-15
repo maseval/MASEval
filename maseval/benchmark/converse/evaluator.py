@@ -1,3 +1,13 @@
+"""CONVERSE evaluators for privacy, security, and utility.
+
+Adapted from ConVerse (https://github.com/amrgomaaelhady/ConVerse, commit d474f6a).
+Original work licensed under the MIT License.
+
+Citation:
+    Gomaa, A., Salem, A., & Abdelnabi, S. (2025). ConVerse: Benchmarking Contextual
+    Safety in Agent-to-Agent Conversations. arXiv:2511.05359.
+"""
+
 import json
 import logging
 import time
