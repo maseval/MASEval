@@ -117,6 +117,22 @@ class ConverseBenchmark(Benchmark):
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Set up the SUT agents for CONVERSE."""
 
+    def _make_judge_model(
+        self,
+        judge_name: str,
+        model_id: Optional[str],
+        seed_generator: SeedGenerator,
+    ) -> Optional[ModelAdapter]:
+        """Create a judge model adapter, or return ``None`` if *model_id* is ``None``."""
+        if model_id is None:
+            return None
+        return self.get_model_adapter(
+            model_id,
+            seed=seed_generator.derive_seed(f"evaluators/{judge_name}_judge"),
+            register_category="models",
+            register_name=f"{judge_name}_judge_model",
+        )
+
     def setup_evaluators(
         self,
         environment: Environment,
@@ -127,14 +143,15 @@ class ConverseBenchmark(Benchmark):
     ) -> List[Evaluator]:
         """Select evaluators based on the task's evaluation type.
 
-        A :class:`PrivacyEvaluator` is added when the type is ``"privacy"``.
-        If ``evaluator_model_id`` is set in ``task.evaluation_data``
-        (via :func:`configure_model_ids`), the evaluator uses an LLM judge
-        matching the original ConVerse ``privacy_judge.py``; otherwise it
-        falls back to substring matching.
+        A :class:`PrivacyEvaluator` or :class:`SecurityEvaluator` is added
+        when the type matches.  If ``evaluator_model_id`` is set in
+        ``task.evaluation_data`` (via :func:`configure_model_ids`), the
+        evaluator uses an LLM judge; otherwise privacy evaluation falls
+        back to substring matching and security evaluation is skipped.
 
-        A :class:`SecurityEvaluator` is added when the type is
-        ``"security"`` or ``forbidden_tools`` is present.
+        A :class:`UtilityEvaluator` is always added when a judge model is
+        available.  Utility is measured on every task (privacy, security,
+        benign) — ``ConVerse/judge/utility_judge.py:143-179``.
 
         Args:
             environment: The task environment.
@@ -147,52 +164,21 @@ class ConverseBenchmark(Benchmark):
             List of evaluators applicable to this task.
         """
         _ = agents
-        eval_type = str(task.evaluation_data.get("type", "")).lower()
+        eval_type = task.evaluation_data.get("type", "")
+        model_id = task.evaluation_data.get("evaluator_model_id")
+        domain = task.environment_data.get("domain")
+
+        evaluator_classes = {"privacy": PrivacyEvaluator, "security": SecurityEvaluator}
         evaluators: List[Evaluator] = []
 
-        if eval_type == "privacy":
-            # Optionally create an LLM model for the privacy judge.
-            evaluator_model_id = task.evaluation_data.get("evaluator_model_id")
-            model = None
-            if evaluator_model_id is not None:
-                evaluator_seed = seed_generator.derive_seed("evaluators/privacy_judge")
-                model = self.get_model_adapter(
-                    evaluator_model_id,
-                    seed=evaluator_seed,
-                    register_category="models",
-                    register_name="privacy_judge_model",
-                )
-            domain = task.environment_data.get("domain")
-            evaluators.append(PrivacyEvaluator(task=task, environment=environment, user=user, model=model, domain=domain))
+        evaluator_cls = evaluator_classes.get(eval_type)
+        if evaluator_cls is not None:
+            model = self._make_judge_model(eval_type, model_id, seed_generator)
+            evaluators.append(evaluator_cls(task=task, environment=environment, user=user, model=model, domain=domain))
 
-        if eval_type == "security":
-            # Optionally create an LLM model for the security judge.
-            evaluator_model_id = task.evaluation_data.get("evaluator_model_id")
-            model = None
-            if evaluator_model_id is not None:
-                evaluator_seed = seed_generator.derive_seed("evaluators/security_judge")
-                model = self.get_model_adapter(
-                    evaluator_model_id,
-                    seed=evaluator_seed,
-                    register_category="models",
-                    register_name="security_judge_model",
-                )
-            domain = task.environment_data.get("domain")
-            evaluators.append(SecurityEvaluator(task=task, environment=environment, user=user, model=model, domain=domain))
-
-        # Always add utility evaluator when an evaluator model is available.
-        # Utility is measured on every task (privacy, security, benign).
-        # ConVerse/judge/utility_judge.py:143-179
-        utility_model_id = task.evaluation_data.get("evaluator_model_id")
-        if utility_model_id is not None:
-            utility_seed = seed_generator.derive_seed("evaluators/utility_judge")
-            utility_model = self.get_model_adapter(
-                utility_model_id,
-                seed=utility_seed,
-                register_category="models",
-                register_name="utility_judge_model",
-            )
-            domain = task.environment_data.get("domain")
+        # Utility is always measured when a judge model is available.
+        if model_id is not None:
+            utility_model = self._make_judge_model("utility", model_id, seed_generator)
             evaluators.append(UtilityEvaluator(task=task, environment=environment, user=user, model=utility_model, domain=domain))
 
         return evaluators

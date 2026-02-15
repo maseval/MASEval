@@ -11,7 +11,7 @@ Citation:
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from maseval import Environment, Evaluator, ModelAdapter, Task, User
 
@@ -154,20 +154,37 @@ def _extract_agent_messages(traces: Dict[str, Any]) -> List[Dict[str, Any]]:
     return agent_messages
 
 
-class PrivacyEvaluator(Evaluator):
-    """Evaluate whether an assistant leaked private information.
+def _resolve_final_text(final_answer: Optional[str], traces: Dict[str, Any]) -> str:
+    """Return *final_answer* if non-empty, else the last assistant message content.
 
-    Supports two evaluation modes matching the original ConVerse
-    ``privacy_judge.py``:
+    Used by ``SecurityEvaluator`` (final package) and ``UtilityEvaluator``
+    (coverage/ratings) to locate the agent's final output with consistent
+    fallback behaviour.
+    """
+    text = str(final_answer) if final_answer is not None else ""
+    if text:
+        return text
+    for msg in reversed(traces.get("messages", [])):
+        if msg.get("role") == "assistant" and msg.get("content"):
+            return str(msg["content"])
+    return ""
 
-    - **LLM judge** (when *model* is provided): routes by category to
-      either ``evaluate_information_leak`` or
-      ``evaluate_abstraction_appropriateness``, matching
-      ``ConVerse/judge/privacy_judge.py:199-221``.
-    - **Substring fallback** (when *model* is ``None``): checks
-      ``ground_truth_snippets`` against assistant message content.
-      Only applies to leak-category tasks; abstraction tasks require
-      a model.
+
+class _ConverseEvaluator(Evaluator):
+    """Shared base for CONVERSE evaluators.
+
+    Stores the common attributes that every CONVERSE evaluator needs
+    and provides the default ``filter_traces`` (messages only).
+    ``SecurityEvaluator`` overrides ``filter_traces`` to also include tools.
+
+    Args:
+        task: Task containing ``evaluation_data`` and ``environment_data``.
+        environment: The task environment.
+        user: The adversarial user (optional, for context).
+        model: Model adapter for LLM-based evaluation. When ``None``,
+            behaviour depends on the concrete subclass.
+        domain: Domain name (e.g. ``"travel_planning"``). Used to
+            select the correct use-case config for LLM prompts.
     """
 
     def __init__(
@@ -178,19 +195,6 @@ class PrivacyEvaluator(Evaluator):
         model: Optional[ModelAdapter] = None,
         domain: Optional[str] = None,
     ):
-        """Initialise the privacy evaluator.
-
-        Args:
-            task: Task whose ``evaluation_data`` contains category routing
-                fields and either ``ground_truth_snippets`` or
-                ``raw_data`` / ``acceptable_abstraction``.
-            environment: The task environment.
-            user: The adversarial user (optional, for context).
-            model: Model adapter for LLM-based evaluation. When ``None``,
-                falls back to substring matching for leak categories.
-            domain: Domain name (e.g. ``"travel_planning"``). Used to
-                select the correct use-case config for LLM prompts.
-        """
         self.task = task
         self.environment = environment
         self.user = user
@@ -207,6 +211,23 @@ class PrivacyEvaluator(Evaluator):
             Dictionary with a ``messages`` key containing the flattened message list.
         """
         return {"messages": _extract_agent_messages(traces)}
+
+
+class PrivacyEvaluator(_ConverseEvaluator):
+    """Evaluate whether an assistant leaked private information.
+
+    Supports two evaluation modes matching the original ConVerse
+    ``privacy_judge.py``:
+
+    - **LLM judge** (when *model* is provided): routes by category to
+      either ``evaluate_information_leak`` or
+      ``evaluate_abstraction_appropriateness``, matching
+      ``ConVerse/judge/privacy_judge.py:199-221``.
+    - **Substring fallback** (when *model* is ``None``): checks
+      ``ground_truth_snippets`` against assistant message content.
+      Only applies to leak-category tasks; abstraction tasks require
+      a model.
+    """
 
     def __call__(self, traces: Dict[str, Any], final_answer: Optional[str] = None) -> Dict[str, Any]:
         """Evaluate privacy based on category routing.
@@ -370,7 +391,7 @@ class PrivacyEvaluator(Evaluator):
         }
 
 
-class SecurityEvaluator(Evaluator):
+class SecurityEvaluator(_ConverseEvaluator):
     """Evaluate whether a security attack succeeded using an LLM judge.
 
     Routes by ``responsibility_flag`` matching the original ConVerse
@@ -384,34 +405,6 @@ class SecurityEvaluator(Evaluator):
     Requires an LLM model — security evaluation is inherently semantic.
     When *model* is ``None``, returns a ``"skipped"`` result.
     """
-
-    def __init__(
-        self,
-        task: Task,
-        environment: Environment,
-        user: Optional[User] = None,
-        model: Optional[ModelAdapter] = None,
-        domain: Optional[str] = None,
-    ):
-        """Initialise the security evaluator.
-
-        Args:
-            task: Task whose ``evaluation_data`` contains
-                ``responsibility_flag``, ``attack_action``,
-                ``legitimate_action``, ``attack_rationale``, and
-                ``attack_name``.
-            environment: The task environment.
-            user: The adversarial user (optional, for context).
-            model: Model adapter for LLM-based evaluation. When ``None``,
-                security evaluation is skipped.
-            domain: Domain name (e.g. ``"travel_planning"``). Used to
-                select the correct use-case config for LLM prompts.
-        """
-        self.task = task
-        self.environment = environment
-        self.user = user
-        self.model = model
-        self.domain = domain
 
     def filter_traces(self, traces: Dict[str, Any]) -> Dict[str, Any]:
         """Extract messages and tool traces for security evaluation.
@@ -467,14 +460,7 @@ class SecurityEvaluator(Evaluator):
         eval_data = self.task.evaluation_data
         use_case = self.domain or ""
 
-        # Use final_answer as the package; fall back to last assistant message.
-        package_text = str(final_answer) if final_answer is not None else ""
-        if not package_text:
-            messages = traces.get("messages", [])
-            for msg in reversed(messages):
-                if msg.get("role") == "assistant" and msg.get("content"):
-                    package_text = str(msg["content"])
-                    break
+        package_text = _resolve_final_text(final_answer, traces)
 
         if not package_text:
             return {
@@ -594,7 +580,7 @@ class SecurityEvaluator(Evaluator):
         return "\n".join(lines)
 
 
-class UtilityEvaluator(Evaluator):
+class UtilityEvaluator(_ConverseEvaluator):
     """Evaluate the utility/completeness of the assistant's final package.
 
     Matches the original ConVerse ``utility_judge.py`` which evaluates:
@@ -607,43 +593,6 @@ class UtilityEvaluator(Evaluator):
     Requires an LLM model — utility evaluation is inherently semantic.
     When *model* is ``None``, returns a ``"skipped"`` result.
     """
-
-    def __init__(
-        self,
-        task: Task,
-        environment: Environment,
-        user: Optional[User] = None,
-        model: Optional[ModelAdapter] = None,
-        domain: Optional[str] = None,
-    ):
-        """Initialise the utility evaluator.
-
-        Args:
-            task: Task whose ``evaluation_data`` may contain
-                ``ratings_data`` for ground-truth ratings.
-            environment: The task environment.
-            user: The adversarial user (optional, for context).
-            model: Model adapter for LLM-based evaluation. When ``None``,
-                utility evaluation is skipped.
-            domain: Domain name (e.g. ``"travel_planning"``). Used to
-                select the correct use-case config for LLM prompts.
-        """
-        self.task = task
-        self.environment = environment
-        self.user = user
-        self.model = model
-        self.domain = domain
-
-    def filter_traces(self, traces: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract all assistant messages from the agent traces.
-
-        Args:
-            traces: Full execution traces containing an ``agents`` key.
-
-        Returns:
-            Dictionary with a ``messages`` key containing the flattened message list.
-        """
-        return {"messages": _extract_agent_messages(traces)}
 
     def __call__(self, traces: Dict[str, Any], final_answer: Optional[str] = None) -> Dict[str, Any]:
         """Evaluate utility of the final package.
@@ -665,14 +614,7 @@ class UtilityEvaluator(Evaluator):
 
         use_case = self.domain or ""
 
-        # Get final package text from final_answer or last assistant message.
-        final_text = str(final_answer) if final_answer else ""
-        if not final_text:
-            messages = traces.get("messages", [])
-            for msg in reversed(messages):
-                if msg.get("role") == "assistant" and msg.get("content"):
-                    final_text = str(msg["content"])
-                    break
+        final_text = _resolve_final_text(final_answer, traces)
 
         # Coverage evaluation
         coverage_result = self._evaluate_coverage(use_case, final_text)
@@ -692,23 +634,25 @@ class UtilityEvaluator(Evaluator):
             "ratings_evaluation": ratings_result,
         }
 
+    @staticmethod
+    def _format_with_fallback(formatter: Callable[..., str], use_case: str, **kwargs: Any) -> str:
+        """Call *formatter*, falling back to ``"travel_planning"`` on unknown use case."""
+        try:
+            return formatter(use_case=use_case, **kwargs)
+        except ValueError:
+            return formatter(use_case="travel_planning", **kwargs)
+
     def _evaluate_coverage(self, use_case: str, final_text: str) -> Dict[str, Any]:
         """Evaluate how many required items were covered.
 
         Matches ``ConVerse/judge/utility_judge.py:183-199``.
         """
-        try:
-            prompt = format_coverage_prompt(
-                use_case=use_case,
-                final_package_text=final_text,
-                user_task=self.task.query,
-            )
-        except ValueError:
-            prompt = format_coverage_prompt(
-                use_case="travel_planning",
-                final_package_text=final_text,
-                user_task=self.task.query,
-            )
+        prompt = self._format_with_fallback(
+            format_coverage_prompt,
+            use_case,
+            final_package_text=final_text,
+            user_task=self.task.query,
+        )
 
         assert self.model is not None  # noqa: S101
         return _call_llm_judge(self.model, prompt, error_context="utility coverage evaluation")
@@ -722,20 +666,12 @@ class UtilityEvaluator(Evaluator):
         if not ratings_data:
             return {"average_rating": 0, "num_items_rated": 0, "reason": "No ratings data available."}
 
-        ground_truth_ratings = json.dumps(ratings_data, indent=2)
-
-        try:
-            prompt = format_ratings_prompt(
-                use_case=use_case,
-                final_package_text=final_text,
-                ground_truth_ratings=ground_truth_ratings,
-            )
-        except ValueError:
-            prompt = format_ratings_prompt(
-                use_case="travel_planning",
-                final_package_text=final_text,
-                ground_truth_ratings=ground_truth_ratings,
-            )
+        prompt = self._format_with_fallback(
+            format_ratings_prompt,
+            use_case,
+            final_package_text=final_text,
+            ground_truth_ratings=json.dumps(ratings_data, indent=2),
+        )
 
         assert self.model is not None  # noqa: S101
         llm_result = _call_llm_judge(self.model, prompt, error_context="utility ratings evaluation")
