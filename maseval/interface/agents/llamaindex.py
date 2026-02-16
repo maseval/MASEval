@@ -33,6 +33,101 @@ def _check_llamaindex_installed():
         raise ImportError("llama-index-core is not installed. Install it with: pip install maseval[llamaindex]") from e
 
 
+class _MASEvalSpanHandler:
+    """Read-only span handler that records LlamaIndex execution spans.
+
+    Uses duck-typing compatible with llama_index_instrumentation's BaseSpanHandler.
+    Only records spans when ``_active`` is True (set during adapter's ``run()``).
+    """
+
+    def __init__(self):
+        self.open_spans: Dict[str, Any] = {}
+        self.completed_spans: List[Any] = []
+        self.dropped_spans: List[Any] = []
+        self.current_span_ids: Dict[Any, Optional[str]] = {}
+        self._trace_buffer: List[Dict[str, Any]] = []
+        self._active: bool = False
+        self._lock = None
+
+    @property
+    def lock(self):
+        import threading
+
+        if self._lock is None:
+            self._lock = threading.Lock()
+        return self._lock
+
+    def span_enter(self, id_, bound_args, instance=None, parent_id=None, tags=None, **kwargs):
+        """Logic for entering a span."""
+        if not self._active:
+            return
+        if id_ not in self.open_spans:
+            span = self.new_span(id_=id_, bound_args=bound_args, instance=instance, parent_span_id=parent_id, tags=tags)
+            if span:
+                with self.lock:
+                    self.open_spans[id_] = span
+
+    def span_exit(self, id_, bound_args, instance=None, result=None, **kwargs):
+        """Logic for exiting a span."""
+        span = self.prepare_to_exit_span(id_=id_, bound_args=bound_args, instance=instance, result=result)
+        if span:
+            with self.lock:
+                self.open_spans.pop(id_, None)
+
+    def span_drop(self, id_, bound_args, instance=None, err=None, **kwargs):
+        """Logic for dropping a span (early exit / error)."""
+        span = self.prepare_to_drop_span(id_=id_, bound_args=bound_args, instance=instance, err=err)
+        if span:
+            with self.lock:
+                self.open_spans.pop(id_, None)
+
+    def new_span(self, id_, bound_args, instance=None, parent_span_id=None, tags=None, **kwargs):
+        if not self._active:
+            return None
+        try:
+            from llama_index_instrumentation.span.simple import SimpleSpan
+
+            return SimpleSpan(id_=id_, parent_id=parent_span_id, tags=tags or {})
+        except ImportError:
+            return None
+
+    def prepare_to_exit_span(self, id_, bound_args, instance=None, result=None, **kwargs):
+        span = self.open_spans.get(id_)
+        if span is None:
+            return None
+        span.end_time = datetime.now()
+        span.duration = (span.end_time - span.start_time).total_seconds()
+        self._trace_buffer.append(
+            {
+                "source": "llamaindex_span",
+                "event": "span_exit",
+                "span_id": id_,
+                "parent_id": span.parent_id,
+                "duration": span.duration,
+            }
+        )
+        with self.lock:
+            self.completed_spans.append(span)
+        return span
+
+    def prepare_to_drop_span(self, id_, bound_args, instance=None, err=None, **kwargs):
+        span = self.open_spans.get(id_)
+        if span is None:
+            return None
+        self._trace_buffer.append(
+            {
+                "source": "llamaindex_span",
+                "event": "span_drop",
+                "span_id": id_,
+                "parent_id": span.parent_id,
+                "error": str(err) if err else None,
+            }
+        )
+        with self.lock:
+            self.dropped_spans.append(span)
+        return span
+
+
 class LlamaIndexAgentAdapter(AgentAdapter):
     """An AgentAdapter for LlamaIndex workflow-based agents.
 
@@ -122,6 +217,9 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         super().__init__(agent_instance, name, callbacks)
         self._last_result = None
         self._message_cache: List[Dict[str, Any]] = []
+        self._span_handler = _MASEvalSpanHandler()
+        self._span_handler._trace_buffer = self._trace_buffer  # share buffer with base
+        self._install_hooks()
 
     def get_messages(self) -> MessageHistory:
         """Get message history from LlamaIndex.
@@ -202,6 +300,16 @@ class LlamaIndexAgentAdapter(AgentAdapter):
 
         return base_config
 
+    def _install_hooks(self):
+        """Add span handler to LlamaIndex's global dispatcher."""
+        try:
+            from llama_index_instrumentation import get_dispatcher
+
+            dispatcher = get_dispatcher()
+            dispatcher.add_span_handler(self._span_handler)
+        except (ImportError, Exception):
+            pass
+
     def _run_agent(self, query: str) -> Any:
         """Run the LlamaIndex agent and cache execution state.
 
@@ -219,6 +327,7 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         start_time = time.time()
         timestamp = datetime.now().isoformat()
 
+        self._span_handler._active = True
         try:
             # Run the agent (handles async automatically)
             result = self._run_agent_sync(query)
@@ -275,6 +384,8 @@ class LlamaIndexAgentAdapter(AgentAdapter):
             )
 
             raise
+        finally:
+            self._span_handler._active = False
 
     def _run_agent_sync(self, query: str) -> Any:
         """Run agent in sync context.

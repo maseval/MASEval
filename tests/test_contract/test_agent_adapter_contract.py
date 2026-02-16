@@ -581,11 +581,10 @@ class TestAgentAdapterContract:
             assert len(log_entry) > 0
 
     def test_adapter_logs_accumulate_across_runs(self, framework):
-        """Test that logs accumulate or reset consistently across multiple run
-        calls to the agent.
+        """Test that logs accumulate across multiple run calls.
 
-        Contract: Adapter logs should maintain a consistent lifecycle behavior
-        across runs.
+        Contract: Logs from run 1 must still be present after run 2.
+        All adapters must accumulate logs, not reset them.
         """
         mock_llm = MockLLM(responses=["First response", "Second response"])
         agent = create_agent_for_framework(framework, mock_llm)
@@ -600,6 +599,90 @@ class TestAgentAdapterContract:
         adapter.run("Second query")
         logs_count_after_second = len(adapter.logs)
 
-        # Logs should either accumulate or stay consistent
-        # (we accept both behaviors as long as logs are populated)
-        assert logs_count_after_second > 0
+        # Logs MUST accumulate (not reset)
+        assert logs_count_after_second > logs_count_after_first
+
+    def test_adapter_invocation_traces_populated(self, framework):
+        """Test that _invocation_traces is populated after run().
+
+        Contract: Every run() call must record an invocation trace with
+        query, status, timestamps, and message snapshot.
+        """
+        mock_llm = MockLLM(responses=["Test response to query"])
+        agent = create_agent_for_framework(framework, mock_llm)
+        adapter = create_adapter_for_framework(framework, agent)
+
+        adapter.run("Test query")
+
+        assert len(adapter._invocation_traces) == 1
+        trace = adapter._invocation_traces[0]
+        assert trace["invocation"] == 0
+        assert trace["query"] == "Test query"
+        assert trace["status"] == "success"
+        assert "started_at" in trace
+        assert "completed_at" in trace
+        assert isinstance(trace["messages"], list)
+
+    def test_adapter_invocation_traces_accumulate(self, framework):
+        """Test that invocation traces accumulate across multiple runs.
+
+        Contract: Each run() call appends a new invocation trace with
+        sequential invocation numbers.
+        """
+        mock_llm = MockLLM(responses=["First response", "Second response"])
+        agent = create_agent_for_framework(framework, mock_llm)
+        adapter = create_adapter_for_framework(framework, agent)
+
+        adapter.run("First query")
+        adapter.run("Second query")
+
+        assert len(adapter._invocation_traces) == 2
+        assert adapter._invocation_traces[0]["query"] == "First query"
+        assert adapter._invocation_traces[1]["query"] == "Second query"
+        assert adapter._invocation_traces[0]["invocation"] == 0
+        assert adapter._invocation_traces[1]["invocation"] == 1
+
+    def test_adapter_invocation_traces_in_gather_traces(self, framework):
+        """Test that gather_traces() includes invocation_traces.
+
+        Contract: The invocation_traces field must be present in the output
+        of gather_traces() for all adapters.
+        """
+        mock_llm = MockLLM(responses=["Test response"])
+        agent = create_agent_for_framework(framework, mock_llm)
+        adapter = create_adapter_for_framework(framework, agent)
+
+        adapter.run("Test query")
+        traces = adapter.gather_traces()
+
+        assert "invocation_traces" in traces
+        assert len(traces["invocation_traces"]) == 1
+
+    def test_adapter_trace_buffer_exists(self, framework):
+        """Test that _trace_buffer is initialized as an empty list.
+
+        Contract: All adapters must have a _trace_buffer attribute
+        initialized as a list.
+        """
+        mock_llm = MockLLM(responses=["Test response"])
+        agent = create_agent_for_framework(framework, mock_llm)
+        adapter = create_adapter_for_framework(framework, agent)
+
+        assert hasattr(adapter, "_trace_buffer")
+        assert isinstance(adapter._trace_buffer, list)
+
+    def test_adapter_trace_buffer_in_gather_traces(self, framework):
+        """Test that gather_traces() includes trace_buffer.
+
+        Contract: The trace_buffer field must be present in the output
+        of gather_traces() for all adapters.
+        """
+        mock_llm = MockLLM(responses=["Test response"])
+        agent = create_agent_for_framework(framework, mock_llm)
+        adapter = create_adapter_for_framework(framework, agent)
+
+        adapter.run("Test query")
+        traces = adapter.gather_traces()
+
+        assert "trace_buffer" in traces
+        assert isinstance(traces["trace_buffer"], list)

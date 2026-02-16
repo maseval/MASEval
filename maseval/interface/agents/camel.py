@@ -90,6 +90,28 @@ def _extract_response_content(response) -> str:
 class CamelAgentAdapter(AgentAdapter):
     """An AgentAdapter for CAMEL-AI ChatAgent.
 
+    .. warning::
+        **Unreliable tracing.** CAMEL-AI's ChatAgent does not expose any
+        callback, hook, or instrumentation API for individual agent steps.
+        Unlike smolagents (step_callbacks), LangGraph (BaseCallbackHandler),
+        and LlamaIndex (instrumentation Dispatcher), there is no way to
+        observe internal execution events (tool calls, reasoning steps,
+        sub-agent delegation) from outside the agent.
+
+        Consequences:
+
+        - ``_trace_buffer`` is always empty (no framework hooks to tap into)
+        - ``logs`` only captures data from ``ChatAgentResponse.info`` returned
+          by ``step()`` — if the agent performs internal tool calls or
+          multi-step reasoning, those details may be lost
+        - ``get_messages()`` relies on CAMEL's memory system, which may not
+          reflect the full execution history
+        - For Workforce orchestration, use ``CamelWorkforceTracer`` which
+          can tap into ``WorkforceCallback`` events at the task level
+
+        This will be improved when CAMEL-AI adds agent-level instrumentation.
+        Track: https://github.com/camel-ai/camel
+
     This adapter integrates CAMEL-AI's ChatAgent with MASEval's benchmarking framework,
     converting CAMEL's message format to OpenAI-compatible MessageHistory format.
     It leverages CAMEL's native memory system and response info as the source of truth
@@ -190,6 +212,9 @@ class CamelAgentAdapter(AgentAdapter):
         self._responses: List[Any] = []
         # Store errors that occur during execution (for comprehensive logging)
         self._errors: List[Dict[str, Any]] = []
+        # Must initialize since we skip super().__init__()
+        self._invocation_traces: List[Dict[str, Any]] = []
+        self._trace_buffer: List[Dict[str, Any]] = []  # CAMEL has no agent-level hook API
 
     @property
     def logs(self) -> List[Dict[str, Any]]:  # type: ignore[override]

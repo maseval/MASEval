@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import List, Any, Optional, Dict
 
 from .callback import AgentCallback
@@ -23,13 +24,47 @@ class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin):
         self.callbacks = callbacks or []
         self.messages: Optional[MessageHistory] = None
         self.logs: List[Dict[str, Any]] = []
+        self._invocation_traces: List[Dict[str, Any]] = []
+        self._trace_buffer: List[Dict[str, Any]] = []
 
     def run(self, query: str) -> Any:
         """Executes the agent and returns the result."""
         for cb in self.callbacks:
             cb.on_run_start(self)
 
-        result = self._run_agent(query)
+        invocation_start = datetime.now().isoformat()
+        try:
+            result = self._run_agent(query)
+        except Exception as e:
+            self._invocation_traces.append(
+                {
+                    "invocation": len(self._invocation_traces),
+                    "started_at": invocation_start,
+                    "completed_at": datetime.now().isoformat(),
+                    "query": query,
+                    "messages": [],
+                    "status": "error",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                }
+            )
+            raise
+
+        try:
+            messages_snapshot = self.get_messages().to_list()
+        except Exception:
+            messages_snapshot = []
+
+        self._invocation_traces.append(
+            {
+                "invocation": len(self._invocation_traces),
+                "started_at": invocation_start,
+                "completed_at": datetime.now().isoformat(),
+                "query": query,
+                "messages": messages_snapshot,
+                "status": "success",
+            }
+        )
 
         for cb in self.callbacks:
             cb.on_run_end(self, result)
@@ -119,6 +154,8 @@ class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin):
         - `message_count` - Number of messages in history
         - `messages` - Full message history as list of dicts
         - `callbacks` - List of callback class names attached to this agent
+        - `invocation_traces` - Per-invocation snapshots with query, messages, timestamps, status
+        - `trace_buffer` - Framework hook events captured passively during execution
 
         Returns:
             Dictionary containing agent execution traces.
@@ -144,6 +181,8 @@ class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin):
             "messages": history.to_list() if history else [],
             "callbacks": [type(cb).__name__ for cb in self.callbacks],
             "logs": self.logs,
+            "invocation_traces": self._invocation_traces,
+            "trace_buffer": self._trace_buffer,
         }
 
     def gather_config(self) -> Dict[str, Any]:

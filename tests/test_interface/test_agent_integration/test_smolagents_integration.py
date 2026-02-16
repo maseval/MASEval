@@ -245,10 +245,10 @@ def test_smolagents_adapter_gather_traces_with_planning_step():
     assert "observations" not in step_detail
 
 
-def test_smolagents_adapter_logs_property():
-    """Test that SmolAgentAdapter.logs property returns converted memory steps.
+def test_smolagents_adapter_extract_current_logs():
+    """Test that SmolAgentAdapter._extract_current_logs() returns converted memory steps.
 
-    This test validates that the logs property correctly extracts all relevant
+    This test validates that the log extraction correctly extracts all relevant
     information from smolagents' internal memory system, including:
     - Step types (ActionStep, PlanningStep)
     - Timing information (start_time, end_time, duration)
@@ -301,8 +301,9 @@ def test_smolagents_adapter_logs_property():
     # Create adapter
     adapter = SmolAgentAdapter(agent_instance=mock_agent, name="test_agent")
 
-    # Access logs property
-    logs = adapter.logs
+    # Use _extract_current_logs() to test the conversion logic
+    # (logs property returns _accumulated_logs, populated only via _run_agent())
+    logs = adapter._extract_current_logs()
 
     # Verify logs structure
     assert isinstance(logs, list)
@@ -351,7 +352,7 @@ def test_smolagents_adapter_logs_property():
 
 
 def test_smolagents_adapter_logs_with_errors():
-    """Test that adapter.logs captures error information from failed steps."""
+    """Test that _extract_current_logs() captures error information from failed steps."""
     from maseval.interface.agents.smolagents import SmolAgentAdapter
     from smolagents import AgentError
     from smolagents.memory import ActionStep, AgentMemory
@@ -381,8 +382,8 @@ def test_smolagents_adapter_logs_with_errors():
     # Create adapter
     adapter = SmolAgentAdapter(agent_instance=mock_agent, name="test_agent")
 
-    # Access logs property
-    logs = adapter.logs
+    # Use _extract_current_logs() to test the conversion logic
+    logs = adapter._extract_current_logs()
 
     # Verify error is captured
     assert len(logs) == 1
@@ -390,8 +391,8 @@ def test_smolagents_adapter_logs_with_errors():
     assert logs[0]["error"] == "Tool execution failed: Connection timeout"
 
 
-def test_smolagents_adapter_logs_empty_when_no_steps():
-    """Test that adapter.logs returns empty list when no execution has occurred."""
+def test_smolagents_adapter_extract_current_logs_empty_when_no_steps():
+    """Test that _extract_current_logs() returns empty list when no execution has occurred."""
     from maseval.interface.agents.smolagents import SmolAgentAdapter
     from smolagents.memory import AgentMemory
     from unittest.mock import Mock
@@ -404,8 +405,8 @@ def test_smolagents_adapter_logs_empty_when_no_steps():
     # Create adapter
     adapter = SmolAgentAdapter(agent_instance=mock_agent, name="test_agent")
 
-    # Access logs property
-    logs = adapter.logs
+    # Use _extract_current_logs() to test the conversion logic
+    logs = adapter._extract_current_logs()
 
     # Should be empty
     assert isinstance(logs, list)

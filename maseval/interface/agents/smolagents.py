@@ -102,16 +102,19 @@ class SmolAgentAdapter(AgentAdapter):
         """Initialize the Smolagent adapter.
 
         Note: We don't call super().__init__() to avoid initializing self.logs as a list,
-        since we override it as a property that dynamically fetches from agent.memory.
+        since we override it as a property that returns accumulated logs.
         """
         self.agent = agent_instance
         self.name = name
         self.callbacks = callbacks or []
         self.messages = None
+        self._accumulated_logs: List[Dict[str, Any]] = []
+        self._invocation_traces: List[Dict[str, Any]] = []
+        self._trace_buffer: List[Dict[str, Any]] = []
+        self._install_hooks()
 
-    @property
-    def logs(self) -> List[Dict[str, Any]]:  # type: ignore[override]
-        """Dynamically generate logs from smolagents' internal memory.
+    def _extract_current_logs(self) -> List[Dict[str, Any]]:
+        """Extract logs from the agent's current memory state.
 
         Converts smolagents' ActionStep and PlanningStep objects into log entries
         compatible with the AgentAdapter contract, including all available properties.
@@ -250,6 +253,15 @@ class SmolAgentAdapter(AgentAdapter):
                 logs_list.append(log_entry)
 
         return logs_list
+
+    @property
+    def logs(self) -> List[Dict[str, Any]]:  # type: ignore[override]
+        """Return accumulated logs from all invocations.
+
+        Returns:
+            List of log dictionaries accumulated across all run() calls
+        """
+        return self._accumulated_logs
 
     def gather_traces(self) -> dict:
         """Gather traces including message history and monitoring data.
@@ -406,8 +418,58 @@ class SmolAgentAdapter(AgentAdapter):
         # All execution details are tracked in agent.memory.steps automatically
         final_answer = self.agent.run(query)
 
-        # Return the final answer (traces are captured via get_messages() and gather_traces())
+        # Snapshot current memory steps into accumulated logs
+        current_logs = self._extract_current_logs()
+        self._accumulated_logs.extend(current_logs)
+
         return final_answer
+
+    def _install_hooks(self):
+        """Register step_callbacks on agent and all managed agents.
+
+        Silently skips registration if the agent doesn't support step_callbacks
+        (e.g. Mock objects in tests, or older smolagents versions).
+        """
+        try:
+            from smolagents.memory import ActionStep, PlanningStep
+        except ImportError:
+            return
+
+        try:
+            if hasattr(self.agent, "step_callbacks"):
+                self.agent.step_callbacks.register(ActionStep, self._on_step)
+                self.agent.step_callbacks.register(PlanningStep, self._on_step)
+
+            # Also register on managed agents (callbacks do NOT propagate automatically)
+            if hasattr(self.agent, "managed_agents") and isinstance(self.agent.managed_agents, dict):
+                for managed_agent in self.agent.managed_agents.values():
+                    if hasattr(managed_agent, "step_callbacks"):
+                        managed_agent.step_callbacks.register(ActionStep, self._on_step)
+                        managed_agent.step_callbacks.register(PlanningStep, self._on_step)
+        except (TypeError, AttributeError):
+            # Agent doesn't actually support step_callbacks (e.g. Mock objects)
+            pass
+
+    def _on_step(self, memory_step, agent=None):
+        """Callback fired by smolagents after each step finalization."""
+        try:
+            from smolagents.memory import ActionStep, PlanningStep
+        except ImportError:
+            return
+
+        entry: Dict[str, Any] = {
+            "source": "smolagents_step_callback",
+            "step_type": type(memory_step).__name__,
+            "agent_name": getattr(agent, "name", None),
+        }
+        if isinstance(memory_step, ActionStep):
+            entry["step_number"] = memory_step.step_number
+            entry["has_error"] = memory_step.error is not None
+            if memory_step.tool_calls:
+                entry["tool_calls"] = [tc.name for tc in memory_step.tool_calls]
+        elif isinstance(memory_step, PlanningStep):
+            entry["plan_length"] = len(memory_step.plan) if memory_step.plan else 0
+        self._trace_buffer.append(entry)
 
     def _convert_smolagents_messages(self, smol_messages: list) -> MessageHistory:
         """Convert smolagents message format to MASEval MessageHistory.
