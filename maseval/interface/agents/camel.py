@@ -204,6 +204,7 @@ class CamelAgentAdapter(AgentAdapter):
             name: Agent name for identification
             callbacks: Optional list of AgentCallback instances
         """
+        _check_camel_installed()
         self.agent = agent_instance
         self.name = name
         self.callbacks = callbacks or []
@@ -227,8 +228,6 @@ class CamelAgentAdapter(AgentAdapter):
         Returns:
             List of log dictionaries with comprehensive step information
         """
-        _check_camel_installed()
-
         logs_list: List[Dict[str, Any]] = []
 
         for step_num, response in enumerate(self._responses, start=1):
@@ -316,22 +315,16 @@ class CamelAgentAdapter(AgentAdapter):
         Returns:
             MessageHistory with converted messages
         """
-        _check_camel_installed()
-
         messages: List[Dict[str, Any]] = []
 
-        # Try to get messages from agent's memory
+        # Get messages from agent's memory
         if hasattr(self.agent, "memory") and self.agent.memory is not None:
-            try:
-                # get_context() returns (messages_list, token_count)
-                context = self.agent.memory.get_context()
-                if isinstance(context, tuple) and len(context) >= 1:
-                    memory_messages = context[0]
-                    if isinstance(memory_messages, list):
-                        messages = self._convert_memory_messages(memory_messages)
-            except Exception:
-                # If memory access fails, fall back to empty
-                pass
+            # get_context() returns (messages_list, token_count)
+            context = self.agent.memory.get_context()
+            if isinstance(context, tuple) and len(context) >= 1:
+                memory_messages = context[0]
+                if isinstance(memory_messages, list):
+                    messages = self._convert_memory_messages(memory_messages)
 
         return MessageHistory(messages)
 
@@ -422,7 +415,6 @@ class CamelAgentAdapter(AgentAdapter):
             - last_terminated: Whether the last response indicated termination
         """
         base_traces = super().gather_traces()
-        _check_camel_installed()
 
         # Calculate aggregated statistics from responses
         total_input_tokens = 0
@@ -474,7 +466,6 @@ class CamelAgentAdapter(AgentAdapter):
                 - memory_type: Type of memory being used
         """
         base_config = super().gather_config()
-        _check_camel_installed()
 
         camel_config: Dict[str, Any] = {}
 
@@ -561,7 +552,6 @@ class CamelAgentAdapter(AgentAdapter):
         Raises:
             Exception: If agent execution fails
         """
-        _check_camel_installed()
         from camel.messages import BaseMessage
 
         # Create user message for CAMEL
@@ -753,7 +743,6 @@ class CamelAgentUser(User):
         if self.is_done():
             return ""
 
-        _check_camel_installed()
         from camel.messages import BaseMessage
 
         self._turn_count += 1
@@ -806,7 +795,6 @@ class CamelAgentUser(User):
         Returns:
             CAMEL FunctionTool wrapping the respond method.
         """
-        _check_camel_installed()
         from camel.toolkits import FunctionTool
 
         user_instance = self

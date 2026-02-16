@@ -816,7 +816,7 @@ def test_camel_adapter_gather_traces_with_non_serializable_info():
 
 
 def test_camel_adapter_get_messages_memory_access_failure():
-    """Test get_messages handles memory access failure gracefully."""
+    """Test get_messages propagates memory access errors."""
     from maseval.interface.agents.camel import CamelAgentAdapter
 
     mock_memory = MockCamelMemory()
@@ -827,8 +827,8 @@ def test_camel_adapter_get_messages_memory_access_failure():
 
     adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test_agent")
 
-    messages = adapter.get_messages()
-    assert len(messages) == 0
+    with pytest.raises(Exception, match="Memory access failed"):
+        adapter.get_messages()
 
 
 def test_camel_adapter_gather_config_with_model():

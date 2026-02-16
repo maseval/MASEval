@@ -39,10 +39,12 @@ def test_check_smolagents_installed_function():
 
 def test_smolagents_adapter_creation():
     """Test that SmolAgentAdapter can be created."""
+    from unittest.mock import Mock
+
     from maseval.interface.agents.smolagents import SmolAgentAdapter
 
-    # Create adapter with mock agent
-    agent_adapter = SmolAgentAdapter(agent_instance=object(), name="test_agent")
+    # Create adapter with mock agent (Mock auto-creates step_callbacks.register)
+    agent_adapter = SmolAgentAdapter(agent_instance=Mock(), name="test_agent")
 
     assert agent_adapter.name == "test_agent"
     assert agent_adapter.agent is not None

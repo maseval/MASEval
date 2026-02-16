@@ -216,6 +216,7 @@ class LangGraphAgentAdapter(AgentAdapter):
             config: Optional LangGraph config dict (for stateful graphs with checkpointer)
                    Should include 'configurable': {'thread_id': '...'} for persistent state
         """
+        _check_langgraph_installed()
         super().__init__(agent_instance, name, callbacks)
         self._langgraph_config = config
         self._last_result = None
@@ -230,18 +231,12 @@ class LangGraphAgentAdapter(AgentAdapter):
         Returns:
             MessageHistory with converted messages
         """
-        _check_langgraph_installed()
-
         # If we have a config with thread_id and the graph has get_state, use it
         if self._langgraph_config and hasattr(self.agent, "get_state"):
-            try:
-                state = self.agent.get_state(self._langgraph_config)
-                messages = state.values.get("messages", [])
-                if messages:
-                    return self._convert_langchain_messages(messages)
-            except Exception:
-                # If get_state fails, fall back to cached result
-                pass
+            state = self.agent.get_state(self._langgraph_config)
+            messages = state.values.get("messages", [])
+            if messages:
+                return self._convert_langchain_messages(messages)
 
         # Fall back to cached result from last run
         if self._last_result:
@@ -267,7 +262,6 @@ class LangGraphAgentAdapter(AgentAdapter):
             - graph_info: Information about the graph structure (if available)
         """
         base_config = super().gather_config()
-        _check_langgraph_installed()
 
         # Add LangGraph-specific config
         langgraph_config = {}
@@ -287,17 +281,14 @@ class LangGraphAgentAdapter(AgentAdapter):
                     safe_config["configurable"] = {"has_thread_id": "thread_id" in value if isinstance(value, dict) else False}
             langgraph_config["config"] = safe_config
 
-        # Try to get graph structure info
+        # Get graph structure info
         if hasattr(self.agent, "get_graph"):
-            try:
-                graph = self.agent.get_graph()
-                if graph:
-                    langgraph_config["graph_info"] = {
-                        "num_nodes": len(graph.nodes) if hasattr(graph, "nodes") else None,
-                        "num_edges": len(graph.edges) if hasattr(graph, "edges") else None,
-                    }
-            except Exception:
-                pass
+            graph = self.agent.get_graph()
+            if graph:
+                langgraph_config["graph_info"] = {
+                    "num_nodes": len(graph.nodes),
+                    "num_edges": len(graph.edges),
+                }
 
         if langgraph_config:
             base_config["langgraph_config"] = langgraph_config
@@ -305,7 +296,6 @@ class LangGraphAgentAdapter(AgentAdapter):
         return base_config
 
     def _run_agent(self, query: str) -> Any:
-        _check_langgraph_installed()
         from langchain_core.messages import HumanMessage
 
         start_time = time.time()
@@ -363,18 +353,14 @@ class LangGraphAgentAdapter(AgentAdapter):
 
             # For stateful graphs with checkpointer, get state snapshot metadata
             if self._langgraph_config and hasattr(self.agent, "get_state"):
-                try:
-                    state_snapshot = self.agent.get_state(self._langgraph_config)
-                    if state_snapshot.metadata:
-                        log_entry["checkpoint_metadata"] = {
-                            "source": state_snapshot.metadata.get("source"),
-                            "step": state_snapshot.metadata.get("step"),
-                        }
-                    if state_snapshot.created_at:
-                        log_entry["checkpoint_created_at"] = state_snapshot.created_at
-                except Exception:
-                    # If get_state fails, just skip metadata
-                    pass
+                state_snapshot = self.agent.get_state(self._langgraph_config)
+                if state_snapshot.metadata:
+                    log_entry["checkpoint_metadata"] = {
+                        "source": state_snapshot.metadata.get("source"),
+                        "step": state_snapshot.metadata.get("step"),
+                    }
+                if state_snapshot.created_at:
+                    log_entry["checkpoint_created_at"] = state_snapshot.created_at
 
             self.logs.append(log_entry)
 

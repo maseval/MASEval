@@ -214,6 +214,7 @@ class LlamaIndexAgentAdapter(AgentAdapter):
             name: Agent name
             callbacks: Optional list of callbacks
         """
+        _check_llamaindex_installed()
         super().__init__(agent_instance, name, callbacks)
         self._last_result = None
         self._message_cache: List[Dict[str, Any]] = []
@@ -230,17 +231,11 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         Returns:
             MessageHistory with converted messages
         """
-        _check_llamaindex_installed()
-
-        # Try to extract from agent memory if available
+        # Extract from agent memory if available
         if hasattr(self.agent, "memory") and hasattr(self.agent.memory, "get_all"):
-            try:
-                messages = self.agent.memory.get_all()
-                if messages:
-                    return self._convert_llamaindex_messages(messages)
-            except Exception:
-                # If memory access fails, fall back to cache
-                pass
+            messages = self.agent.memory.get_all()
+            if messages:
+                return self._convert_llamaindex_messages(messages)
 
         # Fall back to cached messages
         return MessageHistory(self._message_cache)
@@ -259,7 +254,6 @@ class LlamaIndexAgentAdapter(AgentAdapter):
             - llamaindex_config: LlamaIndex-specific configuration (if available)
         """
         base_config = super().gather_config()
-        _check_llamaindex_installed()
 
         # Add LlamaIndex-specific config
         llamaindex_config: Dict[str, Any] = {}
@@ -288,12 +282,9 @@ class LlamaIndexAgentAdapter(AgentAdapter):
 
         # Check if it's a workflow
         if hasattr(self.agent, "get_config"):
-            try:
-                workflow_config = self.agent.get_config()
-                if workflow_config:
-                    llamaindex_config["workflow_config"] = workflow_config
-            except Exception:
-                pass
+            workflow_config = self.agent.get_config()
+            if workflow_config:
+                llamaindex_config["workflow_config"] = workflow_config
 
         if llamaindex_config:
             base_config["llamaindex_config"] = llamaindex_config
@@ -304,11 +295,11 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         """Add span handler to LlamaIndex's global dispatcher."""
         try:
             from llama_index_instrumentation import get_dispatcher
+        except ImportError:
+            return
 
-            dispatcher = get_dispatcher()
-            dispatcher.add_span_handler(self._span_handler)  # type: ignore[invalid-argument-type]  # duck-typed handler
-        except (ImportError, Exception):
-            pass
+        dispatcher = get_dispatcher()
+        dispatcher.add_span_handler(self._span_handler)  # type: ignore[invalid-argument-type]  # duck-typed handler
 
     def _run_agent(self, query: str) -> Any:
         """Run the LlamaIndex agent and cache execution state.
@@ -322,8 +313,6 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         Raises:
             Exception: If agent execution fails
         """
-        _check_llamaindex_installed()
-
         start_time = time.time()
         timestamp = datetime.now().isoformat()
 
