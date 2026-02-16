@@ -1079,3 +1079,108 @@ def test_workforce_tracer_truncates_long_content():
 
     assert len(traces["completed_tasks"][0]["content"]) == 200
     assert len(traces["completed_tasks"][0]["result"]) == 200
+
+
+# =============================================================================
+# logs Property: ToolCallingRecord, Context Tokens, External Tool Calls
+# =============================================================================
+
+
+def test_camel_logs_with_tool_calling_records():
+    """Test logs property extracts tool call details from ToolCallingRecord objects."""
+    from maseval.interface.agents.camel import CamelAgentAdapter
+
+    mock_agent = create_mock_camel_agent()
+    adapter = CamelAgentAdapter(agent_instance=mock_agent, name="tool_log_agent")
+
+    # Create ToolCallingRecord mocks
+    tc1 = Mock()
+    tc1.tool_name = "search"
+    tc1.args = {"query": "test"}
+    tc1.result = "Found 3 results"
+    tc1.tool_call_id = "tc_001"
+    tc1.images = None  # No images
+
+    tc2 = Mock()
+    tc2.tool_name = "image_gen"
+    tc2.args = {"prompt": "cat"}
+    tc2.result = "Generated image"
+    tc2.tool_call_id = "tc_002"
+    tc2.images = [Mock(), Mock()]  # 2 images
+
+    mock_response = MockCamelResponse(
+        content="Here are results",
+        terminated=False,
+        info={"tool_calls": [tc1, tc2]},
+    )
+    adapter._responses.append(mock_response)
+
+    logs = adapter.logs
+    assert len(logs) == 1
+
+    assert "tool_calls" in logs[0]
+    assert len(logs[0]["tool_calls"]) == 2
+
+    # First tool call - no images
+    assert logs[0]["tool_calls"][0]["name"] == "search"
+    assert logs[0]["tool_calls"][0]["arguments"] == {"query": "test"}
+    assert logs[0]["tool_calls"][0]["result"] == "Found 3 results"
+    assert logs[0]["tool_calls"][0]["id"] == "tc_001"
+    assert "images_count" not in logs[0]["tool_calls"][0]
+
+    # Second tool call - with images
+    assert logs[0]["tool_calls"][1]["name"] == "image_gen"
+    assert logs[0]["tool_calls"][1]["id"] == "tc_002"
+    assert logs[0]["tool_calls"][1]["images_count"] == 2
+
+
+def test_camel_logs_with_context_termination_and_response_id():
+    """Test logs property extracts context_tokens, termination_reasons, and response_id."""
+    from maseval.interface.agents.camel import CamelAgentAdapter
+
+    mock_agent = create_mock_camel_agent()
+    adapter = CamelAgentAdapter(agent_instance=mock_agent, name="ctx_agent")
+
+    mock_response = MockCamelResponse(
+        content="Response",
+        terminated=False,
+        info={
+            "num_tokens": 4096,
+            "termination_reasons": ["max_tokens"],
+            "id": "resp_abc",
+        },
+    )
+    adapter._responses.append(mock_response)
+
+    logs = adapter.logs
+    assert len(logs) == 1
+    assert logs[0]["context_tokens"] == 4096
+    assert logs[0]["termination_reasons"] == ["max_tokens"]
+    assert logs[0]["response_id"] == "resp_abc"
+
+
+def test_camel_logs_with_external_tool_call_requests():
+    """Test logs property extracts external_tool_call_requests as stringified list."""
+    from maseval.interface.agents.camel import CamelAgentAdapter
+
+    mock_agent = create_mock_camel_agent()
+    adapter = CamelAgentAdapter(agent_instance=mock_agent, name="ext_tool_agent")
+
+    mock_req1 = Mock()
+    mock_req1.__str__ = Mock(return_value="ExtToolCall(name='api_call', args={})")
+    mock_req2 = Mock()
+    mock_req2.__str__ = Mock(return_value="ExtToolCall(name='db_query', args={})")
+
+    mock_response = MockCamelResponse(
+        content="Response",
+        terminated=False,
+        info={"external_tool_call_requests": [mock_req1, mock_req2]},
+    )
+    adapter._responses.append(mock_response)
+
+    logs = adapter.logs
+    assert len(logs) == 1
+    assert "external_tool_call_requests" in logs[0]
+    assert len(logs[0]["external_tool_call_requests"]) == 2
+    assert "api_call" in logs[0]["external_tool_call_requests"][0]
+    assert "db_query" in logs[0]["external_tool_call_requests"][1]
