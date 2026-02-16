@@ -16,7 +16,9 @@ The `LLMUser` is initialized with a persona and a scenario, both of which are ty
 
 Some integrations provide convenience user/tool implementations for specific agent frameworks. For example:
 
-See [SmolAgentLLMUser](../interface/agents/smolagents.md) in the smolagents integration documentation.
+[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/agents/smolagents.py){ .md-source-file }
+
+::: maseval.interface.agents.smolagents.SmolAgentLLMUser
 
 [:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/agents/langgraph.py){ .md-source-file }
 

@@ -13,3 +13,5 @@ Some agent adapters expose helper tools or user-simulation tools that can be use
 [:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/agents/smolagents.py){ .md-source-file }
 
 ::: maseval.interface.agents.smolagents.SmolAgentAdapter
+
+::: maseval.interface.agents.smolagents.SmolAgentLLMUser
