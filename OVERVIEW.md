@@ -285,3 +285,269 @@ Then `gather_traces()` would include `self._invocation_traces` as a structured f
 The current design assumes `get_messages()` is the primary trace mechanism. But `get_messages()` reflects the **agent's current state** (which may have been reset), not the **evaluation's trace needs** (which require a permanent, structured record of everything).
 
 Tracing and agent memory are different concerns that need different data structures.
+
+---
+
+## 6. The Internal Agent-to-Agent Call Problem
+
+### The Scenario
+
+Consider a multi-agent benchmark with 4 agents, each wrapped in an `AgentAdapter`:
+
+```
+Benchmark registers:
+  AgentAdapter(agent_1, "agent_1")
+  AgentAdapter(agent_2, "agent_2")
+  AgentAdapter(agent_3, "agent_3")
+  AgentAdapter(agent_4, "agent_4")
+
+But at runtime, the FRAMEWORK orchestrates agents directly:
+  benchmark calls adapter_1.run("task")
+    → agent_1 internally calls agent_2.run(...)    ← bypasses AgentAdapter
+      → agent_2 resets memory, executes, produces messages
+    → agent_1 internally calls agent_3.run(...)    ← bypasses AgentAdapter
+      → agent_3 executes
+    → agent_1 internally calls agent_2.run(...) AGAIN  ← bypasses AgentAdapter
+      → agent_2 resets memory AGAIN — first run's messages are GONE
+    → ...
+
+When benchmark finally calls gather_traces():
+  adapter_2.get_messages()  → only sees agent_2's LAST run
+  adapter_2.logs            → smolagents: only last run; LangGraph/LlamaIndex: never populated
+                               (because adapter.run() was never called)
+```
+
+### Why This Is Worse Than the Multi-Invocation Problem
+
+The multi-invocation problem (Section 3) assumed the benchmark calls `adapter.run()` each time. At least then, the adapter's `run()` method executes and *could* capture traces.
+
+Here, the adapter's `run()` is **never called** for agents 2-4. The adapter is a dead wrapper — the framework bypasses it entirely. This means:
+- No callbacks fire (`on_run_start`/`on_run_end`)
+- No logs are created (LangGraph/LlamaIndex append to `self.logs` in `_run_agent()`)
+- `get_messages()` shows whatever the agent's memory happens to contain at the moment `gather_traces()` is called
+- If the agent reset memory N times during execution, N-1 runs are lost forever
+
+### What Each Framework's Internal Agent-to-Agent Calling Looks Like
+
+**smolagents managed agents**: The parent agent calls sub-agents via `execute_tool_call()`. Sub-agents run their full loop internally.
+
+**LangGraph multi-agent**: Agents are subgraphs or nodes that invoke each other as graph steps. Execution flows through the graph runtime.
+
+**LlamaIndex AgentWorkflow**: Multiple agents hand off to each other within the workflow. Execution flows through the workflow runtime.
+
+---
+
+## 7. Available Hook Mechanisms (Verified from Documentation)
+
+### smolagents: `step_callbacks`
+
+**Source**: [smolagents/agents.py v1.24.0](https://github.com/huggingface/smolagents/blob/v1.24.0/src/smolagents/agents.py)
+
+```python
+# Constructor parameter:
+step_callbacks: list[Callable] | dict[Type[MemoryStep], Callable | list[Callable]] | None
+
+# List format: callbacks registered for ActionStep only (backward compat)
+# Dict format: callbacks mapped to specific step types
+```
+
+**When it fires**: In `_finalize_step()` after each ActionStep, PlanningStep, or FinalAnswerStep completes.
+
+**What it receives**: `(memory_step, agent=self)` — the completed step object containing:
+- `step_number`, `model_input_messages`, `model_output_message`
+- `tool_calls`, `observations`, `action_output`
+- `timing`, `token_usage`, `error`
+
+**Critical limitation**: Step callbacks do **NOT** fire for managed agents' internal steps. Only the parent agent's callbacks fire. The managed agent's results are returned as tool call output to the parent, but the managed agent's internal steps are invisible.
+
+**Implication for MASEval**: To capture managed agent steps, we'd need to install `step_callbacks` on EACH managed agent individually, not just the top-level agent.
+
+### LangGraph/LangChain: `BaseCallbackHandler`
+
+**Source**: LangChain Reference — Callbacks (local file `Callbacks | LangChain Reference.html`)
+
+```python
+class BaseCallbackHandler:
+    def on_llm_start(self, serialized, prompts, *, run_id, parent_run_id, tags, metadata, **kwargs): ...
+    def on_llm_end(self, response, *, run_id, parent_run_id, **kwargs): ...
+    def on_chat_model_start(self, serialized, messages, *, run_id, parent_run_id, **kwargs): ...
+    def on_tool_start(self, serialized, input_str, *, run_id, parent_run_id, **kwargs): ...
+    def on_tool_end(self, output, *, run_id, parent_run_id, **kwargs): ...
+    def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id, **kwargs): ...
+    def on_chain_end(self, outputs, *, run_id, parent_run_id, **kwargs): ...
+    def on_agent_action(self, action, *, run_id, parent_run_id, **kwargs): ...
+    def on_agent_finish(self, finish, *, run_id, parent_run_id, **kwargs): ...
+```
+
+**Key feature**: Every callback receives `run_id` and `parent_run_id`, enabling reconstruction of the full call tree.
+
+**How to attach**: Pass via `config={"callbacks": [handler]}` at invoke time. Callbacks propagate through chains and subgraphs.
+
+**Propagation**: Callbacks DO propagate to subgraphs and nested chains. When a parent graph invokes a subgraph, the parent's callbacks fire for the subgraph's events too.
+
+**Implication for MASEval**: A single `BaseCallbackHandler` installed at the top-level graph would capture ALL events across all sub-agents. The `parent_run_id` chain gives us the execution tree for free.
+
+### LlamaIndex: Instrumentation Module + Legacy CallbackManager
+
+**Source**: `LLAMAINDEXINSTRUMENT.md`, `LLAMAINDEXCALLBACK.md` (local files)
+
+**New system (v0.10.20+)**: `instrumentation` module with span handlers and event handlers.
+```python
+from llama_index.core.instrumentation import get_dispatcher
+
+root_dispatcher = get_dispatcher()
+root_dispatcher.add_span_handler(my_handler)
+root_dispatcher.add_event_handler(my_handler)
+```
+
+**Legacy system**: `CallbackManager` with event types:
+- `LLM`, `EMBEDDING`, `QUERY`, `RETRIEVE`, `SYNTHESIZE`, `TOOL`, etc.
+
+**OpenTelemetry native**: `llama-index-observability-otel` package provides direct OTel export.
+```python
+from llama_index.observability.otel import LlamaIndexOpenTelemetry
+instrumentor = LlamaIndexOpenTelemetry()
+instrumentor.start_registering()
+```
+
+**Global handler**: `set_global_handler("simple")` or `set_global_handler("arize_phoenix")` etc. — catches ALL LlamaIndex operations globally, including within AgentWorkflow sub-agents.
+
+**Implication for MASEval**: The global handler / dispatcher approach captures everything across all agents in the workflow. This is the most "automatic" of the three frameworks.
+
+---
+
+## 8. The OpenTelemetry Question
+
+All three frameworks are converging on OpenTelemetry:
+- **LlamaIndex**: Native OTel support via `llama-index-observability-otel`
+- **LangChain**: OTel integrations via OpenLLMetry, Langfuse, etc.
+- **smolagents**: Has structured logging that could be mapped to OTel spans
+
+### Pros of an OTel-based approach for MASEval
+
+1. **Unified standard**: One tracing format across all frameworks
+2. **Built-in structure**: Spans with parent-child relationships, trace IDs, timestamps
+3. **Invocation boundaries**: Each `.run()` could be a parent span; each LLM call a child span
+4. **Call tree reconstruction**: `parent_run_id` / parent span gives us the agent-to-agent call graph
+5. **Rich ecosystem**: Can export to Jaeger, Phoenix, Grafana, etc. for visualization
+6. **No framework-specific code**: Instrumentation libraries already exist
+
+### Cons of an OTel-based approach
+
+1. **Heavy dependency**: `opentelemetry-sdk` + framework-specific instrumentation packages
+2. **Abstraction mismatch**: OTel is designed for general observability, not eval-specific message tracing. MASEval needs "what messages did the LLM see?" — OTel gives "how long did the span take?"
+3. **Data extraction**: Getting message content OUT of OTel spans back into MASEval's `MessageHistory` format requires parsing span attributes
+4. **Setup complexity**: Requires configuring exporters, processors, etc.
+5. **Not all frameworks equal**: smolagents' OTel story is weaker than LlamaIndex's
+
+### Recommendation: Hybrid Approach
+
+Use **framework-native hooks** (not OTel) as the primary mechanism, with optional OTel export:
+
+1. **Primary**: Install framework-specific callbacks/hooks that write to the adapter's trace buffer in MASEval's native format. This gives us exactly the data we need (messages, context, invocation boundaries) without extra dependencies.
+
+2. **Optional**: For users who want OTel observability, document how to also attach OTel instrumentation alongside MASEval's hooks. They're not mutually exclusive.
+
+---
+
+## 9. Recommended Architecture
+
+### The Hook Pattern
+
+Each adapter installs a framework-specific hook on the agent at initialization time. The hook writes to a persistent trace buffer on the adapter that survives memory resets.
+
+```
+AgentAdapter
+  ├── agent (the wrapped framework agent)
+  ├── _trace_buffer: List[TraceEvent]     ← permanent, never reset
+  └── _hook (framework-specific)
+        └── on_step/on_llm/etc → appends to _trace_buffer
+
+When agent runs (even internally, bypassing adapter):
+  hook fires → TraceEvent written to _trace_buffer
+
+gather_traces():
+  returns _trace_buffer contents (complete, structured, with boundaries)
+```
+
+### Framework-Specific Hook Installation
+
+**smolagents**:
+```python
+class SmolAgentAdapter(AgentAdapter):
+    def __init__(self, agent_instance, name, ...):
+        super().__init__(agent_instance, name, ...)
+        # Install step_callback on the agent itself
+        self._install_trace_hook()
+        # Also install on all managed agents
+        for managed in getattr(agent_instance, 'managed_agents', {}).values():
+            self._install_trace_hook_on(managed)
+
+    def _install_trace_hook(self):
+        # Register callback that writes to self._trace_buffer
+        def trace_callback(step, agent):
+            self._trace_buffer.append({
+                "agent_name": agent.name,
+                "step": step.dict(),
+                "model_input_messages": step.model_input_messages,
+                "timestamp": step.timing.end_time if step.timing else None,
+            })
+        self.agent.step_callbacks.register(ActionStep, trace_callback)
+        self.agent.step_callbacks.register(PlanningStep, trace_callback)
+```
+
+**LangGraph**:
+```python
+class LangGraphAgentAdapter(AgentAdapter):
+    def __init__(self, agent_instance, name, ..., config=None):
+        super().__init__(agent_instance, name, ...)
+        # Create callback handler that writes to trace buffer
+        self._trace_handler = MASEvalLangChainHandler(self._trace_buffer)
+        # Inject into config so it propagates to all subgraphs
+        if config:
+            config.setdefault("callbacks", []).append(self._trace_handler)
+```
+
+**LlamaIndex**:
+```python
+class LlamaIndexAgentAdapter(AgentAdapter):
+    def __init__(self, agent_instance, name, ...):
+        super().__init__(agent_instance, name, ...)
+        # Use LlamaIndex's global dispatcher or instrumentation
+        # This captures ALL events across all agents in the workflow
+        dispatcher = get_dispatcher()
+        self._trace_handler = MASEvalLlamaIndexHandler(self._trace_buffer)
+        dispatcher.add_span_handler(self._trace_handler)
+        dispatcher.add_event_handler(self._trace_handler)
+```
+
+### What The Trace Buffer Would Contain
+
+```python
+_trace_buffer = [
+    # Invocation boundary
+    {"type": "invocation_start", "agent": "agent_1", "query": "task", "timestamp": "..."},
+
+    # LLM call with full context (what the LLM saw)
+    {"type": "llm_call", "agent": "agent_1", "input_messages": [...], "output": "...",
+     "tokens": {"input": 50, "output": 30}, "timestamp": "..."},
+
+    # Sub-agent call
+    {"type": "invocation_start", "agent": "agent_2", "query": "subtask", "parent_agent": "agent_1", "timestamp": "..."},
+    {"type": "llm_call", "agent": "agent_2", "input_messages": [...], "output": "...", "timestamp": "..."},
+    {"type": "invocation_end", "agent": "agent_2", "result": "...", "timestamp": "..."},
+
+    # More of agent_1
+    {"type": "llm_call", "agent": "agent_1", "input_messages": [...], "output": "...", "timestamp": "..."},
+    {"type": "invocation_end", "agent": "agent_1", "result": "...", "timestamp": "..."},
+]
+```
+
+This structure answers ALL three original questions:
+1. **What context did the agent have?** → `input_messages` on each `llm_call` event
+2. **Where do invocations start/end?** → `invocation_start` / `invocation_end` events
+3. **Permanent trace collection?** → `_trace_buffer` is never reset, captures everything
+
+### Key Design Principle
+
+**The adapter should NOT change the agent's behavior.** The hooks are read-only observers. Whether the agent resets memory, uses checkpointers, or persists context is the user's choice. The hooks just record what happens.
