@@ -306,7 +306,7 @@ class LlamaIndexAgentAdapter(AgentAdapter):
             from llama_index_instrumentation import get_dispatcher
 
             dispatcher = get_dispatcher()
-            dispatcher.add_span_handler(self._span_handler)
+            dispatcher.add_span_handler(self._span_handler)  # type: ignore[invalid-argument-type]  # duck-typed handler
         except (ImportError, Exception):
             pass
 

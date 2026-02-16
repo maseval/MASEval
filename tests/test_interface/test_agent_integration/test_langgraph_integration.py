@@ -382,7 +382,7 @@ def test_langgraph_convert_tool_and_system_messages():
         messages: list
 
     graph = StateGraph(State)  # type: ignore[arg-type]
-    graph.add_node("agent", lambda s: s)
+    graph.add_node("agent", lambda s: s)  # type: ignore[invalid-argument-type]
     graph.set_entry_point("agent")
     graph.add_edge("agent", END)
     compiled = graph.compile()

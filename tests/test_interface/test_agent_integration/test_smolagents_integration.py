@@ -611,7 +611,7 @@ def test_smolagents_llm_user_get_tool():
 def test_smolagents_message_conversion_tool_call_attributes():
     """Test _convert_smolagents_messages preserves tool_calls from ChatMessage objects."""
     from maseval.interface.agents.smolagents import SmolAgentAdapter
-    from smolagents.models import ChatMessage, MessageRole
+    from smolagents.models import ChatMessage, ChatMessageToolCall, ChatMessageToolCallFunction, MessageRole
     from unittest.mock import Mock
 
     mock_agent = Mock()
@@ -621,9 +621,13 @@ def test_smolagents_message_conversion_tool_call_attributes():
 
     adapter = SmolAgentAdapter(agent_instance=mock_agent, name="msg_agent")
 
-    # Create ChatMessage with tool_calls attribute
-    msg = ChatMessage(role=MessageRole.ASSISTANT, content="Using tool")
-    msg.tool_calls = [{"id": "call_1", "function": {"name": "search", "arguments": '{"q": "test"}'}}]
+    # Create ChatMessage with tool_calls attribute using proper types
+    tool_call = ChatMessageToolCall(
+        id="call_1",
+        type="function",
+        function=ChatMessageToolCallFunction(name="search", arguments='{"q": "test"}'),
+    )
+    msg = ChatMessage(role=MessageRole.ASSISTANT, content="Using tool", tool_calls=[tool_call])
 
     history = adapter._convert_smolagents_messages([msg])
 
@@ -631,8 +635,9 @@ def test_smolagents_message_conversion_tool_call_attributes():
     assert history[0]["role"] == "assistant"
     assert history[0]["content"] == "Using tool"
     assert "tool_calls" in history[0]
-    assert history[0]["tool_calls"][0]["id"] == "call_1"
-    assert history[0]["tool_calls"][0]["function"]["name"] == "search"
+    assert len(history[0]["tool_calls"]) == 1
+    assert history[0]["tool_calls"][0].id == "call_1"
+    assert history[0]["tool_calls"][0].function.name == "search"
 
 
 # =============================================================================
