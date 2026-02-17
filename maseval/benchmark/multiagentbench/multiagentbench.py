@@ -5,6 +5,7 @@ This module provides benchmark classes for the MARBLE MultiAgentBench suite:
 - MarbleMultiAgentBenchBenchmark: Exact MARBLE reproduction mode
 """
 
+import json
 import logging
 from abc import abstractmethod
 from types import SimpleNamespace
@@ -271,6 +272,24 @@ class MultiAgentBenchBenchmark(Benchmark):
         """
         pass
 
+    def execution_loop(
+        self,
+        agents: Sequence[AgentAdapter],
+        task: Task,
+        environment: Environment,
+        user: Optional[User],
+    ) -> Any:
+        """Execute agents in a single pass.
+
+        MultiAgentBench uses multi-agent coordination instead of user interaction.
+        The base class ``execution_loop`` breaks after one call when ``user is None``,
+        so this override makes the single-pass behavior explicit.
+
+        Subclasses (e.g. ``MarbleMultiAgentBenchBenchmark``) override this with
+        multi-iteration coordination loops matching their framework's orchestration.
+        """
+        return self.run_agents(agents, task, environment, task.query)
+
     def run_agents(
         self,
         agents: Sequence[AgentAdapter],
@@ -389,6 +408,10 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
     ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
         """Create MARBLE agents wrapped in MASEval adapters.
 
+        Also creates MARBLE's orchestration components (``EnginePlanner``,
+        ``SharedMemory``, ``AgentGraph``) needed by ``execution_loop`` to
+        replicate MARBLE's multi-iteration coordination.
+
         Note:
             MARBLE agents use their own internal LLM handling with a model ID string,
             not MASEval's ModelAdapter. This means seed_generator cannot be applied
@@ -431,8 +454,15 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             model=model_id,
         )
 
-        # Set up agent graph for inter-agent communication
+        # Set up agent graph for inter-agent communication (stores self._marble_graph)
         self._setup_agent_graph(agents_dict, task, marble_env)
+
+        # Create MARBLE orchestration components for execution_loop
+        self._setup_orchestration(task, model_id)
+
+        # Store agents dict for ID-based lookup in coordination modes
+        self._agents_dict: Dict[str, "MarbleAgentAdapter"] = agents_dict  # type: ignore[assignment]
+        self._marble_env_instance = marble_env
 
         # Register agents for tracing
         for agent_id, adapter in agents_dict.items():
@@ -474,6 +504,8 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
     ) -> None:
         """Set up MARBLE's AgentGraph for inter-agent communication.
 
+        Stores the graph as ``self._marble_graph`` for use by coordination modes.
+
         Args:
             agents_dict: Dict of MARBLE agent adapters
             task: Task with relationship data
@@ -499,6 +531,465 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         # Set graph on all agents
         for agent in marble_agents:
             agent.set_agent_graph(graph)
+
+        self._marble_graph = graph
+
+    def _setup_orchestration(self, task: Task, model_id: str) -> None:
+        """Create MARBLE's EnginePlanner and SharedMemory for the execution loop.
+
+        These components are imported directly from the vendored MARBLE package.
+        See ``marble/engine/engine.py:61-98`` for the original Engine.__init__.
+
+        Args:
+            task: The task with orchestration configuration
+            model_id: LLM model identifier for the planner
+        """
+        ensure_marble_on_path()
+        try:
+            from marble.engine.engine_planner import EnginePlanner  # type: ignore[import-untyped]
+            from marble.memory.shared_memory import SharedMemory  # type: ignore[import-untyped]
+        except ImportError as e:
+            raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
+
+        # Create shared memory (marble/engine/engine.py:179-198)
+        self._marble_memory: Any = SharedMemory()
+
+        # Extract task metadata for the planner
+        engine_planner_config = task.environment_data.get("engine_planner", {})
+        task_content = task.query
+        task_data = task.environment_data.get("task", {})
+        output_format = (
+            task_data.get("output_format", "You are free to define your own output format to answer the task properly.")
+            if isinstance(task_data, dict)
+            else "You are free to define your own output format to answer the task properly."
+        )
+
+        # Create engine planner (marble/engine/engine.py:89-96)
+        self._marble_planner: Any = EnginePlanner(
+            agent_graph=self._marble_graph,
+            memory=self._marble_memory,
+            config=engine_planner_config,
+            task=task_content,
+            model=model_id,
+        )
+
+        # Store task metadata for coordination methods
+        self._task_content = task_content
+        self._output_format = output_format
+        self._coordinate_mode = task.environment_data.get("coordinate_mode", "graph")
+        self._planning_method = engine_planner_config.get("planning_method", "naive")
+        self._domain = task.environment_data.get("scenario", "")
+
+    def execution_loop(
+        self,
+        agents: Sequence[AgentAdapter],
+        task: Task,
+        environment: Environment,
+        user: Optional[User],
+    ) -> Any:
+        """Execute MARBLE's multi-iteration coordination loop.
+
+        Dispatches to the appropriate coordination handler based on the task's
+        ``coordinate_mode``. Replicates ``Engine.start()`` from
+        ``marble/engine/engine.py:1034-1055``.
+
+        Args:
+            agents: MARBLE agents wrapped in MarbleAgentAdapter
+            task: The task being solved
+            environment: The environment
+            user: Always None for MultiAgentBench
+
+        Returns:
+            Dict with agent_results, communications, and coordination_mode
+
+        Raises:
+            ValueError: If coordinate_mode is not supported
+        """
+        mode = self._coordinate_mode
+        if mode == "star":
+            return self._star_coordinate(agents)
+        elif mode == "chain":
+            return self._chain_coordinate(agents)
+        elif mode == "tree":
+            return self._tree_coordinate(agents)
+        elif mode == "graph":
+            return self._graph_coordinate(agents)
+        else:
+            raise ValueError(f"Unsupported coordinate mode: {mode}")
+
+    # -- Coordination mode implementations --
+    # Each replicates its counterpart in marble/engine/engine.py.
+
+    def _graph_coordinate(self, agents: Sequence[AgentAdapter]) -> Dict[str, Any]:
+        """Graph-based coordination. Replicates ``Engine.graph_coordinate()``
+        (marble/engine/engine.py:200-492).
+
+        Flow:
+        1. Initial assignment — all agents receive the task
+        2. Summarize → decide → update progress
+        3. Iteration loop — each agent plans its own next task via ``plan_task()``
+        """
+        planner = self._marble_planner
+        task_content = self._task_content
+        output_format = self._output_format
+        current_iteration = 0
+
+        # -- Initial assignment (engine.py:211-260) --
+        agents_results: List[Dict[str, Any]] = []
+        all_results: List[Dict[str, Any]] = []
+        communications: List[str] = []
+
+        for adapter in agents:
+            try:
+                result = adapter.run(task_content)
+                agents_results.append({adapter.agent_id: result})  # type: ignore[union-attr]
+                all_results.append({"agent_id": adapter.agent_id, "result": result})  # type: ignore[union-attr]
+                # Communications are captured by adapter._communication_log
+                if hasattr(adapter, "_communication_log") and adapter._communication_log:  # type: ignore[union-attr]
+                    last_comm = adapter._communication_log[-1]  # type: ignore[union-attr]
+                    comm_text = last_comm.get("communication", "")
+                    if comm_text:
+                        communications.append(comm_text)
+            except Exception as e:
+                logger.error(f"Error executing initial task for agent '{getattr(adapter, 'agent_id', adapter)}': {e}")
+
+        # Summarize (engine.py:262-267)
+        summary = self._summarize_results_marble(agents_results)
+        planner.summarize_output(summary, task_content, output_format)
+
+        # Decide whether to continue (engine.py:270-289)
+        if self._domain.lower() == "minecraft":
+            continue_simulation = self._minecraft_should_continue()
+        else:
+            continue_simulation = planner.decide_next_step(agents_results)
+
+        if continue_simulation:
+            planner.update_progress(summary)
+            current_iteration += 1
+
+        # -- Iteration loop (engine.py:323-433) --
+        while current_iteration < self.max_invocations and continue_simulation:
+            agents_results = []
+            iteration_results: List[Dict[str, Any]] = []
+            communications = []
+
+            for adapter in agents:
+                try:
+                    # Each agent plans its own task (engine.py:344)
+                    planned_task = adapter.marble_agent.plan_task()  # type: ignore[union-attr]
+                    # Agent acts on planned task (engine.py:356)
+                    result = adapter.run(planned_task)
+                    agents_results.append({adapter.agent_id: result})  # type: ignore[union-attr]
+                    iteration_results.append({"agent_id": adapter.agent_id, "result": result})  # type: ignore[union-attr]
+                    if hasattr(adapter, "_communication_log") and adapter._communication_log:  # type: ignore[union-attr]
+                        last_comm = adapter._communication_log[-1]  # type: ignore[union-attr]
+                        comm_text = last_comm.get("communication", "")
+                        if comm_text:
+                            communications.append(comm_text)
+                except Exception as e:
+                    logger.error(f"Error in agent '{getattr(adapter, 'agent_id', adapter)}' during planning or action: {e}")
+
+            # Summarize (engine.py:379-387)
+            summary = self._summarize_results_marble(agents_results)
+            current_iteration += 1
+            planner.summarize_output(summary, task_content, output_format)
+
+            # Decide whether to continue (engine.py:414-433)
+            if self._domain.lower() == "minecraft":
+                continue_simulation = self._minecraft_should_continue()
+            else:
+                continue_simulation = planner.decide_next_step(agents_results)
+
+            if not continue_simulation:
+                break
+
+            all_results = iteration_results
+
+        # Use latest iteration results if available
+        final_results = iteration_results if "iteration_results" in dir() and iteration_results else all_results
+
+        return {
+            "agent_results": final_results,
+            "communications": communications,
+            "coordination_mode": self._coordinate_mode,
+        }
+
+    def _star_coordinate(self, agents: Sequence[AgentAdapter]) -> Dict[str, Any]:
+        """Centralized coordination. Replicates ``Engine.star_coordinate()``
+        (marble/engine/engine.py:494-653).
+
+        Flow: planner assigns tasks → agents execute → summarize → decide.
+        """
+        planner = self._marble_planner
+        task_content = self._task_content
+        output_format = self._output_format
+        current_iteration = 0
+
+        all_results: List[Dict[str, Any]] = []
+        communications: List[str] = []
+
+        while current_iteration < self.max_invocations:
+            # Planner assigns tasks (engine.py:519-523)
+            assignment = planner.assign_tasks(planning_method=self._planning_method)
+            tasks = assignment.get("tasks", {})
+
+            agents_results: List[Dict[str, Any]] = []
+            iteration_results: List[Dict[str, Any]] = []
+            communications = []
+
+            for agent_id, agent_task in tasks.items():
+                adapter = self._agents_dict.get(agent_id)
+                if adapter is None:
+                    logger.error(f"Agent '{agent_id}' not found in agents dict.")
+                    continue
+                try:
+                    result = adapter.run(agent_task)
+                    agents_results.append({agent_id: result})
+                    iteration_results.append({"agent_id": agent_id, "result": result})
+                    if adapter._communication_log:
+                        last_comm = adapter._communication_log[-1]
+                        comm_text = last_comm.get("communication", "")
+                        if comm_text:
+                            communications.append(comm_text)
+                except Exception as e:
+                    logger.error(f"Error executing task for agent '{agent_id}': {e}")
+
+            # Summarize and update progress (engine.py:550-557)
+            summary = self._summarize_results_marble(agents_results)
+            planner.summarize_output(summary, task_content, output_format)
+            planner.update_progress(summary)
+            current_iteration += 1
+
+            # Decide whether to continue (engine.py:584-595)
+            continue_simulation = planner.decide_next_step(agents_results)
+            if not continue_simulation:
+                break
+
+            all_results = iteration_results
+
+        final_results = iteration_results if "iteration_results" in dir() and iteration_results else all_results
+
+        return {
+            "agent_results": final_results,
+            "communications": communications,
+            "coordination_mode": self._coordinate_mode,
+        }
+
+    def _chain_coordinate(self, agents: Sequence[AgentAdapter]) -> Dict[str, Any]:
+        """Chain-based coordination. Replicates ``Engine.chain_coordinate()``
+        (marble/engine/engine.py:655-813).
+
+        Flow: sequential agent chain, each agent picks the next.
+        """
+        planner = self._marble_planner
+        task_content = self._task_content
+        output_format = self._output_format
+        graph = self._marble_graph
+
+        # Select initial agent (engine.py:1015-1032: starts with "agent1")
+        starting_agent_id = "agent1"
+        current_adapter = self._agents_dict.get(starting_agent_id)
+        if current_adapter is None:
+            # Fallback to first agent
+            if self._agents_dict:
+                current_adapter = next(iter(self._agents_dict.values()))
+            else:
+                logger.error("No agents available for chain coordination.")
+                return {"agent_results": [], "communications": [], "coordination_mode": self._coordinate_mode}
+
+        max_chain_length = self.max_invocations * len(self._agents_dict)
+        chain_length = 0
+        current_task = task_content
+
+        all_results: List[Dict[str, Any]] = []
+        agents_results_accumulated: List[Dict[str, Any]] = []
+        communications: List[str] = []
+
+        while current_adapter and chain_length < max_chain_length:
+            try:
+                # Agent acts (engine.py:691)
+                result = current_adapter.run(current_task)
+                agents_results_accumulated.append({current_adapter.agent_id: result})
+                all_results.append({"agent_id": current_adapter.agent_id, "result": result})
+
+                if current_adapter._communication_log:
+                    last_comm = current_adapter._communication_log[-1]
+                    comm_text = last_comm.get("communication", "")
+                    if comm_text:
+                        communications.append(comm_text)
+
+                # Current agent chooses next agent (engine.py:702-717)
+                agent_profiles = graph.get_agent_profiles_linked(current_adapter.agent_id)
+                next_agent_id, plan = current_adapter.marble_agent.plan_next_agent(result, agent_profiles)
+
+                prev_adapter = current_adapter
+                next_adapter = self._agents_dict.get(next_agent_id) if next_agent_id else None
+                current_adapter = next_adapter if next_adapter is not None else prev_adapter
+                current_task = plan if plan else current_task
+
+                chain_length += 1
+                planner.update_progress(result)
+
+                # Summarize (engine.py:734-738)
+                summary = self._summarize_results_marble(agents_results_accumulated)
+                planner.summarize_output(summary, task_content, output_format)
+
+                # Decide whether to continue (engine.py:755-764)
+                continue_simulation = planner.decide_next_step([{"root_agent": result}])
+                if not continue_simulation:
+                    break
+
+            except Exception as e:
+                logger.error(f"Error in chain coordination at agent '{getattr(current_adapter, 'agent_id', '?')}': {e}")
+                break
+
+        return {
+            "agent_results": all_results,
+            "communications": communications,
+            "coordination_mode": self._coordinate_mode,
+        }
+
+    def _tree_coordinate(self, agents: Sequence[AgentAdapter]) -> Dict[str, Any]:
+        """Tree-based coordination. Replicates ``Engine.tree_coordinate()``
+        (marble/engine/engine.py:815-949).
+
+        Flow: recursive execution from root agent through children.
+        """
+        planner = self._marble_planner
+        task_content = self._task_content
+        output_format = self._output_format
+        graph = self._marble_graph
+        current_iteration = 0
+
+        root_marble_agent = graph.get_root_agent()
+        if not root_marble_agent:
+            logger.error("No root agent found in the tree.")
+            return {"agent_results": [], "communications": [], "coordination_mode": self._coordinate_mode}
+
+        all_results: List[Dict[str, Any]] = []
+        communications: List[str] = []
+
+        while current_iteration < self.max_invocations:
+            current_iteration += 1
+
+            # Recursive execution from root (engine.py:843-845)
+            results, communication, _tasks = self._execute_agent_task_recursive(root_marble_agent, task_content)
+
+            all_results = results
+            if communication:
+                communications = [communication] if isinstance(communication, str) else communication
+
+            # Summarize (engine.py:847-855)
+            summary = self._summarize_results_marble([{r["agent_id"]: r["result"]} for r in results])
+            summary_msg = planner.summarize_output(summary, task_content, output_format)
+            planner.update_progress(summary_msg)
+
+            # Decide whether to continue (engine.py:884-891)
+            agents_results_for_planner = [{r["agent_id"]: r["result"]} for r in results]
+            continue_simulation = planner.decide_next_step(agents_results_for_planner)
+            if not continue_simulation:
+                break
+
+        return {
+            "agent_results": all_results,
+            "communications": communications,
+            "coordination_mode": self._coordinate_mode,
+        }
+
+    def _execute_agent_task_recursive(self, marble_agent: Any, task: str) -> Tuple[List[Dict[str, Any]], Optional[str], List[Any]]:
+        """Recursively execute tasks in a tree structure.
+
+        Replicates ``Engine._execute_agent_task_recursive()``
+        (marble/engine/engine.py:951-1013).
+
+        Args:
+            marble_agent: MARBLE BaseAgent (not adapter)
+            task: Task string to execute
+
+        Returns:
+            Tuple of (results_list, communications_string, tasks_list)
+        """
+        tasks_collected: List[Any] = []
+        agent_id = marble_agent.agent_id
+
+        # Find the MASEval adapter for this MARBLE agent
+        adapter = self._agents_dict.get(agent_id)
+
+        if hasattr(marble_agent, "children") and len(marble_agent.children) > 0:
+            # Agent assigns tasks to children (engine.py:968)
+            tasks_for_children = marble_agent.plan_tasks_for_children(task)
+            tasks_collected.append(tasks_for_children)
+
+            children_results: List[Dict[str, Any]] = []
+            communications_list: List[str] = []
+
+            for child in marble_agent.children:
+                child_task = tasks_for_children.get(child.agent_id, "")
+                if child_task:
+                    child_results, child_comm, child_tasks = self._execute_agent_task_recursive(child, child_task)
+                    tasks_collected += child_tasks
+                    if child_comm:
+                        communications_list.append(child_comm)
+                    children_results += child_results
+
+            # Parent acts with children's results (engine.py:985-995)
+            results_str = "\n".join(json.dumps(r)[:500] for r in children_results)
+            task_for_parent = (
+                task
+                + "\nHere are the results of the children: "
+                + results_str
+                + "\nPlease don't repeat the same task and continue to work on the original task. "
+                "You may also need to communicate with other agents or summarize the results "
+                "or just continue to work on the original task."
+            )
+
+            if adapter is not None:
+                own_result = adapter.run(task_for_parent)
+            else:
+                own_result, _comm = marble_agent.act(task_for_parent)
+
+            communications_str = "\n".join(communications_list) if communications_list else None
+
+            results = [{"agent_id": agent_id, "result": own_result}] + children_results
+            return results, communications_str, tasks_collected
+        else:
+            # Leaf agent acts directly (engine.py:1007-1013)
+            if adapter is not None:
+                result = adapter.run(task)
+            else:
+                result, _comm = marble_agent.act(task)
+
+            return [{"agent_id": agent_id, "result": result}], None, tasks_collected
+
+    # -- Helpers --
+
+    @staticmethod
+    def _summarize_results_marble(agents_results: List[Dict[str, Any]]) -> str:
+        """Format agent results for the MARBLE planner.
+
+        Replicates ``Engine._summarize_results()``
+        (marble/engine/engine.py:1069-1088).
+        """
+        summary = "Agents' Results Summary:\n"
+        for result in agents_results:
+            shorten_result = f"- {result}"
+            shorten_result = shorten_result[:1000]
+            summary += f"{shorten_result}\n"
+        return summary
+
+    @staticmethod
+    def _minecraft_should_continue() -> bool:
+        """Check Minecraft block_hit_rate for termination.
+
+        Replicates the Minecraft-specific termination logic from
+        ``Engine.graph_coordinate()`` (marble/engine/engine.py:270-279).
+        """
+        try:
+            with open("../data/score.json", "r") as f:
+                block_hit_rate = json.load(f)[-1]["block_hit_rate"]
+        except Exception:
+            block_hit_rate = 0.0
+        return int(block_hit_rate) != 1
 
     @abstractmethod
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> ModelAdapter:

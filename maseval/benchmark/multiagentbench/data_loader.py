@@ -249,8 +249,9 @@ def _parse_task_entry(entry: Dict[str, Any], domain: str, idx: int) -> Task:
     # Extract coordination mode
     coordinate_mode = entry.get("coordinate_mode", "")
     if not coordinate_mode:
-        # Default based on domain if not specified
-        coordinate_mode = "star"
+        # Default: 1215/1226 MARBLE YAML configs use "graph".
+        # See marble/configs/config.py:34 for Config class default.
+        coordinate_mode = "graph"
 
     # Build Task object
     return Task(

@@ -97,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - GAIA2: Various fixes for faithful reproduction of ARE reference results — scenario lifecycle, data loading, evaluation flow, multi-turn notification handling, tool filtering, default agent fidelity, and simulation time management (PR: #30)
 - MultiAgentBench: Corrected domain mappings, added missing werewolf/minecraft support, fixed environment constructors, added result summarization matching MARBLE's evaluation pipeline (PR: #30)
+- MultiAgentBench: `MarbleMultiAgentBenchBenchmark` now implements MARBLE's multi-iteration coordination loop with all 4 modes (graph, star, chain, tree) instead of executing agents only once. Fixed default `coordinate_mode` from `"star"` to `"graph"` matching 1215/1226 MARBLE configs. (PR: #PR_NUMBER_PLACEHOLDER)
 - Tau2: Fixed telecom domain schema to match tau2-bench, added agent/user state synchronization and deterministic network simulation, fixed initialization flow and tool result serialization (PR: #30)
 - Fixed incorrect return type annotations on `DB.load()` and `DB.copy_deep()` in Tau2 benchmark — now use `Self` instead of `"DB"`, so subclass methods return the correct type (PR: #29)
 - ConVerse: Various fixes for faithful reproduction of original. (PR: #32)
