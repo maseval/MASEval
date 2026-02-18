@@ -96,16 +96,26 @@ class MarbleReproductionEvaluator(Evaluator):
             Evaluation result dictionary with ``passed``, ``metrics``,
             ``marble_raw_metrics``, and ``domain`` keys.
         """
-        marble_eval: Dict[str, Any] = final_answer.get("marble_evaluation", {}) if isinstance(final_answer, dict) else {}
+        if not isinstance(final_answer, dict) or "marble_evaluation" not in final_answer:
+            raise ValueError(
+                f"MarbleReproductionEvaluator expects final_answer to be a dict with "
+                f"'marble_evaluation' key, got: {type(final_answer).__name__}"
+            )
+        marble_eval: Dict[str, Any] = final_answer["marble_evaluation"]
 
+        # Direct dict access — MARBLE's Evaluator.__init__ (evaluator.py:31-39)
+        # always initializes all keys. Using [] instead of .get() ensures we
+        # fail loudly if a key is unexpectedly missing.
         metrics = MultiAgentBenchMetrics(
-            task_completion=bool(marble_eval.get("task_evaluation")),
-            communication_scores=marble_eval.get("communication_score", []),
-            planning_scores=marble_eval.get("planning_score", []),
-            task_evaluation=marble_eval.get("task_evaluation", {}),
-            agent_kpis=marble_eval.get("agent_kpis", {}),
-            total_milestones=marble_eval.get("total_milestones", 0),
-            code_quality=marble_eval.get("code_quality", {}),
+            # MARBLE's metrics["task_completion"] is always [] (evaluator.update()
+            # is never called in any coordination mode). bool([]) == False.
+            task_completion=bool(marble_eval["task_completion"]),
+            communication_scores=marble_eval["communication_score"],
+            planning_scores=marble_eval["planning_score"],
+            task_evaluation=marble_eval["task_evaluation"],
+            agent_kpis=marble_eval["agent_kpis"],
+            total_milestones=marble_eval["total_milestones"],
+            code_quality=marble_eval["code_quality"],
         )
 
         return {

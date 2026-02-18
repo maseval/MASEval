@@ -869,7 +869,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
         # Domain-specific final evaluation (engine.py:451-484)
         # Uses last iteration's planner summary, matching MARBLE exactly.
-        self._run_domain_evaluation(iteration_summary)
+        self._run_domain_evaluation(iteration_summary, mode="graph")
 
         return {
             "agent_results": latest_results,
@@ -955,7 +955,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                 break
 
         # Domain-specific final evaluation (engine.py:606-644)
-        self._run_domain_evaluation(iteration_summary)
+        self._run_domain_evaluation(iteration_summary, mode="star")
 
         return {
             "agent_results": latest_results,
@@ -1007,7 +1007,11 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             all_results.append({"agent_id": current_adapter.agent_id, "result": result})
 
             # Capture per-step communication (engine.py:720)
-            # In MARBLE chain, communication is evaluated per-step (not accumulated)
+            # Known MARBLE bug: engine.py:720 stores raw `communication` (None
+            # or dict) into iteration_data["communications"], then asserts it's
+            # a list at L725 → crashes if the agent actually communicated.
+            # MASEval uses adapter._communication_log (always a list), which
+            # avoids this crash. See PROVENANCE.md for details.
             step_communication: List[Any] = []
             if len(current_adapter._communication_log) > comm_count_before:
                 comm_text = current_adapter._communication_log[-1].get("communication", "")
@@ -1065,7 +1069,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         planner.update_progress(summary)
 
         # Domain-specific final evaluation (engine.py:780-803)
-        self._run_domain_evaluation(iteration_summary)
+        self._run_domain_evaluation(iteration_summary, mode="chain")
 
         return {
             "agent_results": all_results,
@@ -1141,7 +1145,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                 break
 
         # Domain-specific final evaluation (engine.py:902-940)
-        self._run_domain_evaluation(iteration_summary)
+        self._run_domain_evaluation(iteration_summary, mode="tree")
 
         return {
             "agent_results": all_results,
@@ -1327,19 +1331,41 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             logger.error(f"Failed to read code from {file_path}: {e}")
             return ""
 
-    def _run_domain_evaluation(self, summary: str) -> None:
+    # Domain evaluation coverage per coordination mode, from engine.py.
+    # Each mode only evaluates specific domains; others are skipped and their
+    # evaluator.metrics fields stay at __init__ defaults (e.g. code_quality={}).
+    _DOMAIN_EVAL_COVERAGE: Dict[str, frozenset] = {
+        "graph": frozenset({"research", "bargaining", "database", "minecraft"}),  # engine.py:451-484
+        "star": frozenset({"research", "coding", "bargaining", "database"}),  # engine.py:606-644
+        "chain": frozenset({"research", "bargaining", "database"}),  # engine.py:780-803
+        "tree": frozenset({"research", "coding", "bargaining", "database"}),  # engine.py:902-940
+    }
+
+    def _run_domain_evaluation(self, summary: str, mode: str) -> None:
         """Run domain-specific final evaluation via MARBLE evaluator.
 
         Replicates the domain dispatch at the end of each coordination method:
         engine.py:451-484 (graph), engine.py:606-644 (star),
         engine.py:780-803 (chain), engine.py:902-940 (tree).
 
+        Each coordination mode only evaluates certain domains. For example,
+        graph mode has no coding evaluation (engine.py:451-484 has no Coding
+        branch), so ``code_quality`` stays ``{}``. This method skips domains
+        not evaluated in the given mode, matching MARBLE exactly.
+
         Args:
             summary: The planner's summary string (``iteration_data["summary"]``
                 in MARBLE, which is ``planner.summarize_output().content``).
+            mode: Coordination mode (``"graph"``, ``"star"``, ``"chain"``,
+                ``"tree"``).
         """
         domain = self._domain.lower()
         evaluator = self._marble_evaluator
+
+        # Skip domains not evaluated in this coordination mode
+        allowed = self._DOMAIN_EVAL_COVERAGE.get(mode, frozenset())
+        if domain not in allowed:
+            return
 
         if domain == "research":
             # engine.py:454, 607, 781, 903

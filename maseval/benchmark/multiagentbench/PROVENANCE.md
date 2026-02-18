@@ -64,6 +64,21 @@ SOFTWARE.
 3. **Environment constructor signature**: Some environments expect different constructor
    arguments. Check each environment's `__init__` signature before use.
 
+4. **`evaluate_planning` `.format()` crash** (`evaluator.py:108`,
+   `evaluator_prompts.json` line 9): The Planning prompt contains single-brace JSON
+   examples (`{"rating": X}`). When `evaluate_planning` calls `.format(summary=...)`,
+   Python parses `{"rating": X}` as a format field → `KeyError`. Graph mode is
+   unaffected (planning evaluation is always `-1`). Star/chain/tree modes crash.
+   MASEval patches the same bug in `evaluate_communication` via
+   `_create_patched_marble_evaluator()` but deliberately leaves `evaluate_planning`
+   unchanged to match MARBLE's crash behavior.
+
+5. **Chain communication assertion bug** (`engine.py:720-725`): In `chain_coordinate`,
+   engine.py:720 stores raw `communication` (None or dict) into
+   `iteration_data["communications"]`, then asserts it's a list at L725 → crashes if
+   the agent actually communicated. MASEval's `_chain_coordinate` uses
+   `adapter._communication_log` (always a list), avoiding the crash.
+
 ## Architectural Differences from MARBLE
 
 ### Result summarization before evaluation
