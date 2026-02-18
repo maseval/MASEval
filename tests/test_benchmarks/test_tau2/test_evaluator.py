@@ -18,8 +18,10 @@ def mock_environment():
     env.domain = "retail"
     # Default hash values
     env.get_db_hash.return_value = "hash123"
+    env.get_user_db_hash.return_value = None
     env.toolkit.has_tool.return_value = True
     env.toolkit.use_tool.return_value = True
+    env.run_env_assertion.return_value = True
     return env
 
 
@@ -48,22 +50,20 @@ def evaluator(sample_task, mock_environment):
 
 @pytest.mark.benchmark
 def test_filter_traces(evaluator):
-    """Test extraction of relevant traces."""
+    """Test extraction of relevant traces into full_trajectory."""
     raw_traces = {
-        "agents": {"agent1": {"messages": [{"role": "assistant", "content": "Hello"}]}},
-        "tools": {"tool1": {"invocations": [{"inputs": {"a": 1}, "outputs": "res", "status": "success"}]}},
+        "agents": {"agent1": {"messages": [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}]}},
+        "users": {},
         "environment": {"final_db_hash": "hash123"},
         "termination_reason": "agent_stop",
     }
 
     filtered = evaluator.filter_traces(raw_traces)
 
-    assert len(filtered["messages"]) == 1
-    assert filtered["messages"][0]["content"] == "Hello"
-
-    assert len(filtered["tool_calls"]) == 1
-    assert filtered["tool_calls"][0]["name"] == "tool1"
-    assert filtered["tool_calls"][0]["arguments"] == {"a": 1}
+    assert "full_trajectory" in filtered
+    assert len(filtered["full_trajectory"]) == 2
+    assert filtered["full_trajectory"][0]["content"] == "Hi"
+    assert filtered["full_trajectory"][1]["content"] == "Hello"
 
     assert filtered["environment"]["final_db_hash"] == "hash123"
     assert filtered["termination_reason"] == "agent_stop"
@@ -77,53 +77,52 @@ def test_filter_traces(evaluator):
 @pytest.mark.benchmark
 def test_evaluate_environment_success(evaluator, mock_environment):
     """Test environment evaluation with matching hashes."""
-    traces = {"environment": {"final_db_hash": "hash_gold", "final_user_db_hash": "user_hash_gold"}}
+    full_trajectory = []  # Empty trajectory — no tool calls to replay
 
     # Mock gold environment creation (must mock both agent and user DB hashes)
     with patch("maseval.benchmark.tau2.evaluator.get_environment_constructor") as mock_get_const:
-        mock_gold_env = MagicMock()
-        mock_gold_env.get_db_hash.return_value = "hash_gold"
-        mock_gold_env.get_user_db_hash.return_value = "user_hash_gold"
-        mock_get_const.return_value.return_value = mock_gold_env
+        mock_env = MagicMock()
+        mock_env.get_db_hash.return_value = "hash_gold"
+        mock_env.get_user_db_hash.return_value = "user_hash_gold"
+        mock_env.run_env_assertion.return_value = True
+        mock_get_const.return_value.return_value = mock_env
 
-        result = evaluator._evaluate_environment(traces)
+        result = evaluator._evaluate_environment(full_trajectory)
 
         assert result["db_match"] is True
         assert result["db_reward"] == 1.0
-        assert result["reward"] == 1.0  # Combined reward (including assertion which passes by default fixture)
+        assert result["reward"] == 1.0
 
 
 @pytest.mark.benchmark
 def test_evaluate_environment_failure(evaluator, mock_environment):
     """Test environment evaluation with mismatching hashes."""
-    traces = {"environment": {"final_db_hash": "hash_actual", "final_user_db_hash": None}}
+    full_trajectory = []
 
     with patch("maseval.benchmark.tau2.evaluator.get_environment_constructor") as mock_get_const:
-        mock_gold_env = MagicMock()
-        mock_gold_env.get_db_hash.return_value = "hash_expected"
-        mock_gold_env.get_user_db_hash.return_value = None
-        mock_get_const.return_value.return_value = mock_gold_env
+        # Predicted env returns different hash than gold env
+        call_count = [0]
 
-        result = evaluator._evaluate_environment(traces)
+        def make_env():
+            call_count[0] += 1
+            env = MagicMock()
+            if call_count[0] == 1:
+                # predicted env
+                env.get_db_hash.return_value = "hash_actual"
+                env.get_user_db_hash.return_value = None
+            else:
+                # gold env
+                env.get_db_hash.return_value = "hash_expected"
+                env.get_user_db_hash.return_value = None
+            env.run_env_assertion.return_value = True
+            return env
+
+        mock_get_const.return_value.side_effect = make_env
+
+        result = evaluator._evaluate_environment(full_trajectory)
 
         assert result["db_match"] is False
         assert result["db_reward"] == 0.0
-
-
-@pytest.mark.benchmark
-def test_evaluate_env_assertion(evaluator, mock_environment):
-    """Test environment assertion logic."""
-    # Ensure tool exists and returns True
-    mock_environment.toolkit.has_tool.return_value = True
-    mock_environment.toolkit.use_tool.return_value = True
-
-    assertion = {"func_name": "check", "arguments": {}, "assert_value": True}
-
-    assert evaluator._run_env_assertion(mock_environment, assertion) is True
-
-    # Test mismatch
-    mock_environment.toolkit.use_tool.return_value = False
-    assert evaluator._run_env_assertion(mock_environment, assertion) is False
 
 
 # =============================================================================
@@ -133,10 +132,13 @@ def test_evaluate_env_assertion(evaluator, mock_environment):
 
 @pytest.mark.benchmark
 def test_evaluate_actions_match(evaluator):
-    """Test action evaluation with matching tool calls."""
-    traces = {"tool_calls": [{"name": "check_order", "arguments": {"order_id": "123"}}]}
+    """Test action evaluation with matching tool calls in trajectory."""
+    full_trajectory = [
+        {"role": "assistant", "content": "", "tool_calls": [{"name": "check_order", "arguments": {"order_id": "123"}}]},
+        {"role": "tool", "content": "result"},
+    ]
 
-    result = evaluator._evaluate_actions(traces)
+    result = evaluator._evaluate_actions(full_trajectory)
 
     assert result["all_matched"] is True
     assert result["reward"] == 1.0
@@ -145,13 +147,12 @@ def test_evaluate_actions_match(evaluator):
 @pytest.mark.benchmark
 def test_evaluate_actions_mismatch(evaluator):
     """Test action evaluation with mismatching tool calls."""
-    traces = {
-        "tool_calls": [
-            {"name": "check_order", "arguments": {"order_id": "999"}}  # Wrong ID
-        ]
-    }
+    full_trajectory = [
+        {"role": "assistant", "content": "", "tool_calls": [{"name": "check_order", "arguments": {"order_id": "999"}}]},
+        {"role": "tool", "content": "result"},
+    ]
 
-    result = evaluator._evaluate_actions(traces)
+    result = evaluator._evaluate_actions(full_trajectory)
 
     assert result["all_matched"] is False
     assert result["reward"] == 0.0
@@ -159,10 +160,13 @@ def test_evaluate_actions_mismatch(evaluator):
 
 @pytest.mark.benchmark
 def test_evaluate_actions_missing(evaluator):
-    """Test action evaluation with missing tool calls."""
-    traces = {"tool_calls": []}
+    """Test action evaluation with no tool calls in trajectory."""
+    full_trajectory = [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there"},
+    ]
 
-    result = evaluator._evaluate_actions(traces)
+    result = evaluator._evaluate_actions(full_trajectory)
 
     assert result["all_matched"] is False
     assert result["reward"] == 0.0
@@ -175,10 +179,10 @@ def test_evaluate_actions_missing(evaluator):
 
 @pytest.mark.benchmark
 def test_evaluate_communication_success(evaluator):
-    """Test communication evaluation finding required info."""
-    traces = {"messages": [{"role": "assistant", "content": "Your refund processed successfully."}]}
+    """Test communication evaluation finding required info in trajectory."""
+    full_trajectory = [{"role": "assistant", "content": "Your refund processed successfully."}]
 
-    result = evaluator._evaluate_communication(traces)
+    result = evaluator._evaluate_communication(full_trajectory)
 
     assert result["all_found"] is True
     assert result["reward"] == 1.0
@@ -186,10 +190,10 @@ def test_evaluate_communication_success(evaluator):
 
 @pytest.mark.benchmark
 def test_evaluate_communication_failure(evaluator):
-    """Test communication evaluation failing to find info."""
-    traces = {"messages": [{"role": "assistant", "content": "I cannot help you."}]}
+    """Test communication evaluation failing to find info in trajectory."""
+    full_trajectory = [{"role": "assistant", "content": "I cannot help you."}]
 
-    result = evaluator._evaluate_communication(traces)
+    result = evaluator._evaluate_communication(full_trajectory)
 
     assert result["all_found"] is False
     assert result["reward"] == 0.0
@@ -204,26 +208,28 @@ def test_evaluate_communication_failure(evaluator):
 def test_score_aggregation_all_pass(evaluator):
     """Test overall score when all components pass."""
     # Mock individual methods to return success
-    evaluator._evaluate_environment = MagicMock(return_value={"reward": 1.0, "breakdown": {"db": 1.0}})
-    evaluator._evaluate_actions = MagicMock(return_value={"reward": 1.0, "breakdown": {"action": 1.0}})
-    evaluator._evaluate_communication = MagicMock(return_value={"reward": 1.0, "breakdown": {"communicate": 1.0}})
+    evaluator._evaluate_environment = MagicMock(return_value={"reward": 1.0, "breakdown": {"DB": 1.0}})
+    evaluator._evaluate_actions = MagicMock(return_value={"reward": 1.0, "breakdown": {"ACTION": 1.0}})
+    evaluator._evaluate_communication = MagicMock(return_value={"reward": 1.0, "breakdown": {"COMMUNICATE": 1.0}})
+    evaluator._evaluate_nl_assertions = MagicMock(return_value={"reward": 1.0})
 
-    result = evaluator({"termination_reason": "agent_stop"})
+    result = evaluator({"termination_reason": "agent_stop", "full_trajectory": []})
 
     assert result["reward"] == 1.0
     assert result["passed"] is True
-    assert result["reward_breakdown"] == {"db": 1.0, "action": 1.0, "communicate": 1.0}
+    assert result["reward_breakdown"] == {"DB": 1.0, "ACTION": 1.0, "COMMUNICATE": 1.0}
 
 
 @pytest.mark.benchmark
 def test_score_aggregation_mixed(evaluator):
     """Test overall score when some components fail."""
     # Environment fails, others pass
-    evaluator._evaluate_environment = MagicMock(return_value={"reward": 0.0, "breakdown": {"db": 0.0}})
-    evaluator._evaluate_actions = MagicMock(return_value={"reward": 1.0, "breakdown": {"action": 1.0}})
-    evaluator._evaluate_communication = MagicMock(return_value={"reward": 1.0, "breakdown": {"communicate": 1.0}})
+    evaluator._evaluate_environment = MagicMock(return_value={"reward": 0.0, "breakdown": {"DB": 0.0}})
+    evaluator._evaluate_actions = MagicMock(return_value={"reward": 1.0, "breakdown": {"ACTION": 1.0}})
+    evaluator._evaluate_communication = MagicMock(return_value={"reward": 1.0, "breakdown": {"COMMUNICATE": 1.0}})
+    evaluator._evaluate_nl_assertions = MagicMock(return_value={"reward": 1.0})
 
-    result = evaluator({"termination_reason": "agent_stop"})
+    result = evaluator({"termination_reason": "agent_stop", "full_trajectory": []})
 
     assert result["reward"] == 0.0  # Multiplicative
     assert result["passed"] is False
@@ -269,7 +275,6 @@ class TestComputeBenchmarkMetrics:
         result = compute_benchmark_metrics([])
 
         assert result["total_tasks"] == 0
-        assert result["scored_tasks"] == 0
         assert result["successful_tasks"] == 0
         assert result["success_rate"] == 0.0
         assert result["mean_reward"] == 0.0
@@ -283,13 +288,12 @@ class TestComputeBenchmarkMetrics:
         metrics = compute_benchmark_metrics(results)
 
         assert metrics["total_tasks"] == 1
-        assert metrics["scored_tasks"] == 1
         assert metrics["successful_tasks"] == 1
         assert metrics["success_rate"] == 1.0
         assert metrics["mean_reward"] == 1.0
 
     def test_single_failure(self):
-        """Single failed result counted (agent_error is scoreable)."""
+        """Single failed result counted. H9: ALL simulations count."""
         from maseval.benchmark.tau2.evaluator import compute_benchmark_metrics
 
         results = [{"status": "agent_error", "eval": [{"reward": 0.0, "passed": False}]}]
@@ -297,12 +301,11 @@ class TestComputeBenchmarkMetrics:
         metrics = compute_benchmark_metrics(results)
 
         assert metrics["total_tasks"] == 1
-        assert metrics["scored_tasks"] == 1
         assert metrics["successful_tasks"] == 0
         assert metrics["success_rate"] == 0.0
 
     def test_mixed_results(self):
-        """Mixed success/failure results aggregated."""
+        """Mixed success/failure results aggregated. H9: ALL simulations count."""
         from maseval.benchmark.tau2.evaluator import compute_benchmark_metrics
 
         results = [
@@ -314,13 +317,12 @@ class TestComputeBenchmarkMetrics:
         metrics = compute_benchmark_metrics(results)
 
         assert metrics["total_tasks"] == 3
-        assert metrics["scored_tasks"] == 3
         assert metrics["successful_tasks"] == 1
         assert metrics["success_rate"] == pytest.approx(1 / 3)
         assert metrics["mean_reward"] == pytest.approx(0.5)
 
-    def test_excludes_infrastructure_errors(self):
-        """Infrastructure errors excluded from scoring."""
+    def test_all_simulations_count(self):
+        """H9: ALL simulations count in denominator (terminated ones get reward=0.0)."""
         from maseval.benchmark.tau2.evaluator import compute_benchmark_metrics
 
         results = [
@@ -333,9 +335,9 @@ class TestComputeBenchmarkMetrics:
         metrics = compute_benchmark_metrics(results)
 
         assert metrics["total_tasks"] == 4
-        assert metrics["scored_tasks"] == 1  # Only success
         assert metrics["successful_tasks"] == 1
-        assert metrics["success_rate"] == 1.0
+        # H9: success_rate denominator is total_tasks, not scored_tasks
+        assert metrics["success_rate"] == pytest.approx(1 / 4)
 
     def test_status_counts(self):
         """Status counts tracked correctly."""

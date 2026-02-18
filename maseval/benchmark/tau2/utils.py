@@ -78,8 +78,8 @@ def get_pydantic_hash(model: BaseModel) -> str:
 def update_pydantic_model_with_dict(model: T, update_data: Dict[str, Any]) -> T:
     """Update a Pydantic model with values from a dictionary.
 
-    Uses SHALLOW merge matching original tau2-bench behavior (AddictDict.update).
-    Top-level keys are replaced entirely — nested dicts are NOT deep-merged.
+    Matches original tau2-bench pydantic_utils.py exactly: uses AddictDict
+    for both sides of the merge.
 
     Args:
         model: Pydantic model to update
@@ -87,25 +87,16 @@ def update_pydantic_model_with_dict(model: T, update_data: Dict[str, Any]) -> T:
 
     Returns:
         New model instance with updates applied
-
-    Example:
-        >>> from pydantic import BaseModel
-        >>> class Config(BaseModel):
-        ...     x: int
-        ...     y: str
-        >>> config = Config(x=1, y="old")
-        >>> updated = update_pydantic_model_with_dict(config, {"y": "new"})
-        >>> updated.y
-        'new'
     """
     if not update_data:
         return model
 
-    # Shallow merge matching original: AddictDict(model.model_dump()).update(AddictDict(update_data))
-    raw_data = model.model_dump()
-    raw_data.update(update_data)
+    # Exact match of original: AddictDict(model.model_dump()).update(AddictDict(update_data))
+    from addict import Dict as AddictDict
 
-    return model.__class__.model_validate(raw_data)
+    raw_data = AddictDict(model.model_dump())
+    raw_data.update(AddictDict(update_data))
+    return model.__class__.model_validate(raw_data.to_dict())
 
 
 # =============================================================================

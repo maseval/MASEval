@@ -14,8 +14,13 @@ providing deterministic and reproducible evaluation.
 """
 
 import functools
+import json
+from copy import deepcopy
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, cast
+from typing import Any, Callable, Dict, List, Literal, Optional, Type, cast
+
+from pydantic import BaseModel
 
 from maseval import Environment
 
@@ -132,7 +137,6 @@ class Tau2Environment(Environment):
         if self._db_path:
             db = db_class.load(Path(self._db_path))
         else:
-            # Fallback for backwards compatibility
             config = load_domain_config(self._domain)
             db = db_class.load(config["db_path"])
 
@@ -151,8 +155,6 @@ class Tau2Environment(Environment):
             user_toolkit = user_toolkit_class(db)
 
         # Execute initialization_actions AFTER toolkits are created
-        # These are tool calls (e.g., turn_data_off, set_data_usage) that set up
-        # the task's initial device/environment state.
         if self._initial_state_config:
             init_actions = self._initial_state_config.get("initialization_actions")
             if init_actions:
@@ -167,6 +169,9 @@ class Tau2Environment(Environment):
             config = load_domain_config(self._domain)
             policy = config["policy"]
 
+        # M8: Call sync_tools at construction time (matching original constructor)
+        self._sync_tools_internal(toolkit, user_toolkit, db)
+
         return {
             "db": db,
             "toolkit": toolkit,
@@ -178,9 +183,7 @@ class Tau2Environment(Environment):
     def _apply_initial_state(self, db: DB, initial_state: Dict[str, Any]) -> DB:
         """Apply initialization_data updates to database.
 
-        Only applies static data updates (agent_data, user_data).
-        initialization_actions are executed separately in setup_state()
-        after toolkits are created.
+        Matches original Environment.set_state() initialization_data handling.
 
         Args:
             db: Database instance
@@ -211,10 +214,9 @@ class Tau2Environment(Environment):
     ) -> None:
         """Execute initialization actions to set up task state.
 
-        Routes each action to the appropriate toolkit based on env_type,
-        then calls _sync_tools_internal() after each action.
-
-        Matches tau2-bench Environment.run_env_function_call() behavior.
+        Routes each action to the appropriate toolkit based on env_type
+        using getattr (matching original run_env_function_call), then calls
+        _sync_tools_internal() after each action.
 
         Args:
             actions: List of action dicts with env_type, func_name, arguments
@@ -227,22 +229,16 @@ class Tau2Environment(Environment):
             func_name = action["func_name"]
             arguments = action.get("arguments", {})
 
-            if env_type == "user":
-                if user_toolkit is None:
-                    raise ValueError(f"No user toolkit available for user action: {func_name}")
-                func = getattr(user_toolkit, func_name, None)
-                if func is None:
-                    raise ValueError(f"User function '{func_name}' not found on user toolkit")
-                func(**arguments)
-            elif env_type == "assistant":
-                func = getattr(toolkit, func_name, None)
-                if func is None:
-                    raise ValueError(f"Assistant function '{func_name}' not found on toolkit")
-                func(**arguments)
-            else:
+            if env_type not in ("assistant", "user"):
                 raise ValueError(f"Unknown env_type: {env_type}")
+            target_toolkit = user_toolkit if env_type == "user" else toolkit
+            if target_toolkit is None:
+                raise ValueError(f"No {env_type} toolkit available for action: {func_name}")
+            func = getattr(target_toolkit, func_name, None)
+            if func is None:
+                raise ValueError(f"Function '{func_name}' not found on {env_type} toolkit")
+            func(**arguments)
 
-            # Sync state after each action (matching tau2-bench behavior)
             self._sync_tools_internal(toolkit, user_toolkit, db)
 
     def _sync_tools_internal(
@@ -258,17 +254,13 @@ class Tau2Environment(Environment):
         Only applies to telecom domain.
 
         Matches tau2-bench TelecomEnvironment.sync_tools()
-        (telecom/environment.py:40-94). No try/except — errors propagate
-        as in the original.
 
         Args:
             toolkit: Agent-side toolkit
             user_toolkit: User-side toolkit
             db: Database instance
         """
-        if self._domain != "telecom":
-            return
-        if user_toolkit is None:
+        if self._domain != "telecom" or user_toolkit is None:
             return
         if not hasattr(db, "user_db") or db.user_db is None:
             return
@@ -284,40 +276,36 @@ class Tau2Environment(Environment):
         from maseval.benchmark.tau2.domains.telecom.models import LineStatus
         from maseval.benchmark.tau2.domains.telecom.user_models import PaymentRequest
 
+        # H6: None checks matching original sync_tools behavior
         line = telecom_tools._get_line_by_phone(phone_number)
+        if line is None:
+            raise ValueError(f"Line with phone number {phone_number} not found")
 
         # Sync line active status (agent DB → user surroundings)
-        if line.status == LineStatus.ACTIVE:
-            user_db.surroundings.line_active = True
-        else:
-            user_db.surroundings.line_active = False
+        user_db.surroundings.line_active = line.status == LineStatus.ACTIVE
 
         # Sync roaming capability (agent DB → user surroundings)
-        if line.roaming_enabled:
-            user_db.surroundings.roaming_allowed = True
-        else:
-            user_db.surroundings.roaming_allowed = False
+        user_db.surroundings.roaming_allowed = line.roaming_enabled
+
+        # H6: None check for plan
+        plan = telecom_tools._get_plan_by_id(line.plan_id)
+        if plan is None:
+            raise ValueError(f"Plan with ID {line.plan_id} not found")
 
         # Sync data usage exceeded (agent DB → user surroundings)
-        plan = telecom_tools._get_plan_by_id(line.plan_id)
-        if line.data_used_gb >= plan.data_limit_gb + line.data_refueling_gb:
-            user_db.surroundings.mobile_data_usage_exceeded = True
-        else:
-            user_db.surroundings.mobile_data_usage_exceeded = False
+        user_db.surroundings.mobile_data_usage_exceeded = line.data_used_gb >= plan.data_limit_gb + line.data_refueling_gb
 
         # Sync paid bills (user surroundings → agent DB)
         current_payment_request = user_db.surroundings.payment_request
-        if current_payment_request is not None:
-            if current_payment_request.paid:
-                telecom_tools._set_bill_to_paid(current_payment_request.bill_id)
-                user_db.surroundings.payment_request = None
+        if current_payment_request is not None and current_payment_request.paid:
+            telecom_tools._set_bill_to_paid(current_payment_request.bill_id)
+            user_db.surroundings.payment_request = None
 
         # Sync payment requests (agent DB → user surroundings)
-        current_payment_request = user_db.surroundings.payment_request
-        if current_payment_request is None:
+        if user_db.surroundings.payment_request is None:
             customer = telecom_tools.get_customer_by_phone(phone_number)
             bills = telecom_tools._get_bills_awaiting_payment(customer)
-            if len(bills) != 0:
+            if bills:
                 bill = bills[0]
                 user_db.surroundings.payment_request = PaymentRequest(bill_id=bill.bill_id, amount_due=bill.total_due)
 
@@ -326,21 +314,11 @@ class Tau2Environment(Environment):
 
         Called automatically after every tool invocation via wrapped callables.
         Currently only applies to telecom domain (no-op for retail/airline).
-
-        Matches tau2-bench orchestrator.py:361 behavior where ``sync_tools()``
-        is called after every orchestration step.
         """
         self._sync_tools_internal(self.toolkit, self.user_toolkit, self.db)
 
     def _wrap_with_sync(self, func: Callable) -> Callable:
-        """Wrap a tool callable to call ``sync_tools()`` after each invocation.
-
-        Args:
-            func: The original tool callable
-
-        Returns:
-            Wrapped callable that syncs state after execution
-        """
+        """Wrap a tool callable to call ``sync_tools()`` after each invocation."""
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -351,39 +329,270 @@ class Tau2Environment(Environment):
         return wrapper
 
     def create_tools(self) -> Dict[str, Callable]:  # type: ignore[override]
-        """Create tools from the domain toolkit.
-
-        These are real Python methods that modify database state.
-        Each tool is wrapped with a post-invocation ``sync_tools()`` call
-        to keep agent-side and user-side state synchronized.
-
-        Returns:
-            Dict mapping tool names to callable methods
-        """
+        """Create tools from the domain toolkit, wrapped with post-invocation sync."""
         return {name: self._wrap_with_sync(func) for name, func in self.toolkit.tools.items()}
 
     def create_user_tools(self) -> Dict[str, Callable]:
-        """Create user tools from the domain user toolkit.
-
-        Each tool is wrapped with a post-invocation ``sync_tools()`` call
-        to keep agent-side and user-side state synchronized.
-
-        Returns:
-            Dict mapping tool names to callable methods
-        """
+        """Create user tools from the domain user toolkit, wrapped with post-invocation sync."""
         if self.user_toolkit:
             return {name: self._wrap_with_sync(func) for name, func in self.user_toolkit.tools.items()}
         return {}
 
-    def get_db_hash(self) -> str:
-        """Get hash of current agent database state.
+    # =========================================================================
+    # Tool call routing and response — matching original environment.py
+    # =========================================================================
 
-        Used by evaluator to verify correct state changes.
-        Critical for deterministic evaluation.
+    def make_tool_call(
+        self,
+        tool_name: str,
+        requestor: Literal["user", "assistant"] = "assistant",
+        **kwargs: Any,
+    ) -> Any:
+        """Execute a tool call, routing based on requestor.
+
+        Matches original Environment.make_tool_call() (environment.py:128-155).
+        Does NOT call sync_tools — caller is responsible.
+
+        Args:
+            tool_name: Name of the tool
+            requestor: Who is making the call ("user" or "assistant")
+            **kwargs: Tool arguments
+        """
+        if requestor == "user":
+            return self.make_user_tool_call(tool_name, **kwargs)
+        # requestor == "assistant"
+        return self.toolkit.use_tool(tool_name, **kwargs)
+
+    def make_user_tool_call(self, tool_name: str, **kwargs: Any) -> Any:
+        """Execute a user tool call."""
+        if not self.user_toolkit:
+            raise ValueError(f"No user toolkit available for domain {self._domain}")
+        return self.user_toolkit.use_tool(tool_name, **kwargs)
+
+    def run_env_function_call(self, env_function_call: Dict[str, Any]) -> Any:
+        """Execute an environment function call using getattr.
+
+        Matches original Environment.run_env_function_call() (environment.py:164-181).
+        Uses getattr() on toolkit, NOT use_tool(). This is critical because
+        assertion functions are NOT registered as @is_tool.
+
+        Args:
+            env_function_call: Dict with env_type, func_name, arguments
+        """
+        env_type = env_function_call.get("env_type", "assistant")
+        func_name = env_function_call["func_name"]
+        arguments = env_function_call.get("arguments", {})
+
+        target_toolkit = self.user_toolkit if env_type == "user" else self.toolkit
+        if target_toolkit is None:
+            raise ValueError(f"No {env_type} toolkit available")
+        func = getattr(target_toolkit, func_name, None)
+        if func is None:
+            raise ValueError(f"Function {func_name} not found in {env_type} tools")
+        res = func(**arguments)
+        self.sync_tools()
+        return res
+
+    def run_env_assertion(
+        self,
+        assertion: Dict[str, Any],
+        raise_assertion_error: bool = True,
+    ) -> bool:
+        """Run an environment assertion.
+
+        Matches original Environment.run_env_assertion() (environment.py:183-201).
+        Uses run_env_function_call (getattr), NOT use_tool.
+
+        Args:
+            assertion: Dict with env_type, func_name, arguments, assert_value, message
+            raise_assertion_error: If True, raise AssertionError on failure
+        """
+        res = self.run_env_function_call(assertion)
+        if not isinstance(res, bool):
+            raise ValueError(f"Function {assertion['func_name']} returned {type(res)} instead of bool")
+        assert_pass = res == assertion.get("assert_value", True)
+        if raise_assertion_error:
+            assert assert_pass, assertion.get("message") or f"Assertion failed: {assertion}"
+        return assert_pass
+
+    @classmethod
+    def to_json_str(cls, resp: Any) -> str:
+        """Convert a response to a JSON string.
+
+        Matches original Environment.to_json_str() (environment.py:337-366).
+        """
+
+        def _process(resp: Any) -> Any:
+            if isinstance(resp, BaseModel):
+                return resp.model_dump()
+            elif isinstance(resp, str):
+                return resp
+            elif resp is None:
+                return resp
+            elif isinstance(resp, (int, float, bool)):
+                return str(resp)
+            elif isinstance(resp, list):
+                return [_process(item) for item in resp]
+            elif isinstance(resp, tuple):
+                return tuple(_process(item) for item in resp)
+            elif isinstance(resp, dict):
+                return {k: _process(v) for k, v in resp.items()}
+            elif isinstance(resp, (datetime, date)):
+                return resp.isoformat()
+            else:
+                raise ValueError(f"Unsupported type: {type(resp)}")
+
+        if isinstance(resp, str):
+            return resp
+        return json.dumps(_process(resp), default=str)
+
+    def get_response(
+        self, tool_name: str, requestor: Literal["user", "assistant"] = "assistant", tool_call_id: str = "", **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Execute a tool call with error handling and sync.
+
+        Matches original Environment.get_response() (environment.py:390-415).
+        Catches exceptions, calls sync_tools on success, serializes result.
+
+        Args:
+            tool_name: Name of the tool to call
+            requestor: Who is making the call
+            tool_call_id: ID of the tool call (for matching)
+            **kwargs: Tool arguments
 
         Returns:
-            SHA-256 hash hex string
+            Dict with content (serialized result), error flag, requestor, tool_call_id
         """
+        error = False
+        try:
+            resp = self.make_tool_call(tool_name, requestor=requestor, **kwargs)
+            self.sync_tools()
+        except Exception as e:
+            resp = f"Error: {e}"
+            error = True
+        return {
+            "id": tool_call_id,
+            "content": self.to_json_str(resp),
+            "requestor": requestor,
+            "error": error,
+        }
+
+    # =========================================================================
+    # State replay — matching original Environment.set_state()
+    # =========================================================================
+
+    def set_state(
+        self,
+        initialization_data: Optional[Dict[str, Any]],
+        initialization_actions: Optional[List[Dict[str, Any]]],
+        message_history: List[Dict[str, Any]],
+    ) -> None:
+        """Set environment state by replaying initialization data, actions, and message history.
+
+        Matches original Environment.set_state() (environment.py:263-335).
+        Used by the evaluator to reconstruct predicted/gold environments.
+
+        Args:
+            initialization_data: Dict with agent_data, user_data for DB updates
+            initialization_actions: List of env function calls to execute
+            message_history: List of message dicts to replay tool calls from
+        """
+        # Apply initialization_data
+        if initialization_data:
+            agent_data = initialization_data.get("agent_data")
+            if agent_data:
+                self.toolkit.update_db(agent_data)
+            user_data = initialization_data.get("user_data")
+            if user_data and self.user_toolkit:
+                self.user_toolkit.update_db(user_data)
+
+        # Execute initialization_actions
+        if initialization_actions:
+            for action in initialization_actions:
+                self.run_env_function_call(action)
+
+        # Replay message_history tool calls via get_response(), verifying responses
+        action_responses = self._get_actions_from_messages(message_history)
+        for tool_call, expected_response in action_responses:
+            response = self.get_response(
+                tool_name=tool_call["name"],
+                requestor=tool_call.get("requestor", "assistant"),
+                tool_call_id=tool_call.get("id", ""),
+                **tool_call.get("arguments", {}),
+            )
+            # Verify response matches expected
+            try:
+                content = json.loads(response["content"])
+            except (json.JSONDecodeError, TypeError):
+                content = response["content"]
+            try:
+                expected_content = json.loads(expected_response["content"])
+            except (json.JSONDecodeError, TypeError):
+                expected_content = expected_response["content"]
+            if content != expected_content:
+                raise ValueError(f"Tool call:\n{tool_call}\n\nReturned:\n{response}\n\nExpected:\n{expected_response}")
+        self.sync_tools()
+
+    @staticmethod
+    def _get_actions_from_messages(
+        messages: List[Dict[str, Any]],
+    ) -> List[tuple]:
+        """Extract (tool_call, tool_response) pairs from message history.
+
+        Matches original get_actions_from_messages() (environment.py:277-308).
+        Processes messages in reverse to pair tool calls with responses.
+
+        Args:
+            messages: List of message dicts
+
+        Returns:
+            List of (tool_call_dict, tool_response_dict) tuples
+        """
+        messages = deepcopy(messages)[::-1]
+        actions = []
+        while messages:
+            message = messages.pop()
+            role = message.get("role", "")
+
+            if role == "tool":
+                raise ValueError("Tool message not expected. Tool messages should always follow a tool call.")
+
+            tool_calls = message.get("tool_calls")
+            if tool_calls and role in ("assistant", "user"):
+                for tc in tool_calls:
+                    if not messages:
+                        raise ValueError("Tool message expected. Got None.")
+                    tm = messages.pop()
+                    if tm.get("role") != "tool":
+                        raise ValueError(f"Tool message expected. Got role={tm.get('role')}")
+                    # Build tool_call dict with name, arguments, requestor, id
+                    if "function" in tc:
+                        name = tc["function"].get("name", "")
+                        arguments = tc["function"].get("arguments", {})
+                    else:
+                        name = tc.get("name", "")
+                        arguments = tc.get("arguments", {})
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            arguments = {}
+                    tc_dict = {
+                        "name": name,
+                        "arguments": arguments,
+                        "requestor": tc.get("requestor", message.get("requestor", "assistant" if role == "assistant" else "user")),
+                        "id": tc.get("id", ""),
+                    }
+                    actions.append((tc_dict, tm))
+
+        return actions
+
+    # =========================================================================
+    # Hash and trace methods
+    # =========================================================================
+
+    def get_db_hash(self) -> str:
+        """Get hash of current agent database state."""
         return self.db.get_hash()
 
     def get_user_db_hash(self) -> Optional[str]:
@@ -392,9 +601,6 @@ class Tau2Environment(Environment):
         For telecom domain, hashes just the user_db (TelecomUserDB),
         matching original tau2-bench's get_user_db_hash() which calls
         user_tools.get_db_hash() on a separate user DB.
-
-        Returns:
-            SHA-256 hash hex string, or None if no user toolkit
         """
         if self.user_toolkit is None:
             return None
@@ -404,56 +610,11 @@ class Tau2Environment(Environment):
         return None
 
     def get_initial_db_hash(self) -> str:
-        """Get hash of initial database state.
-
-        Returns:
-            SHA-256 hash hex string
-        """
+        """Get hash of initial database state."""
         return self.state["initial_db_hash"]
 
-    def make_tool_call(self, tool_name: str, **kwargs: Any) -> Any:
-        """Execute a tool call.
-
-        Args:
-            tool_name: Name of the tool
-            **kwargs: Tool arguments
-
-        Returns:
-            Tool result
-
-        Raises:
-            ValueError: If tool not found
-        """
-        return self.toolkit.use_tool(tool_name, **kwargs)
-
-    def make_user_tool_call(self, tool_name: str, **kwargs: Any) -> Any:
-        """Execute a user tool call.
-
-        Args:
-            tool_name: Name of the tool
-            **kwargs: Tool arguments
-
-        Returns:
-            Tool result
-
-        Raises:
-            ValueError: If tool not found or user toolkit not available
-        """
-        if not self.user_toolkit:
-            raise ValueError(f"No user toolkit available for domain {self._domain}")
-        return self.user_toolkit.use_tool(tool_name, **kwargs)
-
     def gather_traces(self) -> Dict[str, Any]:
-        """Gather execution traces including database state changes.
-
-        Returns:
-            Trace dictionary with:
-                - type: "Tau2Environment"
-                - domain: Domain name
-                - initial_db_hash: Hash of initial state
-                - final_db_hash: Hash of current state
-                - db_changed: Whether state changed
-        """
+        """Gather execution traces including database state changes."""
         traces = super().gather_traces()
         traces.update(
             {
@@ -467,11 +628,7 @@ class Tau2Environment(Environment):
         return traces
 
     def gather_config(self) -> Dict[str, Any]:
-        """Gather environment configuration.
-
-        Returns:
-            Configuration dictionary
-        """
+        """Gather environment configuration."""
         config = super().gather_config()
         config.update(
             {
@@ -485,11 +642,11 @@ class Tau2Environment(Environment):
         return config
 
 
-def get_environment_constructor(task_data: Dict[str, Any]) -> Callable[[], Tau2Environment]:
+def get_environment_constructor(task_data: Dict[str, Any]) -> Callable[[], "Tau2Environment"]:
     """Get an environment constructor from task data.
 
-    This is used by the evaluator to create fresh environment instances
-    for replaying tool calls.
+    Used by the evaluator to create fresh environment instances
+    for replaying tool calls and computing gold state.
 
     Args:
         task_data: Task data with domain, policy, db_path
@@ -499,7 +656,6 @@ def get_environment_constructor(task_data: Dict[str, Any]) -> Callable[[], Tau2E
     """
 
     def constructor(solo_mode: bool = False) -> Tau2Environment:
-        # solo_mode is ignored for now (telecom-specific feature)
         return Tau2Environment(task_data)
 
     return constructor

@@ -148,8 +148,8 @@ class AirlineTools(ToolKitBase[AirlineDB]):
             )
             if check:
                 flight_date_data = flight.dates[date]
-                if isinstance(flight_date_data, FlightDateStatusAvailable):
-                    direct_flight = DirectFlight(
+                results.append(
+                    DirectFlight(
                         flight_number=flight.flight_number,
                         origin=flight.origin,
                         destination=flight.destination,
@@ -159,7 +159,7 @@ class AirlineTools(ToolKitBase[AirlineDB]):
                         available_seats=flight_date_data.available_seats,
                         prices=flight_date_data.prices,
                     )
-                    results.append(direct_flight)
+                )
         return results
 
     def _payment_for_update(self, user: User, payment_id: str, total_price: int) -> Optional[Payment]:

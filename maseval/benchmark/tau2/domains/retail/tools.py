@@ -537,8 +537,7 @@ class RetailTools(ToolKitBase[RetailDB]):
         if len(item_ids) != len(new_item_ids):
             raise ValueError("The number of items to be exchanged should match")
 
-        diff_price = 0.0
-        variant = None
+        diff_price = 0
         for item_id, new_item_id in zip(item_ids, new_item_ids):
             if item_id == new_item_id:
                 raise ValueError("The new item id should be different from the old item id")
@@ -578,10 +577,9 @@ class RetailTools(ToolKitBase[RetailDB]):
             item = next((item for item in order.items if item.item_id == item_id), None)
             if item is None:
                 raise ValueError(f"Item {item_id} not found")
-            if variant is not None:
-                item.item_id = new_item_id
-                item.price = variant.price
-                item.options = variant.options
+            item.item_id = new_item_id
+            item.price = variant.price
+            item.options = variant.options
         order.status = "pending (item modified)"
 
         return order

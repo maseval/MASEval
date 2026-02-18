@@ -38,6 +38,15 @@ overrides = [
 ]
 
 [[package]]
+name = "addict"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/85/ef/fd7649da8af11d93979831e8f1f8097e85e82d5bfeabc8c68b39175d8e75/addict-2.4.0.tar.gz", hash = "sha256:b3b2210e0e067a281f5646c8c5db92e99b7231ea8b0eb5f74dbdf9e259d4e494", size = 9186, upload-time = "2020-11-21T16:21:31.416Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/00/b08f23b7d7e1e14ce01419a467b583edbb93c6cdb8654e54a9cc579cd61f/addict-2.4.0-py3-none-any.whl", hash = "sha256:249bb56bbfd3cdc2a004ea0ff4c2b6ddc84d53bc2194761636eb314d5cfa5dfc", size = 3832, upload-time = "2020-11-21T16:21:29.588Z" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2832,6 +2841,7 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "addict" },
     { name = "anthropic" },
     { name = "arxiv" },
     { name = "beartype" },
@@ -2882,6 +2892,7 @@ camel = [
     { name = "camel-ai" },
 ]
 examples = [
+    { name = "addict" },
     { name = "anthropic" },
     { name = "camel-ai" },
     { name = "datasets" },
@@ -2952,6 +2963,7 @@ smolagents = [
     { name = "smolagents" },
 ]
 tau2 = [
+    { name = "addict" },
     { name = "docstring-parser" },
 ]
 transformers = [
@@ -2982,6 +2994,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
+    { name = "addict", marker = "extra == 'tau2'", specifier = ">=2.4.0" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.40.0" },
     { name = "arxiv", marker = "extra == 'multiagentbench'", specifier = ">=2.1.0" },
     { name = "beartype", marker = "extra == 'multiagentbench'" },

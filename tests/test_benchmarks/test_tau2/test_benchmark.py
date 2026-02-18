@@ -55,8 +55,8 @@ class TestTau2BenchmarkClassStructure:
         assert hasattr(Tau2Benchmark, "get_model_adapter")
 
     def test_default_max_invocations(self):
-        """MAX_INVOCATIONS is 50 (matching tau2-bench max_steps/4)."""
-        assert Tau2Benchmark.MAX_INVOCATIONS == 50
+        """MAX_INVOCATIONS is 200 (matching original DEFAULT_MAX_STEPS)."""
+        assert Tau2Benchmark.MAX_INVOCATIONS == 200
 
     def test_setup_evaluators_returns_tau2_evaluator(self, benchmark, task, seed_gen):
         """setup_evaluators returns Tau2Evaluator."""
@@ -325,20 +325,20 @@ class TestTau2ExecutionLoop:
         """INITIAL_GREETING matches the original tau2-bench orchestrator.py:L34-36."""
         assert INITIAL_GREETING == "Hi! How can I help you today?"
 
-    def test_greeting_injected_via_inject_greeting(self, benchmark, task):
-        """execution_loop calls user.inject_greeting(INITIAL_GREETING)."""
+    def test_user_generates_initial_query_via_respond(self, benchmark, task):
+        """C7: execution_loop calls user.respond(INITIAL_GREETING) for initial query."""
         mock_agent = MagicMock()
         mock_agent.run.return_value = "Agent response"
 
         user = MagicMock()
-        user.get_initial_query.return_value = "I need help"
-        user.respond.return_value = ""
+        # First respond() call is for initial query; second is after agent response
+        user.respond.side_effect = ["I need help", ""]
         user.is_done.return_value = True
 
         benchmark.execution_loop([mock_agent], task, MagicMock(), user)
 
-        # inject_greeting should have been called with INITIAL_GREETING
-        user.inject_greeting.assert_called_once_with(INITIAL_GREETING)
+        # First call should be with INITIAL_GREETING (user generates initial query)
+        assert user.respond.call_args_list[0][0][0] == INITIAL_GREETING
 
     def test_no_greeting_without_user(self, benchmark, task):
         """execution_loop works without user (uses task.query, no greeting)."""
@@ -350,31 +350,29 @@ class TestTau2ExecutionLoop:
         assert result == "Response"
         mock_agent.run.assert_called_once_with(task.query)
 
-    def test_greeting_injected_before_respond(self, benchmark, task):
-        """inject_greeting is called before respond() in the execution loop."""
+    def test_respond_called_with_greeting_then_agent_response(self, benchmark, task):
+        """C7: respond() is called first with INITIAL_GREETING, then with agent output."""
         mock_agent = MagicMock()
         mock_agent.run.return_value = "How can I assist?"
 
-        call_order = []
+        call_args = []
 
         user = MagicMock()
-        user.get_initial_query.return_value = "I need help"
-
-        def track_inject_greeting(greeting):
-            call_order.append("inject_greeting")
 
         def track_respond(msg):
-            call_order.append("respond")
+            call_args.append(msg)
+            if len(call_args) == 1:
+                return "I need help"
             return "Thanks"
 
-        user.inject_greeting.side_effect = track_inject_greeting
         user.respond.side_effect = track_respond
         user.is_done.return_value = True
 
         benchmark.execution_loop([mock_agent], task, MagicMock(), user)
 
-        # inject_greeting must be called before respond
-        assert call_order == ["inject_greeting", "respond"]
+        # First respond call is with greeting, second with agent response
+        assert call_args[0] == INITIAL_GREETING
+        assert call_args[1] == "How can I assist?"
 
 
 # =============================================================================

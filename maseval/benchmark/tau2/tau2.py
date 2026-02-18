@@ -184,13 +184,18 @@ class Tau2User(User):
         self._turn_count += 1
         if self._stopped or self._turn_count > self.max_turns:
             self._stopped = True
+            self._last_respond_steps = 0
             return ""
 
         # Add agent's message as assistant message
         self._messages.append({"role": "assistant", "content": message})
 
         # Generate response (may loop for tool calls)
-        return self._generate_response()
+        # C8: Track steps (messages added during generation) for step counting
+        pre_count = len(self._messages)
+        result = self._generate_response()
+        self._last_respond_steps = len(self._messages) - pre_count
+        return result
 
     def _generate_response(self) -> str:
         """Generate user response via chat API with role flipping.
@@ -207,9 +212,11 @@ class Tau2User(User):
             messages = [{"role": "system", "content": self._system_prompt}] + flipped
 
             # Generate via model.chat with tools (native function calling)
+            # H2: tool_choice="auto" matching original llm_utils.py
             response = self.model.chat(
                 messages=messages,
                 tools=self.tool_definitions,
+                tool_choice="auto" if self.tool_definitions else None,
                 **self.llm_args,
             )
 
@@ -394,8 +401,8 @@ class Tau2Benchmark(Benchmark):
         benchmark.run(tasks)
     """
 
-    # Maximum agent-user interaction rounds (tau2-bench uses max_steps=100; see PROVENANCE.md)
-    MAX_INVOCATIONS = 50
+    # C8: Maximum steps matching original DEFAULT_MAX_STEPS=200 (config.py)
+    MAX_INVOCATIONS = 200
 
     def __init__(
         self,
@@ -415,8 +422,7 @@ class Tau2Benchmark(Benchmark):
         Args:
             callbacks: Optional list of callback handlers for monitoring execution.
             n_task_repeats: Number of times to repeat each task. Default 1.
-            max_invocations: Maximum agent-user interaction rounds (default: 50).
-                Original tau2-bench uses max_steps=100 (all message exchanges).
+            max_invocations: Maximum steps (default: 200, matching original DEFAULT_MAX_STEPS).
             num_workers: Number of parallel task executions. Default 1 (sequential).
             fail_on_setup_error: If True, raise on setup errors. Default False.
             fail_on_task_error: If True, raise on task execution errors. Default False.
@@ -602,8 +608,8 @@ class Tau2Benchmark(Benchmark):
     ) -> Sequence[Evaluator]:
         """Create evaluator for the task.
 
-        Creates a Tau2Evaluator that performs deterministic
-        database state comparison.
+        Creates a Tau2Evaluator with optional NL assertion model.
+        NL model ID is read from task.evaluation_data["model_id"].
 
         Args:
             environment: Tau2Environment instance
@@ -614,10 +620,17 @@ class Tau2Benchmark(Benchmark):
         Returns:
             List with single Tau2Evaluator instance
         """
+        # C6: Create NL assertion model if configured
+        nl_model = None
+        nl_model_id = task.evaluation_data.get("model_id")
+        if nl_model_id:
+            nl_model = self.get_model_adapter(nl_model_id, register_name="nl_evaluator")
+
         return [
             Tau2Evaluator(
                 task=task,
                 environment=environment,
+                nl_model=nl_model,
             )
         ]
 
@@ -684,13 +697,12 @@ class Tau2Benchmark(Benchmark):
         environment: Tau2Environment,
         user: Optional[Tau2User],
     ) -> Any:
-        """Execute agents with initial greeting matching original tau2-bench.
+        """Execute agents with user-generated initial query.
 
-        Overrides the base execution loop to inject the orchestrator's initial
-        greeting into the user's message history. In the original tau2-bench,
-        the orchestrator adds "Hi! How can I help you today?" as the first
-        AssistantMessage before the user's initial query. The user simulator
-        sees this greeting; the agent does not.
+        C7: Matches original tau2-bench orchestrator.initialize():
+        The orchestrator sends the greeting to the user simulator, and the
+        user LLM-generates the initial query (not pre-set from task.query).
+        The agent never sees the greeting — only the user's first message.
 
         Source: tau2-bench orchestrator.py:L34-36, L223-229
 
@@ -706,14 +718,10 @@ class Tau2Benchmark(Benchmark):
         final_answer = None
 
         if user is not None:
-            query_text = user.get_initial_query()
-
-            # Inject greeting into user's message history (matching original orchestrator).
-            # In the original, the orchestrator prepends DEFAULT_FIRST_AGENT_MESSAGE
-            # as an AssistantMessage before the user's initial query. The user simulator
-            # sees this greeting; the agent does not.
-            # Source: tau2-bench orchestrator.py:L223-229
-            user.inject_greeting(INITIAL_GREETING)
+            # C7: User LLM-generates initial query in response to greeting.
+            # respond() adds the greeting as an assistant message to user's
+            # history, then generates via LLM. No inject_greeting needed.
+            query_text = user.respond(INITIAL_GREETING)
         else:
             query_text = task.query
 
@@ -858,7 +866,7 @@ def _to_json_str(resp: Any) -> str:
         elif isinstance(obj, (datetime, date)):
             return obj.isoformat()
         else:
-            return str(obj)
+            raise ValueError(f"Unsupported type: {type(obj)}")
 
     if isinstance(resp, str):
         return resp
@@ -968,7 +976,11 @@ class DefaultTau2Agent:
         self._messages.append({"role": "user", "content": query})
 
         # Generate response with potential tool calls
-        return self._generate_with_tools()
+        # C8: Track steps (messages added during generation) for step counting
+        pre_count = len(self._messages)
+        result = self._generate_with_tools()
+        self._last_turn_steps = len(self._messages) - pre_count
+        return result
 
     def _generate_with_tools(self) -> str:
         """Generate response, handling any tool calls.
@@ -987,9 +999,12 @@ class DefaultTau2Agent:
             self._log(2, f"[Agent] Generating response (messages: {len(messages)}, tools: {len(self.tools)})")
 
             # Generate response with tool access using chat() method
+            # H2: tool_choice="auto" matching original llm_utils.py
+            tool_defs = self._get_tool_definitions()
             response = self.model.chat(
                 messages=messages,
-                tools=self._get_tool_definitions(),
+                tools=tool_defs,
+                tool_choice="auto" if tool_defs else None,
                 **self.llm_args,
             )
 
@@ -1240,6 +1255,59 @@ class DefaultAgentTau2Benchmark(Tau2Benchmark):
         )
         results = benchmark.run(tasks)
     """
+
+    def execution_loop(  # type: ignore[override]
+        self,
+        agents: Sequence[AgentAdapter],
+        task: Task,
+        environment: Tau2Environment,
+        user: Optional[Tau2User],
+    ) -> Any:
+        """Execute with step counting matching original orchestrator.
+
+        C8: The original counts steps per-message-appended:
+        - Each agent LLM generation = 1 step
+        - Each tool result = 1 step
+        - Each user LLM generation = 1 step
+        Steps during initialization (greeting + initial query) don't count.
+
+        Args:
+            agents: Agents to execute.
+            task: The task being solved.
+            environment: The Tau2Environment providing tools and state.
+            user: Optional Tau2 user simulator.
+
+        Returns:
+            Final answer from the last agent execution.
+        """
+        final_answer = None
+
+        if user is not None:
+            # C7: User LLM-generates initial query (steps don't count)
+            query_text = user.respond(INITIAL_GREETING)
+        else:
+            query_text = task.query
+
+        # Access underlying DefaultTau2Agent for step tracking
+        agent: DefaultTau2Agent = agents[0]._agent  # type: ignore[attr-defined]
+        steps = 0
+
+        while steps < self.max_invocations:
+            final_answer = agent.run(query_text)
+            steps += agent._last_turn_steps
+
+            if user is None or steps >= self.max_invocations:
+                break
+
+            user_response = user.respond(str(final_answer) if final_answer else "")
+            steps += user._last_respond_steps
+
+            if user.is_done() or steps >= self.max_invocations:
+                break
+
+            query_text = user_response
+
+        return final_answer
 
     def _get_agent_model_id(self, agent_data: Dict[str, Any]) -> str:
         """Get agent model ID from agent_data.

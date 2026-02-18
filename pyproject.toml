@@ -80,7 +80,7 @@ multiagentbench = [
     # dependency of keybert. Lower versions are incompatible with huggingfacehub
     "sentence-transformers>=2.3.0",
 ]
-tau2 = ["docstring-parser>=0.16"]
+tau2 = ["docstring-parser>=0.16", "addict>=2.4.0"]
 converse = []
 
 # Dependencies for running examples (only what's actually used)

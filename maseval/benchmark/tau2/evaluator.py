@@ -20,24 +20,17 @@ Uses deterministic database state comparison for reproducible evaluation,
 with optional LLM-based natural language assertion checking.
 """
 
+import json
+import logging
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from maseval import Evaluator, Task, TaskExecutionStatus
+from maseval import Evaluator, ModelAdapter, Task
 
 from maseval.benchmark.tau2.environment import Tau2Environment, get_environment_constructor
 from maseval.benchmark.tau2.utils import compare_tool_calls
 
-
-# Statuses where agent is accountable (included in scoring)
-# Note: task_timeout is included - timeouts count as failures in tau2
-SCOREABLE_STATUSES = frozenset(
-    {
-        TaskExecutionStatus.SUCCESS.value,
-        TaskExecutionStatus.AGENT_ERROR.value,
-        TaskExecutionStatus.TASK_TIMEOUT.value,
-    }
-)
+logger = logging.getLogger(__name__)
 
 
 class RewardType(str, Enum):
@@ -82,15 +75,18 @@ class Tau2Evaluator(Evaluator):
         self,
         task: Task,
         environment: Tau2Environment,
+        nl_model: Optional[ModelAdapter] = None,
     ):
         """Initialize the evaluator.
 
         Args:
             task: Task being evaluated
             environment: Tau2Environment instance
+            nl_model: Optional model for NL assertion evaluation
         """
         self.task = task
         self.environment = environment
+        self.nl_model = nl_model
 
         # Extract evaluation criteria from task
         eval_data = task.evaluation_data
@@ -104,49 +100,93 @@ class Tau2Evaluator(Evaluator):
         self.reward_basis = [RewardType(r) for r in reward_basis]
 
     def filter_traces(self, traces: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract relevant traces for evaluation.
+        """Build full message trajectory from agent and user traces.
+
+        Matches original tau2-bench where evaluate_simulation receives
+        simulation.messages — a flat ordered list of ALL messages.
 
         Args:
             traces: Full execution traces
 
         Returns:
-            Filtered traces with:
-                - messages: Agent messages
-                - tool_calls: List of tool invocations
-                - environment: Environment traces
-                - termination_reason: Why execution ended
+            Dict with full_trajectory, environment traces, termination_reason
         """
-        # Extract messages from agents
-        messages = []
-        agents_trace = traces.get("agents", {})
-        for agent_name, agent_data in agents_trace.items():
-            agent_messages = agent_data.get("messages", [])
-            messages.extend(agent_messages)
-
-        # Extract tool calls from tools traces
-        tool_calls = []
-        tools_trace = traces.get("tools", {})
-        for tool_name, tool_data in tools_trace.items():
-            invocations = tool_data.get("invocations", [])
-            for inv in invocations:
-                tool_calls.append(
-                    {
-                        "name": tool_name,
-                        "arguments": inv.get("inputs", {}),
-                        "result": inv.get("outputs"),
-                        "status": inv.get("status"),
-                    }
-                )
-
-        # Get environment traces
-        env_trace = traces.get("environment", {})
-
+        full_trajectory = self._build_full_trajectory(traces)
         return {
-            "messages": messages,
-            "tool_calls": tool_calls,
-            "environment": env_trace,
+            "full_trajectory": full_trajectory,
+            "environment": traces.get("environment", {}),
             "termination_reason": traces.get("termination_reason"),
         }
+
+    @staticmethod
+    def _build_full_trajectory(traces: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Build full ordered message trajectory from agent and user traces.
+
+        Merges agent messages (which contain agent tool calls) with user messages
+        (which contain user tool calls and the initial greeting). Matches the
+        original tau2-bench simulation.messages structure.
+
+        Args:
+            traces: Full execution traces
+
+        Returns:
+            Ordered list of all messages in the conversation
+        """
+        agent_msgs = next((d.get("messages", []) for d in traces.get("agents", {}).values()), [])
+        user_msgs = next((d.get("messages", []) for d in traces.get("users", {}).values()), [])
+
+        if not agent_msgs:
+            return []
+        if not user_msgs:
+            return list(agent_msgs)
+
+        # Extract greeting and user-side tool call sequences from user messages.
+        # User msgs structure: [greeting, user_q1, asst_text_1, (user_tc, tool_r)*, user_q2, ...]
+        # We pair each user tool sequence with the agent text content that preceded it.
+        greeting = None
+        user_tool_seqs: List[tuple] = []  # (preceding_asst_content, [tool_call_msgs])
+
+        i = 0
+        if user_msgs[0].get("role") == "assistant":
+            greeting = user_msgs[0]
+            i = 1
+
+        last_asst_content = greeting.get("content") if greeting else None
+        while i < len(user_msgs):
+            msg = user_msgs[i]
+            if msg.get("role") == "assistant":
+                last_asst_content = msg.get("content")
+                i += 1
+            elif msg.get("role") == "user" and msg.get("tool_calls"):
+                seq = [msg]
+                i += 1
+                while i < len(user_msgs) and user_msgs[i].get("role") == "tool":
+                    seq.append(user_msgs[i])
+                    i += 1
+                user_tool_seqs.append((last_asst_content, seq))
+            else:
+                i += 1
+
+        # Build trajectory: greeting + agent messages with user tool sequences
+        # inserted after the matching agent text response.
+        trajectory: List[Dict[str, Any]] = []
+        if greeting:
+            trajectory.append(greeting)
+
+        seq_idx = 0
+        for msg in agent_msgs:
+            trajectory.append(msg)
+            # After agent text response, insert matching user tool calls
+            if (
+                msg.get("role") == "assistant"
+                and not msg.get("tool_calls")
+                and seq_idx < len(user_tool_seqs)
+                and user_tool_seqs[seq_idx][0] == msg.get("content")
+            ):
+                trajectory.extend(user_tool_seqs[seq_idx][1])
+                seq_idx += 1
+
+        return trajectory
 
     def __call__(
         self,
@@ -155,20 +195,19 @@ class Tau2Evaluator(Evaluator):
     ) -> Dict[str, Any]:
         """Evaluate task completion.
 
+        Matches original tau2-bench evaluate_simulation():
+        - Premature termination → reward=0.0
+        - Always runs ALL evaluators (M7: not gated by reward_basis)
+        - Only uses reward_basis when COMBINING scores
+
         Args:
-            traces: Filtered execution traces
+            traces: Filtered execution traces (from filter_traces)
             final_answer: Final answer from agent
 
         Returns:
-            Dict with:
-                - reward: Float [0.0, 1.0] - overall success metric
-                - reward_breakdown: Dict with per-evaluator scores
-                - passed: Boolean - did task pass all criteria?
-                - env_check: Environment evaluation results
-                - action_check: Action evaluation results
-                - communicate_check: Communication evaluation results
+            Dict with reward, passed, reward_breakdown, and per-evaluator results
         """
-        # Check for premature termination
+        # Premature termination → reward=0.0 (matching original)
         termination_reason = traces.get("termination_reason")
         if termination_reason in {TerminationReason.TOO_MANY_ERRORS.value, TerminationReason.MAX_STEPS.value}:
             return {
@@ -178,38 +217,34 @@ class Tau2Evaluator(Evaluator):
                 "note": f"Simulation terminated prematurely: {termination_reason}",
             }
 
-        # Run evaluations
-        env_result = self._evaluate_environment(traces)
-        action_result = self._evaluate_actions(traces)
-        communicate_result = self._evaluate_communication(traces)
+        full_trajectory = traces.get("full_trajectory", [])
 
-        # Combine rewards based on reward_basis
+        # M7: Always run ALL evaluators regardless of reward_basis
+        env_result = self._evaluate_environment(full_trajectory)
+        action_result = self._evaluate_actions(full_trajectory)
+        communicate_result = self._evaluate_communication(full_trajectory)
+        nl_result = self._evaluate_nl_assertions(full_trajectory)
+
+        # Combine rewards based on reward_basis only
         reward = 1.0
         reward_breakdown: Dict[str, float] = {}
+        task_reward_basis = set(self.reward_basis)
 
-        env_bases = {RewardType.DB, RewardType.ENV_ASSERTION}
-        action_bases = {RewardType.ACTION}
-        comm_bases = {RewardType.COMMUNICATE}
-
-        if set(self.reward_basis) & env_bases:
+        if task_reward_basis & {RewardType.DB, RewardType.ENV_ASSERTION}:
             reward_breakdown.update(env_result.get("breakdown", {}))
             reward *= env_result.get("reward", 1.0)
 
-        if set(self.reward_basis) & action_bases:
+        if task_reward_basis & {RewardType.ACTION}:
             reward_breakdown.update(action_result.get("breakdown", {}))
             reward *= action_result.get("reward", 1.0)
 
-        if set(self.reward_basis) & comm_bases:
+        if task_reward_basis & {RewardType.COMMUNICATE}:
             reward_breakdown.update(communicate_result.get("breakdown", {}))
             reward *= communicate_result.get("reward", 1.0)
 
-        # D12: Raise error if NL_ASSERTION is in reward_basis but not evaluated
-        nl_bases = {RewardType.NL_ASSERTION}
-        if set(self.reward_basis) & nl_bases:
-            raise ValueError(
-                "NL assertions are part of the reward basis, but they are not being evaluated. "
-                "NL assertion evaluation requires LLM-based judging."
-            )
+        if task_reward_basis & {RewardType.NL_ASSERTION}:
+            reward_breakdown.update(nl_result.get("breakdown", {}))
+            reward *= nl_result.get("reward", 1.0)
 
         # D22: Use epsilon comparison matching original agent_metrics.py
         passed = (1 - 1e-6) <= reward <= (1 + 1e-6)
@@ -221,18 +256,20 @@ class Tau2Evaluator(Evaluator):
             "env_check": env_result,
             "action_check": action_result,
             "communicate_check": communicate_result,
+            "nl_check": nl_result,
         }
 
-    def _evaluate_environment(self, traces: Dict[str, Any]) -> Dict[str, Any]:
-        """Evaluate environment state assertions.
+    def _evaluate_environment(self, full_trajectory: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Evaluate environment state by reconstructing predicted and gold environments.
 
-        Compares predicted database state against expected state
-        after replaying golden actions.
-
-        Adapted from: tau2-bench src/tau2/evaluator/evaluator_env.py
+        Matches original tau2-bench evaluator_env.py:
+        - Creates fresh predicted_environment, replays full_trajectory via set_state
+        - Creates fresh gold_environment, replays initial message_history + golden actions
+        - Compares DB hashes between predicted and gold
+        - Runs env_assertions on predicted_environment using getattr (C3)
 
         Args:
-            traces: Filtered execution traces
+            full_trajectory: Full ordered message trajectory
 
         Returns:
             Dict with db_match, db_reward, env_assertions results
@@ -240,75 +277,70 @@ class Tau2Evaluator(Evaluator):
         if self.actions is None and self.env_assertions is None:
             return {"reward": 1.0, "note": "No environment criteria"}
 
-        # Get current (predicted) database state hashes
-        env_trace = traces.get("environment", {})
-        predicted_db_hash = env_trace.get("final_db_hash") or self.environment.get_db_hash()
-        predicted_user_db_hash = env_trace.get("final_user_db_hash") or self.environment.get_user_db_hash()
+        env_data = self.task.environment_data
+        initial_state = env_data.get("initial_state") or {}
+        initialization_data = initial_state.get("initialization_data")
+        initialization_actions = initial_state.get("initialization_actions")
+        message_history = initial_state.get("message_history", [])
 
-        # Create gold environment and replay expected actions
-        # Gold environment is fully initialized via setup_state() (including
-        # initialization_data and initialization_actions), no extra init needed.
-        gold_env_constructor = get_environment_constructor(self.task.environment_data)
-        gold_env = gold_env_constructor()
+        env_constructor = get_environment_constructor(self.task.environment_data)
 
-        # Replay expected actions on gold environment
-        # Routes based on requestor (D2: original replays ALL actions regardless of requestor)
+        # C1/C10: Create fresh predicted environment, replay full trajectory
+        predicted_env = env_constructor()
+        predicted_env.set_state(
+            initialization_data=initialization_data,
+            initialization_actions=initialization_actions,
+            message_history=full_trajectory,
+        )
+
+        # Create fresh gold environment, replay only initial message_history
+        gold_env = env_constructor()
+        gold_env.set_state(
+            initialization_data=initialization_data,
+            initialization_actions=initialization_actions,
+            message_history=message_history,
+        )
+
+        # Execute golden actions on gold environment
         golden_actions = self.actions or []
-        action_errors = []
         for action in golden_actions:
             try:
-                requestor = action.get("requestor", "assistant")
-                if requestor == "user":
-                    gold_env.make_user_tool_call(
-                        tool_name=action["name"],
-                        **action.get("arguments", {}),
-                    )
-                else:
-                    gold_env.make_tool_call(
-                        tool_name=action["name"],
-                        **action.get("arguments", {}),
-                    )
+                gold_env.make_tool_call(
+                    tool_name=action["name"],
+                    requestor=action.get("requestor", "assistant"),
+                    **action.get("arguments", {}),
+                )
             except Exception as e:
-                action_errors.append({"action": action, "error": str(e)})
+                logger.warning(f"Error in golden actions {action['name']}({action.get('arguments', {})}): {e}")
 
-        # Compare database states (D3: compare BOTH agent and user DB hashes)
-        gold_db_hash = gold_env.get_db_hash()
-        gold_user_db_hash = gold_env.get_user_db_hash()
-
-        agent_db_match = predicted_db_hash == gold_db_hash
-        user_db_match = (gold_user_db_hash is None and predicted_user_db_hash is None) or (gold_user_db_hash == predicted_user_db_hash)
-
+        # Compare DB hashes
+        agent_db_match = gold_env.get_db_hash() == predicted_env.get_db_hash()
+        user_db_match = gold_env.get_user_db_hash() == predicted_env.get_user_db_hash()
         db_match = agent_db_match and user_db_match
         db_reward = 1.0 if db_match else 0.0
 
-        # Run environment assertions (if any)
+        # C3: Run env_assertions on predicted_environment using getattr (not use_tool)
         env_assertion_checks = []
         env_assertion_reward = 1.0
+        for assertion in self.env_assertions or []:
+            success = predicted_env.run_env_assertion(assertion, raise_assertion_error=False)
+            env_assertion_checks.append(
+                {
+                    "assertion": assertion,
+                    "passed": success,
+                    "reward": 1.0 if success else 0.0,
+                }
+            )
+            env_assertion_reward *= 1.0 if success else 0.0
 
-        if self.env_assertions:
-            for assertion in self.env_assertions:
-                # Run assertion on predicted environment
-                success = self._run_env_assertion(self.environment, assertion)
-                env_assertion_checks.append(
-                    {
-                        "assertion": assertion,
-                        "passed": success,
-                        "reward": 1.0 if success else 0.0,
-                    }
-                )
-                if not success:
-                    env_assertion_reward = 0.0
-
-        # Combine rewards based on reward_basis
+        # Build breakdown (always include, reward_basis gating is in __call__)
         reward = 1.0
-        breakdown = {}
-
+        breakdown: Dict[str, float] = {}
         if RewardType.DB in self.reward_basis:
-            breakdown["db"] = db_reward
+            breakdown[RewardType.DB.value] = db_reward
             reward *= db_reward
-
         if RewardType.ENV_ASSERTION in self.reward_basis:
-            breakdown["env_assertion"] = env_assertion_reward
+            breakdown[RewardType.ENV_ASSERTION.value] = env_assertion_reward
             reward *= env_assertion_reward
 
         return {
@@ -318,99 +350,63 @@ class Tau2Evaluator(Evaluator):
             "agent_db_match": agent_db_match,
             "user_db_match": user_db_match,
             "db_reward": db_reward,
-            "predicted_hash": predicted_db_hash,
-            "expected_hash": gold_db_hash,
-            "predicted_user_hash": predicted_user_db_hash,
-            "expected_user_hash": gold_user_db_hash,
             "env_assertions": env_assertion_checks,
-            "action_errors": action_errors,
         }
 
-    def _run_env_assertion(self, env: Tau2Environment, assertion: Dict[str, Any]) -> bool:
-        """Run an environment assertion.
-
-        Routes assertion to the appropriate toolkit based on env_type:
-        - "user": Routes to user_toolkit (for user device assertions)
-        - "assistant" or default: Routes to agent toolkit
-
-        Args:
-            env: Environment to check
-            assertion: Assertion spec with func_name, arguments, assert_value, env_type
-
-        Returns:
-            True if assertion passes, False otherwise
-        """
-        try:
-            func_name = assertion.get("func_name")
-            if func_name is None:
-                return False
-
-            arguments = assertion.get("arguments", {})
-            expected_value = assertion.get("assert_value", True)
-
-            # Determine which toolkit to use based on env_type
-            env_type = assertion.get("env_type", "assistant")
-            if env_type == "user":
-                toolkit = env.user_toolkit
-            else:
-                toolkit = env.toolkit
-
-            if toolkit is None:
-                return False
-
-            # Call the assertion function on the appropriate toolkit
-            if toolkit.has_tool(func_name):
-                result = toolkit.use_tool(func_name, **arguments)
-                return bool(result) == expected_value
-            else:
-                return False
-        except Exception:
-            return False
-
-    def _evaluate_actions(self, traces: Dict[str, Any]) -> Dict[str, Any]:
+    def _evaluate_actions(self, full_trajectory: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Evaluate tool usage patterns.
 
-        Checks if expected actions were called with correct arguments.
-
-        Adapted from: tau2-bench src/tau2/evaluator/evaluator_action.py
+        H7: Extracts tool calls from the full message trajectory (both assistant
+        and user messages), matching original evaluator_action.py which iterates
+        full_trajectory for AssistantMessage/UserMessage with is_tool_call().
 
         Args:
-            traces: Filtered execution traces
+            full_trajectory: Full ordered message trajectory
 
         Returns:
             Dict with action verification results
         """
-        if self.actions is None or RewardType.ACTION not in self.reward_basis:
+        if not self.actions:
             return {"reward": 1.0, "note": "No action criteria"}
 
-        actual_tool_calls = traces.get("tool_calls", [])
+        # H7: Extract tool calls from trajectory messages (both assistant and user)
+        predicted_tool_calls = []
+        for msg in full_trajectory:
+            role = msg.get("role", "")
+            tool_calls = msg.get("tool_calls")
+            if tool_calls and role in ("assistant", "user"):
+                for tc in tool_calls:
+                    if "function" in tc:
+                        name = tc["function"].get("name", "")
+                        args = tc["function"].get("arguments", {})
+                    else:
+                        name = tc.get("name", "")
+                        args = tc.get("arguments", {})
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            args = {}
+                    predicted_tool_calls.append({"name": name, "arguments": args})
 
-        # Check each expected action
+        # Check each expected action against predicted tool calls
         action_checks = []
         all_matched = True
-
         for action in self.actions:
-            expected_name = action.get("name")
-            expected_args = action.get("arguments", {})
-            compare_args = action.get("compare_args")
-
-            # Find matching tool call
-            matched = False
-            for call in actual_tool_calls:
-                if compare_tool_calls(
-                    expected_name,
-                    expected_args,
-                    call.get("name", ""),
-                    call.get("arguments", {}),
-                    compare_args,
-                ):
-                    matched = True
-                    break
-
+            matched = any(
+                compare_tool_calls(
+                    action.get("name", ""),
+                    action.get("arguments", {}),
+                    tc["name"],
+                    tc["arguments"],
+                    action.get("compare_args"),
+                )
+                for tc in predicted_tool_calls
+            )
             action_checks.append(
                 {
                     "action_id": action.get("action_id"),
-                    "name": expected_name,
+                    "name": action.get("name"),
                     "matched": matched,
                 }
             )
@@ -418,42 +414,35 @@ class Tau2Evaluator(Evaluator):
                 all_matched = False
 
         reward = 1.0 if all_matched else 0.0
-
         return {
             "reward": reward,
-            "breakdown": {"action": reward},
+            "breakdown": {RewardType.ACTION.value: reward},
             "action_checks": action_checks,
             "all_matched": all_matched,
         }
 
-    def _evaluate_communication(self, traces: Dict[str, Any]) -> Dict[str, Any]:
+    def _evaluate_communication(self, full_trajectory: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Evaluate agent-user communication quality.
 
-        Checks if required information was communicated to the user.
-
-        Adapted from: tau2-bench src/tau2/evaluator/evaluator_communicate.py
+        H8: Searches the full message trajectory for assistant messages,
+        matching original evaluator_communicate.py which iterates full_trajectory
+        for AssistantMessage with has_text_content().
 
         Args:
-            traces: Filtered execution traces
+            full_trajectory: Full ordered message trajectory
 
         Returns:
             Dict with communication verification results
         """
-        if self.communicate_info is None or RewardType.COMMUNICATE not in self.reward_basis:
+        if not self.communicate_info:
             return {"reward": 1.0, "note": "No communication criteria"}
 
-        messages = traces.get("messages", [])
-
-        # Check each required info
-        # D5: Only search assistant messages (matching original evaluator_communicate.py)
-        # D4: Strip commas from content before searching (matching original)
+        # H8: Search full trajectory assistant messages (not just agent traces)
         comm_checks = []
         all_found = True
-
         for info in self.communicate_info:
             found = False
-            for msg in messages:
-                # D5: Only check assistant messages with text content
+            for msg in full_trajectory:
                 if msg.get("role") != "assistant":
                     continue
                 content = msg.get("content", "")
@@ -461,7 +450,7 @@ class Tau2Evaluator(Evaluator):
                     content = " ".join(item.get("text", "") if isinstance(item, dict) else str(item) for item in content)
                 if not content:
                     continue
-                # D4: Strip commas from content before matching
+                # D4: Strip commas before matching (matching original)
                 if info.lower() in content.lower().replace(",", ""):
                     found = True
                     break
@@ -470,31 +459,124 @@ class Tau2Evaluator(Evaluator):
                 all_found = False
 
         reward = 1.0 if all_found else 0.0
+        return {
+            "reward": reward,
+            "breakdown": {RewardType.COMMUNICATE.value: reward},
+            "comm_checks": comm_checks,
+            "all_found": all_found,
+        }
+
+    def _evaluate_nl_assertions(self, full_trajectory: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Evaluate natural language assertions using LLM judge.
+
+        C6: Matches original tau2-bench evaluator_nl_assertions.py:
+        - Builds trajectory string: "role: content" for each message
+        - System prompt: exact copy of original's NL assertion judge prompt
+        - User prompt: trajectory + expected outcomes
+        - Calls model.chat(), parses JSON response
+        - Reward: 1.0 if all met, 0.0 otherwise
+
+        Args:
+            full_trajectory: Full ordered message trajectory
+
+        Returns:
+            Dict with NL assertion evaluation results
+        """
+        if not self.nl_assertions:
+            return {"reward": 1.0, "note": "No NL assertions"}
+
+        if self.nl_model is None:
+            return {
+                "reward": 1.0,
+                "note": "NL assertions present but no nl_model configured — skipped",
+                "breakdown": {},
+            }
+
+        # Build trajectory string matching original
+        trajectory_str = "\n".join(f"{msg.get('role', 'unknown')}: {msg.get('content', '')}" for msg in full_trajectory)
+
+        # System prompt matching original evaluator_nl_assertions.py exactly
+        system_prompt = """
+        TASK
+        - You will be given a list of expected outcomes and a conversation that was collected during a test case run.
+        - The conversation is between an agent and a customer.
+        - Your job is to evaluate whether the agent satisfies each of the expected outcomes.
+        - Grade each expected outcome individually.
+
+        FORMAT
+        - Your response should be a JSON object with the following fields:
+        - `reasoning`: a short explanation for your classification
+        - `metExpectation`: `true` if the agent satisfies the expected outcomes, `false` otherwise
+        - `expectedOutcome`: repeat the expectation from the input that you are grading
+
+        Example response structure:
+        {
+            "results": [
+                {
+                    "expectedOutcome": "<one of the expected outcomes from the input>",
+                    "reasoning": "<reasoning trace>",
+                    "metExpectation": <false or true>,
+                }
+            ]
+        }
+        """
+
+        user_prompt = f"""
+        conversation:
+        {trajectory_str}
+
+        expectedOutcomes:
+        {self.nl_assertions}
+        """
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        try:
+            response = self.nl_model.chat(messages=messages, temperature=0.0)
+            content = response.content
+            assert content is not None, "NL assertion model returned None content"
+            result_data = json.loads(content)
+            nl_checks = []
+            for result in result_data.get("results", []):
+                nl_checks.append(
+                    {
+                        "nl_assertion": result.get("expectedOutcome", ""),
+                        "met": result.get("metExpectation", False),
+                        "justification": result.get("reasoning", ""),
+                    }
+                )
+            all_met = all(c["met"] for c in nl_checks)
+            reward = 1.0 if all_met else 0.0
+        except Exception as e:
+            logger.warning(f"NL assertion evaluation failed: {e}")
+            nl_checks = []
+            reward = 0.0
 
         return {
             "reward": reward,
-            "breakdown": {"communicate": reward},
-            "comm_checks": comm_checks,
-            "all_found": all_found,
+            "breakdown": {RewardType.NL_ASSERTION.value: reward},
+            "nl_checks": nl_checks,
         }
 
 
 def compute_benchmark_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Compute summary metrics across all benchmark results.
 
-    Infrastructure errors are excluded from scoring metrics.
-    Uses SCOREABLE_STATUSES to determine which results count toward agent score.
+    H9: ALL simulations count in the denominator (matching original).
+    Terminated simulations get reward=0.0 (handled by evaluator).
 
     Args:
         results: List of result dicts from benchmark.run()
 
     Returns:
-        Dict with success_rate, mean_reward, pass_at_k, status_counts
+        Dict with success_rate, mean_reward, status_counts
     """
     if not results:
         return {
             "total_tasks": 0,
-            "scored_tasks": 0,
             "successful_tasks": 0,
             "success_rate": 0.0,
             "mean_reward": 0.0,
@@ -502,7 +584,6 @@ def compute_benchmark_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         }
 
     total_tasks = len(results)
-    scored_tasks = 0
     successful_tasks = 0
     total_reward = 0.0
     status_counts: Dict[str, int] = {}
@@ -511,28 +592,19 @@ def compute_benchmark_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         status = res.get("status", "unknown")
         status_counts[status] = status_counts.get(status, 0) + 1
 
-        if status not in SCOREABLE_STATUSES:
-            continue  # Skip infrastructure errors
-
-        scored_tasks += 1
+        # H9: ALL simulations count — terminated ones already have reward=0.0
         evals = res.get("eval") or []
-
         for entry in evals:
-            reward = entry.get("reward", 0.0)
-            total_reward += reward
+            total_reward += entry.get("reward", 0.0)
             if entry.get("passed", False):
                 successful_tasks += 1
                 break
 
-    success_rate = successful_tasks / scored_tasks if scored_tasks > 0 else 0.0
-    mean_reward = total_reward / scored_tasks if scored_tasks > 0 else 0.0
-
     return {
         "total_tasks": total_tasks,
-        "scored_tasks": scored_tasks,
         "successful_tasks": successful_tasks,
-        "success_rate": success_rate,
-        "mean_reward": mean_reward,
+        "success_rate": successful_tasks / total_tasks,
+        "mean_reward": total_reward / total_tasks,
         "status_counts": status_counts,
     }
 
@@ -544,8 +616,7 @@ def compute_pass_at_k(
     """Compute Pass@k metrics from benchmark results.
 
     Pass@k: Probability that at least 1 of k attempts succeeds.
-
-    Requires running benchmark with n_task_repeats >= max(k_values).
+    H9: ALL simulations count (terminated ones are failures).
 
     Args:
         results: List of result dicts from benchmark.run()
@@ -554,36 +625,23 @@ def compute_pass_at_k(
     Returns:
         Dict with pass@1, pass@2, etc. scores
     """
-    # Group results by task_id
     task_results: Dict[str, List[bool]] = {}
     for res in results:
         task_id = res.get("task_id", "")
-        if res.get("status") not in SCOREABLE_STATUSES:
-            continue  # Skip infrastructure errors
-
         evals = res.get("eval") or []
         passed = any(entry.get("passed", False) for entry in evals)
+        task_results.setdefault(task_id, []).append(passed)
 
-        if task_id not in task_results:
-            task_results[task_id] = []
-        task_results[task_id].append(passed)
-
-    # Compute pass@k for each k
     pass_at_k: Dict[str, float] = {}
-
     for k in k_values:
         successes = 0
         total = 0
-
-        for task_id, attempts in task_results.items():
+        for attempts in task_results.values():
             if len(attempts) < k:
-                continue  # Not enough attempts for this k
-
+                continue
             total += 1
-            # Pass@k: at least 1 success in first k attempts
             if any(attempts[:k]):
                 successes += 1
-
         pass_at_k[f"pass@{k}"] = successes / total if total > 0 else 0.0
 
     return pass_at_k
@@ -640,19 +698,13 @@ def compute_pass_hat_k(
     Returns:
         Dict with pass^1, pass^2, etc. scores (averaged across all tasks)
     """
-    # Group results by task_id
+    # H9: ALL simulations count (terminated ones are failures)
     task_results: Dict[str, List[bool]] = {}
     for res in results:
         task_id = res.get("task_id", "")
-        if res.get("status") not in SCOREABLE_STATUSES:
-            continue  # Skip infrastructure errors
-
         evals = res.get("eval") or []
         passed = any(entry.get("passed", False) for entry in evals)
-
-        if task_id not in task_results:
-            task_results[task_id] = []
-        task_results[task_id].append(passed)
+        task_results.setdefault(task_id, []).append(passed)
 
     if not task_results:
         return {}

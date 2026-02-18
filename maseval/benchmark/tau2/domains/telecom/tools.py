@@ -629,10 +629,10 @@ class TelecomTools(ToolKitBase[TelecomDB]):
         target_line = self._get_target_line(customer_id, line_id)
         return abs(target_line.data_refueling_gb - expected_amount) < 1e-6
 
-    def assert_line_status(self, customer_id: str, line_id: str, expected_status: str) -> bool:
+    def assert_line_status(self, customer_id: str, line_id: str, expected_status: LineStatus) -> bool:
         """Assert that the line status is as expected."""
         target_line = self._get_target_line(customer_id, line_id)
-        return target_line.status.value == expected_status or target_line.status == expected_status
+        return target_line.status == expected_status
 
     def assert_overdue_bill_exists(self, customer_id: str, overdue_bill_id: str) -> bool:
         """Assert that the overdue bill exists."""

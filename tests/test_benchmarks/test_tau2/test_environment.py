@@ -798,5 +798,5 @@ class TestExecuteInitializationActions:
         env = Tau2Environment.__new__(Tau2Environment)
         env._domain = "retail"
 
-        with pytest.raises(ValueError, match="not found on toolkit"):
+        with pytest.raises(ValueError, match="not found"):
             env._execute_initialization_actions(actions, mock_toolkit, None, MagicMock())
