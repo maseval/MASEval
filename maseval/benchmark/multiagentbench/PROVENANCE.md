@@ -92,6 +92,52 @@ behaviour is identical: each agent result is truncated to 1000 characters, then
 an LLM call condenses the truncated output into a compact summary. The
 truncation length is configurable via `result_truncation_length`.
 
+## Faithfulness Audit (2026-02-18)
+
+A line-by-line audit was performed comparing MASEval's reproduction mode
+(`MarbleMultiAgentBenchBenchmark`) against MARBLE's `engine.py`, `evaluator.py`,
+and domain configs. The goal: ensure the main experiment from the paper
+(graph-mesh, 6 domains, 5 models) can be faithfully reproduced.
+
+### Fixes Applied
+
+| ID | Severity | File | Fix |
+|---|---|---|---|
+| D01 | CRITICAL | `multiagentbench.py` | Fixed import `marble.utils.utils` → `marble.llms.model_prompting` |
+| D02 | CRITICAL | `marble_adapter.py` | Added Minecraft agent registration (`env.register_agent`) matching `engine.py:169-173` |
+| D03 | CRITICAL | `data_loader.py` | Infer missing `scenario`/`task_id` fields for minecraft JSONL entries |
+| D04 | CRITICAL | `data_loader.py` | Per-domain `max_iterations` defaults from MARBLE YAML configs (research=3, coding=5, database=5, bargaining=3, minecraft=20) |
+| D05 | CRITICAL | `data_loader.py` | Per-domain `coordinate_mode` defaults (bargaining=chain, others=graph) |
+| D06 | CRITICAL | `data_loader.py` | Per-domain `environment.type` defaults (Research, Coding, DB, WorldSimulation, Minecraft) |
+| D07 | CRITICAL | `multiagentbench.py` | Resolve `score.json` path via `_MARBLE_ROOT` instead of hardcoded `../data/score.json` |
+| D08 | CRITICAL | `multiagentbench.py` | Resolve `workspace/solution.py` via `_MARBLE_ROOT` instead of hardcoded relative path |
+| D11 | CRITICAL | `multiagentbench.py` | Unified `coordinate_mode` defaults to `"graph"` across all 3 locations |
+| D12 | CRITICAL | `data_loader.py` | Per-domain `memory.type` default (`SharedMemory`) for blank JSONL fields |
+| D13 | HIGH | `multiagentbench.py` | Evaluator model default `gpt-4o-mini` → `gpt-3.5-turbo` (matching MARBLE) |
+| D14 | HIGH | `multiagentbench.py` | Agent model default `gpt-4o-mini` → `""` (matching MARBLE Config) |
+| D16 | HIGH | `marble_adapter.py` | Replaced auto-generated agent IDs with `ValueError` (matching MARBLE's `assert`) |
+| D20 | MODERATE | `data_loader.py` | Replaced `or 10` falsy trap with domain-specific defaults |
+
+### Known MARBLE Bugs Faithfully Preserved
+
+These bugs exist in MARBLE and are intentionally kept in MASEval to match
+MARBLE's behavior exactly:
+
+- **D09**: Agent errors silently swallowed in all coordination loops (`engine.py:254,373,541`)
+- **D10**: Bargaining evaluation returns -1 on JSON parse failure (`evaluator.py:230-282`)
+- **D17**: Chain coordination silently loops same agent on error (`engine.py:709-716`)
+- **D18**: `_format_agent_tasks` bare except changes formatting (`engine.py:1052-1058`)
+
+### Remaining Divergences (Non-Reproduction Mode Only)
+
+These affect `MultiAgentBenchEvaluator` (the abstract base class for
+framework-agnostic evaluation) but NOT `MarbleMultiAgentBenchBenchmark`
+(reproduction mode):
+
+- **D19**: Coding prompt template (`coding.txt`) missing strict scoring directives
+- **D22-D28**: Various defensive fallbacks in evaluator helper methods
+- **D27**: Planning + KPI evaluation not implemented in abstract evaluator
+
 ## Local Patches Applied
 
 None currently. All bug fixes are maintained in the fork.

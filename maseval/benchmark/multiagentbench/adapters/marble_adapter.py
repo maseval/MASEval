@@ -184,7 +184,8 @@ def create_marble_agents(
     """Create MarbleAgentAdapters from agent configurations.
 
     This is a factory function that creates MARBLE BaseAgent instances
-    and wraps them in MarbleAgentAdapters.
+    and wraps them in MarbleAgentAdapters. Matches the agent creation
+    logic in ``marble/engine/engine.py:140-173``.
 
     Args:
         agent_configs: List of agent configuration dicts from task data
@@ -196,6 +197,7 @@ def create_marble_agents(
 
     Raises:
         ImportError: If MARBLE is not available
+        ValueError: If any agent config is missing ``agent_id``
     """
     ensure_marble_on_path()
     try:
@@ -206,14 +208,36 @@ def create_marble_agents(
     agents_list: List[MarbleAgentAdapter] = []
     agents_dict: Dict[str, MarbleAgentAdapter] = {}
 
-    for config in agent_configs:
-        agent_id = config.get("agent_id", f"agent_{len(agents_list)}")
+    for i, config in enumerate(agent_configs):
+        # Match MARBLE base_agent.py:50-55 — agent_id is required.
+        # MARBLE asserts isinstance(agent_id, str). We raise ValueError
+        # instead of silently generating IDs, which would break the
+        # relationship graph that references agents by their config IDs.
+        agent_id = config.get("agent_id")
+        if not isinstance(agent_id, str):
+            raise ValueError(
+                f"Agent config {i} missing required 'agent_id' (got {agent_id!r}). Each agent config must have an 'agent_id' string."
+            )
 
         # Per-agent LLM override matching marble/engine/engine.py:158-159
         agent_llm = config.get("llm", model)
 
         # Create MARBLE agent
         marble_agent = BaseAgent(config=config, env=marble_env, model=agent_llm)
+
+        # Minecraft agent registration — matches engine.py:169-173.
+        # MinecraftEnvironment.register_agent() populates self.agents list
+        # and creates MinecraftClient instances needed for all actions.
+        try:
+            from marble.environments.minecraft_env import MinecraftEnvironment  # type: ignore[import-untyped]
+
+            if isinstance(marble_env, MinecraftEnvironment):
+                assert "agent_id" in config and "agent_port" in config, (
+                    f"Minecraft agent config must have 'agent_id' and 'agent_port', got keys: {list(config.keys())}"
+                )
+                marble_env.register_agent(config["agent_id"], config["agent_port"])
+        except ImportError:
+            pass  # MinecraftEnvironment not available; non-Minecraft domains unaffected
 
         # Wrap in adapter
         adapter = MarbleAgentAdapter(marble_agent=marble_agent, agent_id=agent_id)

@@ -1379,20 +1379,17 @@ class TestMinecraftTermination:
         import os
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            score_path = os.path.join(tmpdir, "data", "score.json")
-            os.makedirs(os.path.dirname(score_path), exist_ok=True)
+            # _minecraft_should_continue reads Path(_MARBLE_ROOT).parent / "data" / "score.json"
+            # Set up the directory structure so the path resolves correctly.
+            marble_root = os.path.join(tmpdir, "marble")
+            os.makedirs(marble_root, exist_ok=True)
+            data_dir = os.path.join(tmpdir, "data")
+            os.makedirs(data_dir, exist_ok=True)
+            score_path = os.path.join(data_dir, "score.json")
             with open(score_path, "w") as f:
                 json.dump([{"block_hit_rate": 1}], f)
 
-            # Patch open to read from our temp file
-            original_open = open
-
-            def mock_open(path, *args, **kwargs):
-                if path == "../data/score.json":
-                    return original_open(score_path, *args, **kwargs)
-                return original_open(path, *args, **kwargs)
-
-            with patch("builtins.open", side_effect=mock_open):
+            with patch("maseval.benchmark.multiagentbench._constants._MARBLE_ROOT", marble_root):
                 assert MarbleMultiAgentBenchBenchmark._minecraft_should_continue() is False
 
     def test_returns_true_when_block_hit_rate_below_1(self):
@@ -1403,28 +1400,26 @@ class TestMinecraftTermination:
         import os
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            score_path = os.path.join(tmpdir, "data", "score.json")
-            os.makedirs(os.path.dirname(score_path), exist_ok=True)
+            marble_root = os.path.join(tmpdir, "marble")
+            os.makedirs(marble_root, exist_ok=True)
+            data_dir = os.path.join(tmpdir, "data")
+            os.makedirs(data_dir, exist_ok=True)
+            score_path = os.path.join(data_dir, "score.json")
             with open(score_path, "w") as f:
                 json.dump([{"block_hit_rate": 0.5}], f)
 
-            original_open = open
-
-            def mock_open(path, *args, **kwargs):
-                if path == "../data/score.json":
-                    return original_open(score_path, *args, **kwargs)
-                return original_open(path, *args, **kwargs)
-
-            with patch("builtins.open", side_effect=mock_open):
+            with patch("maseval.benchmark.multiagentbench._constants._MARBLE_ROOT", marble_root):
                 assert MarbleMultiAgentBenchBenchmark._minecraft_should_continue() is True
 
     def test_returns_true_when_file_missing(self):
         """Should return True (continue) when score.json doesn't exist."""
         from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+        import tempfile
 
-        # File won't exist — exception caught, block_hit_rate defaults to 0.0
-        with patch("builtins.open", side_effect=FileNotFoundError):
-            assert MarbleMultiAgentBenchBenchmark._minecraft_should_continue() is True
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Point _MARBLE_ROOT to a dir where score.json doesn't exist
+            with patch("maseval.benchmark.multiagentbench._constants._MARBLE_ROOT", tmpdir):
+                assert MarbleMultiAgentBenchBenchmark._minecraft_should_continue() is True
 
 
 class TestSummarizeResults:

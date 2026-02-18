@@ -98,7 +98,7 @@ def _create_patched_marble_evaluator(metrics_config: Dict[str, Any]) -> Any:
             We use ``.replace()`` instead of ``.format()`` to avoid this.
             All other logic is identical to evaluator.py:66-93.
             """
-            from marble.utils.utils import model_prompting  # type: ignore[import-untyped]
+            from marble.llms.model_prompting import model_prompting  # type: ignore[import-untyped]
 
             communication_prompt_template = self.evaluation_prompts["Graph"]["Communication"]["prompt"]
             # Fix: .replace() instead of .format() — see docstring
@@ -316,8 +316,9 @@ class MultiAgentBenchBenchmark(Benchmark):
         Returns:
             List of evaluators
         """
-        # Get evaluation model ID from task or default
-        eval_model_id = task.evaluation_data.get("model_id", "gpt-4o-mini")
+        # Get evaluation model ID from task or default.
+        # Default matches MARBLE evaluator.py:45 (gpt-3.5-turbo).
+        eval_model_id = task.evaluation_data.get("model_id", "gpt-3.5-turbo")
 
         # Derive seed for evaluator model (returns None if seeding disabled)
         evaluator_seed = seed_generator.derive_seed("evaluators/multiagentbench_evaluator")
@@ -398,7 +399,7 @@ class MultiAgentBenchBenchmark(Benchmark):
         results: List[Dict[str, Any]] = []
         communications: List[str] = []
 
-        coordination_mode = task.environment_data.get("coordinate_mode", "cooperative")
+        coordination_mode = task.environment_data.get("coordinate_mode", "graph")
 
         for agent in agents:
             result = agent.run(query)
@@ -520,7 +521,11 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
         # Get agent configurations from task
         agent_configs = task.environment_data.get("agents", [])
-        model_id = task.environment_data.get("llm", "gpt-4o-mini")
+        # MARBLE Config.py:26 defaults llm to "" (empty string).
+        # Require explicit model via configure_model_ids() rather than
+        # silently substituting a default. Empty string will cause MARBLE's
+        # model_prompting() to fail with a clear API error.
+        model_id = task.environment_data.get("llm", "")
 
         # Get MARBLE environment from our wrapper
         marble_env = None
@@ -599,13 +604,14 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         except ImportError as e:
             raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 
-        env_config = task.environment_data.get("environment", {})
         task_config = task.environment_data.get("task", {})
 
         config = {
             "description": f"{task.environment_data.get('scenario', '')} environment",
             "task_description": task_config.get("content", "") if isinstance(task_config, dict) else str(task_config),
-            "max_iterations": env_config.get("max_iterations") or task.environment_data.get("max_iterations", 10),
+            # Use the already-resolved max_iterations from data_loader (which
+            # applies correct per-domain defaults from MARBLE YAML configs).
+            "max_iterations": task.environment_data.get("max_iterations", 10),
         }
 
         return BaseEnvironment(name=config["description"], config=config)
@@ -636,7 +642,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
         # Build config for AgentGraph (MARBLE expects an object with these attributes)
         relationships = task.environment_data.get("relationships", [])
-        coordination_mode = task.environment_data.get("coordinate_mode", "cooperative")
+        coordination_mode = task.environment_data.get("coordinate_mode", "graph")
         config = SimpleNamespace(coordination_mode=coordination_mode, relationships=relationships)
 
         # Create agent graph
@@ -1255,9 +1261,14 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
         Replicates the Minecraft-specific termination logic from
         ``Engine.graph_coordinate()`` (marble/engine/engine.py:270-279).
+        MARBLE reads ``../data/score.json`` relative to cwd. We resolve
+        relative to vendored MARBLE root for consistent behavior.
         """
+        from maseval.benchmark.multiagentbench._constants import _MARBLE_ROOT
+
+        score_path = Path(_MARBLE_ROOT).parent / "data" / "score.json"
         try:
-            with open("../data/score.json", "r") as f:
+            with open(score_path, "r") as f:
                 block_hit_rate = json.load(f)[-1]["block_hit_rate"]
         except Exception:
             block_hit_rate = 0.0
@@ -1322,8 +1333,12 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
         Replicates engine.py:49-59. MARBLE reads from a hardcoded path
         ``MARBLE/marble/workspace/solution.py`` (engine.py:615, 911).
+        Resolved relative to vendored MARBLE root so it works regardless
+        of the current working directory.
         """
-        file_path = "MARBLE/marble/workspace/solution.py"
+        from maseval.benchmark.multiagentbench._constants import _MARBLE_ROOT
+
+        file_path = Path(_MARBLE_ROOT) / "marble" / "workspace" / "solution.py"
         try:
             with open(file_path, "r", encoding="utf-8") as file:
                 return file.read()
@@ -1393,8 +1408,13 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                 evaluator.evaluate_code_quality(task=self._task_content, code_result=code)
         elif domain == "minecraft":
             # engine.py:465-471
+            # MARBLE reads ../data/score.json relative to cwd. We resolve
+            # relative to vendored MARBLE root for consistent behavior.
+            from maseval.benchmark.multiagentbench._constants import _MARBLE_ROOT
+
+            score_path = Path(_MARBLE_ROOT).parent / "data" / "score.json"
             try:
-                with open("../data/score.json", "r") as f:
+                with open(score_path, "r") as f:
                     block_hit_rate = json.load(f)[-1]["block_hit_rate"]
             except Exception:
                 block_hit_rate = 0.0

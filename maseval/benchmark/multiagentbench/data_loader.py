@@ -37,6 +37,42 @@ VALID_DOMAINS: FrozenSet[str] = frozenset(
 # Domains requiring external infrastructure
 INFRASTRUCTURE_DOMAINS: FrozenSet[str] = frozenset({"database", "minecraft"})
 
+# Per-domain defaults from MARBLE YAML configs.
+# These fill in blank template fields in the JSONL data files.
+# Source: marble/configs/ YAML files (verified against all domains).
+_DOMAIN_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "research": {
+        "max_iterations": 3,  # marble/configs/test_config_research/profile_1.yaml
+        "coordinate_mode": "graph",
+        "environment_type": "Research",
+        "memory_type": "SharedMemory",
+    },
+    "coding": {
+        "max_iterations": 5,  # marble/configs/coding_configs/config_1.yaml
+        "coordinate_mode": "graph",
+        "environment_type": "Coding",
+        "memory_type": "SharedMemory",
+    },
+    "database": {
+        "max_iterations": 5,  # marble/configs/test_config_database/*.yaml
+        "coordinate_mode": "graph",
+        "environment_type": "DB",
+        "memory_type": "SharedMemory",
+    },
+    "bargaining": {
+        "max_iterations": 3,  # marble/configs/test_config_world/test_config_world.yaml
+        "coordinate_mode": "chain",
+        "environment_type": "WorldSimulation",
+        "memory_type": "SharedMemory",
+    },
+    "minecraft": {
+        "max_iterations": 20,  # marble/configs/test_config_minecraft/*.yaml
+        "coordinate_mode": "graph",
+        "environment_type": "Minecraft",
+        "memory_type": "SharedMemory",
+    },
+}
+
 
 def _get_marble_dir() -> Path:
     """Get the default MARBLE installation directory.
@@ -209,6 +245,12 @@ def _resolve_data_dir(data_dir: Optional[Path] = None) -> Path:
 def _parse_task_entry(entry: Dict[str, Any], domain: str, idx: int) -> Task:
     """Parse a JSONL entry into a MASEval Task.
 
+    MARBLE's JSONL files are parameterized templates: task-varying fields
+    (prompts, agent profiles, relationships) are populated, but
+    infrastructure fields (max_iterations, coordinate_mode, environment
+    type, memory type) are often blank. This function fills blank fields
+    with the correct per-domain defaults from ``_DOMAIN_DEFAULTS``.
+
     Args:
         entry: Raw JSONL entry dict
         domain: Domain name
@@ -220,13 +262,21 @@ def _parse_task_entry(entry: Dict[str, Any], domain: str, idx: int) -> Task:
     Raises:
         ValueError: If required fields are missing
     """
+    defaults = _DOMAIN_DEFAULTS.get(domain, {})
+
+    # Infer scenario/task_id if missing (minecraft JSONL omits these)
+    if "scenario" not in entry:
+        entry["scenario"] = domain
+    if "task_id" not in entry:
+        entry["task_id"] = idx
+
     # Required fields - fail if missing
     REQUIRED_FIELDS = ["scenario", "task_id", "task", "agents", "relationships"]
     missing = [f for f in REQUIRED_FIELDS if f not in entry]
     if missing:
         raise ValueError(f"Task entry {idx} missing required fields: {missing}\nEntry keys: {list(entry.keys())}")
 
-    # Validate agent specifications
+    # Validate agent specifications — match MARBLE base_agent.py:50-55 assert
     for i, agent_spec in enumerate(entry["agents"]):
         if "agent_id" not in agent_spec:
             raise ValueError(f"Agent {i} in task {entry['task_id']} missing 'agent_id'\nAgent spec: {agent_spec}")
@@ -246,12 +296,29 @@ def _parse_task_entry(entry: Dict[str, Any], domain: str, idx: int) -> Task:
     # Extract environment config
     env_config = entry.get("environment", {})
 
-    # Extract coordination mode
+    # Apply per-domain defaults for blank template fields.
+    # MARBLE JSONL uses "" for fields that should be filled at runtime.
     coordinate_mode = entry.get("coordinate_mode", "")
     if not coordinate_mode:
-        # Default: 1215/1226 MARBLE YAML configs use "graph".
-        # See marble/configs/config.py:34 for Config class default.
-        coordinate_mode = "graph"
+        coordinate_mode = defaults.get("coordinate_mode", "graph")
+
+    # max_iterations: use env_config value if present and truthy,
+    # otherwise fall back to domain-specific default from MARBLE YAML.
+    # Using .get() with domain default (not `or 10`) to preserve explicit 0.
+    max_iterations_raw = env_config.get("max_iterations")
+    if max_iterations_raw and max_iterations_raw != "":
+        max_iterations = int(max_iterations_raw)
+    else:
+        max_iterations = defaults.get("max_iterations", 10)
+
+    # Fill blank environment.type with domain-specific default
+    if not env_config.get("type"):
+        env_config["type"] = defaults.get("environment_type", "")
+
+    # Fill blank memory.type with domain-specific default
+    memory_config = entry.get("memory", {})
+    if isinstance(memory_config, dict) and not memory_config.get("type"):
+        memory_config["type"] = defaults.get("memory_type", "SharedMemory")
 
     # Build Task object
     return Task(
@@ -264,9 +331,9 @@ def _parse_task_entry(entry: Dict[str, Any], domain: str, idx: int) -> Task:
             "environment": env_config,
             "task": entry["task"],
             "agents": entry["agents"],
-            "max_iterations": env_config.get("max_iterations") or 10,
+            "max_iterations": max_iterations,
             "engine_planner": entry.get("engine_planner", {}),
-            "memory": entry.get("memory", {}),
+            "memory": memory_config,
             "output": entry.get("output", {}),
             # Store raw entry for MARBLE compatibility
             "raw_marble_config": entry,
