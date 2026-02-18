@@ -636,15 +636,14 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
         # -- Initial assignment (engine.py:211-260) --
         agents_results: List[Dict[str, Any]] = []
-        all_results: List[Dict[str, Any]] = []
+        latest_results: List[Dict[str, Any]] = []
         communications: List[str] = []
 
         for adapter in agents:
             try:
                 result = adapter.run(task_content)
                 agents_results.append({adapter.agent_id: result})  # type: ignore[union-attr]
-                all_results.append({"agent_id": adapter.agent_id, "result": result})  # type: ignore[union-attr]
-                # Communications are captured by adapter._communication_log
+                latest_results.append({"agent_id": adapter.agent_id, "result": result})  # type: ignore[union-attr]
                 if hasattr(adapter, "_communication_log") and adapter._communication_log:  # type: ignore[union-attr]
                     last_comm = adapter._communication_log[-1]  # type: ignore[union-attr]
                     comm_text = last_comm.get("communication", "")
@@ -654,8 +653,9 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                 logger.error(f"Error executing initial task for agent '{getattr(adapter, 'agent_id', adapter)}': {e}")
 
         # Summarize (engine.py:262-267)
+        # engine.py:264 overwrites summary with planner return
         summary = self._summarize_results_marble(agents_results)
-        planner.summarize_output(summary, task_content, output_format)
+        summary = planner.summarize_output(summary, task_content, output_format)
 
         # Decide whether to continue (engine.py:270-289)
         if self._domain.lower() == "minecraft":
@@ -664,11 +664,15 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             continue_simulation = planner.decide_next_step(agents_results)
 
         if continue_simulation:
+            # engine.py:288 passes the planner return object (not raw string)
             planner.update_progress(summary)
             current_iteration += 1
 
         # -- Iteration loop (engine.py:323-433) --
-        while current_iteration < self.max_invocations and continue_simulation:
+        # Use end_on_iter_0 flag matching engine.py:319-322
+        end_on_iter_0 = not continue_simulation
+
+        while current_iteration < self.max_invocations and not end_on_iter_0:
             agents_results = []
             iteration_results: List[Dict[str, Any]] = []
             communications = []
@@ -694,6 +698,9 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             current_iteration += 1
             planner.summarize_output(summary, task_content, output_format)
 
+            # Update latest results from this iteration
+            latest_results = iteration_results
+
             # Decide whether to continue (engine.py:414-433)
             if self._domain.lower() == "minecraft":
                 continue_simulation = self._minecraft_should_continue()
@@ -703,13 +710,8 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             if not continue_simulation:
                 break
 
-            all_results = iteration_results
-
-        # Use latest iteration results if available
-        final_results = iteration_results if "iteration_results" in dir() and iteration_results else all_results
-
         return {
-            "agent_results": final_results,
+            "agent_results": latest_results,
             "communications": communications,
             "coordination_mode": self._coordinate_mode,
         }
@@ -725,7 +727,8 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         output_format = self._output_format
         current_iteration = 0
 
-        all_results: List[Dict[str, Any]] = []
+        latest_results: List[Dict[str, Any]] = []
+        iteration_results: List[Dict[str, Any]] = []
         communications: List[str] = []
 
         while current_iteration < self.max_invocations:
@@ -734,7 +737,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             tasks = assignment.get("tasks", {})
 
             agents_results: List[Dict[str, Any]] = []
-            iteration_results: List[Dict[str, Any]] = []
+            iteration_results = []
             communications = []
 
             for agent_id, agent_task in tasks.items():
@@ -755,22 +758,22 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                     logger.error(f"Error executing task for agent '{agent_id}': {e}")
 
             # Summarize and update progress (engine.py:550-557)
+            # star mode passes raw summary string to update_progress (engine.py:556)
             summary = self._summarize_results_marble(agents_results)
             planner.summarize_output(summary, task_content, output_format)
             planner.update_progress(summary)
             current_iteration += 1
+
+            # Update latest results from this iteration
+            latest_results = iteration_results
 
             # Decide whether to continue (engine.py:584-595)
             continue_simulation = planner.decide_next_step(agents_results)
             if not continue_simulation:
                 break
 
-            all_results = iteration_results
-
-        final_results = iteration_results if "iteration_results" in dir() and iteration_results else all_results
-
         return {
-            "agent_results": final_results,
+            "agent_results": latest_results,
             "communications": communications,
             "coordination_mode": self._coordinate_mode,
         }
@@ -822,10 +825,15 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                 agent_profiles = graph.get_agent_profiles_linked(current_adapter.agent_id)
                 next_agent_id, plan = current_adapter.marble_agent.plan_next_agent(result, agent_profiles)
 
+                # engine.py:709-717: fall back to current agent if next not found
                 prev_adapter = current_adapter
-                next_adapter = self._agents_dict.get(next_agent_id) if next_agent_id else None
+                try:
+                    next_adapter = self._agents_dict.get(next_agent_id) if next_agent_id else None
+                except Exception:
+                    next_adapter = None
                 current_adapter = next_adapter if next_adapter is not None else prev_adapter
-                current_task = plan if plan else current_task
+                # engine.py:717: always update task to the plan
+                current_task = plan
 
                 chain_length += 1
                 planner.update_progress(result)
@@ -880,13 +888,14 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                 communications = [communication] if isinstance(communication, str) else communication
 
             # Summarize (engine.py:847-855)
-            summary = self._summarize_results_marble([{r["agent_id"]: r["result"]} for r in results])
-            summary_msg = planner.summarize_output(summary, task_content, output_format)
-            planner.update_progress(summary_msg)
+            # tree_coordinate passes recursive results directly (not reformatted)
+            summary = self._summarize_results_marble(results)
+            summary = planner.summarize_output(summary, task_content, output_format)
+            planner.update_progress(summary)
 
-            # Decide whether to continue (engine.py:884-891)
-            agents_results_for_planner = [{r["agent_id"]: r["result"]} for r in results]
-            continue_simulation = planner.decide_next_step(agents_results_for_planner)
+            # Decide whether to continue (engine.py:884)
+            # tree_coordinate passes results directly to decide_next_step
+            continue_simulation = planner.decide_next_step(results)
             if not continue_simulation:
                 break
 
@@ -943,10 +952,19 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                 "or just continue to work on the original task."
             )
 
+            # engine.py:995-998: agent acts and communication is captured
             if adapter is not None:
                 own_result = adapter.run(task_for_parent)
+                # adapter._run_agent already called marble_agent.act() and logged
+                # communication in adapter._communication_log — extract it
+                if adapter._communication_log:
+                    last_comm = adapter._communication_log[-1].get("communication", "")
+                    if last_comm:
+                        communications_list.append(last_comm)
             else:
-                own_result, _comm = marble_agent.act(task_for_parent)
+                own_result, communication = marble_agent.act(task_for_parent)
+                if communication:
+                    communications_list.append(communication)
 
             communications_str = "\n".join(communications_list) if communications_list else None
 
@@ -956,10 +974,14 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             # Leaf agent acts directly (engine.py:1007-1013)
             if adapter is not None:
                 result = adapter.run(task)
+                # Extract communication captured by adapter
+                communication = None
+                if adapter._communication_log:
+                    communication = adapter._communication_log[-1].get("communication", "")
             else:
-                result, _comm = marble_agent.act(task)
+                result, communication = marble_agent.act(task)
 
-            return [{"agent_id": agent_id, "result": result}], None, tasks_collected
+            return [{"agent_id": agent_id, "result": result}], communication, tasks_collected
 
     # -- Helpers --
 

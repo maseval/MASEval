@@ -1,6 +1,7 @@
 """Tests for MultiAgentBench benchmark classes."""
 
 import sys
+from typing import Any
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -604,55 +605,69 @@ class TestExecutionLoop:
             assert agent.run_calls[0] == sample_research_task.query
 
 
-class TestMarbleExecutionLoop:
-    """Tests for MarbleMultiAgentBenchBenchmark.execution_loop dispatch and coordination."""
+# =============================================================================
+# Helpers for coordination mode tests
+# =============================================================================
 
-    def test_execution_loop_dispatches_graph(self):
-        """execution_loop should call _graph_coordinate for 'graph' mode."""
+
+def _make_mock_adapter(agent_id: str, run_return: str = "result") -> MagicMock:
+    """Create a mock MarbleAgentAdapter with standard attributes."""
+    adapter = MagicMock()
+    adapter.agent_id = agent_id
+    adapter.run.return_value = run_return
+    adapter._communication_log = []
+    adapter.marble_agent = MagicMock()
+    adapter.marble_agent.plan_task.return_value = f"planned task for {agent_id}"
+    return adapter
+
+
+def _make_mock_benchmark(
+    coordinate_mode: str = "graph",
+    domain: str = "research",
+    max_invocations: int = 10,
+    planner_decide_sequence: Any = None,
+    agents_dict: Any = None,
+) -> MagicMock:
+    """Create a mock MarbleMultiAgentBenchBenchmark with standard planner wiring."""
+    from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+    mock_planner = MagicMock()
+    mock_planner.summarize_output.return_value = MagicMock(content="summary")
+    if planner_decide_sequence is not None:
+        mock_planner.decide_next_step.side_effect = planner_decide_sequence
+    else:
+        mock_planner.decide_next_step.return_value = False
+
+    benchmark = MagicMock(spec=MarbleMultiAgentBenchBenchmark)
+    benchmark._marble_planner = mock_planner
+    benchmark._task_content = "Do the task"
+    benchmark._output_format = "output format"
+    benchmark._coordinate_mode = coordinate_mode
+    benchmark._domain = domain
+    benchmark.max_invocations = max_invocations
+    benchmark._summarize_results_marble = MarbleMultiAgentBenchBenchmark._summarize_results_marble
+    if agents_dict is not None:
+        benchmark._agents_dict = agents_dict
+    return benchmark
+
+
+class TestMarbleExecutionLoopDispatch:
+    """Tests for MarbleMultiAgentBenchBenchmark.execution_loop mode dispatch."""
+
+    def test_dispatches_to_correct_mode(self):
+        """execution_loop should dispatch to the handler matching coordinate_mode."""
         from maseval.benchmark.multiagentbench import MarbleMultiAgentBenchBenchmark
 
-        benchmark = MagicMock(spec=MarbleMultiAgentBenchBenchmark)
-        benchmark._coordinate_mode = "graph"
-        benchmark._graph_coordinate = MagicMock(return_value={"agent_results": []})
+        for mode in ("graph", "star", "chain", "tree"):
+            benchmark = MagicMock(spec=MarbleMultiAgentBenchBenchmark)
+            benchmark._coordinate_mode = mode
+            handler = MagicMock(return_value={"agent_results": []})
+            setattr(benchmark, f"_{mode}_coordinate", handler)
 
-        # Call the real method on the mock
-        MarbleMultiAgentBenchBenchmark.execution_loop(benchmark, [], MagicMock(), MagicMock(), None)
-        benchmark._graph_coordinate.assert_called_once()
+            MarbleMultiAgentBenchBenchmark.execution_loop(benchmark, [], MagicMock(), MagicMock(), None)
+            handler.assert_called_once()
 
-    def test_execution_loop_dispatches_star(self):
-        """execution_loop should call _star_coordinate for 'star' mode."""
-        from maseval.benchmark.multiagentbench import MarbleMultiAgentBenchBenchmark
-
-        benchmark = MagicMock(spec=MarbleMultiAgentBenchBenchmark)
-        benchmark._coordinate_mode = "star"
-        benchmark._star_coordinate = MagicMock(return_value={"agent_results": []})
-
-        MarbleMultiAgentBenchBenchmark.execution_loop(benchmark, [], MagicMock(), MagicMock(), None)
-        benchmark._star_coordinate.assert_called_once()
-
-    def test_execution_loop_dispatches_chain(self):
-        """execution_loop should call _chain_coordinate for 'chain' mode."""
-        from maseval.benchmark.multiagentbench import MarbleMultiAgentBenchBenchmark
-
-        benchmark = MagicMock(spec=MarbleMultiAgentBenchBenchmark)
-        benchmark._coordinate_mode = "chain"
-        benchmark._chain_coordinate = MagicMock(return_value={"agent_results": []})
-
-        MarbleMultiAgentBenchBenchmark.execution_loop(benchmark, [], MagicMock(), MagicMock(), None)
-        benchmark._chain_coordinate.assert_called_once()
-
-    def test_execution_loop_dispatches_tree(self):
-        """execution_loop should call _tree_coordinate for 'tree' mode."""
-        from maseval.benchmark.multiagentbench import MarbleMultiAgentBenchBenchmark
-
-        benchmark = MagicMock(spec=MarbleMultiAgentBenchBenchmark)
-        benchmark._coordinate_mode = "tree"
-        benchmark._tree_coordinate = MagicMock(return_value={"agent_results": []})
-
-        MarbleMultiAgentBenchBenchmark.execution_loop(benchmark, [], MagicMock(), MagicMock(), None)
-        benchmark._tree_coordinate.assert_called_once()
-
-    def test_execution_loop_raises_on_unknown_mode(self):
+    def test_raises_on_unknown_mode(self):
         """execution_loop should raise ValueError for unsupported modes."""
         from maseval.benchmark.multiagentbench import MarbleMultiAgentBenchBenchmark
 
@@ -662,145 +677,389 @@ class TestMarbleExecutionLoop:
         with pytest.raises(ValueError, match="Unsupported coordinate mode"):
             MarbleMultiAgentBenchBenchmark.execution_loop(benchmark, [], MagicMock(), MagicMock(), None)
 
-    def test_graph_coordinate_initial_assignment(self):
-        """_graph_coordinate should call all agents with the task in the initial assignment."""
+
+class TestGraphCoordinate:
+    """Tests for _graph_coordinate — the most common MARBLE coordination mode."""
+
+    def test_initial_assignment_runs_all_agents(self):
+        """All agents receive the task content in the initial assignment."""
         from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
 
-        # Set up mock adapters
-        adapter1 = MagicMock()
-        adapter1.agent_id = "agent1"
-        adapter1.run.return_value = "result1"
-        adapter1._communication_log = []
-        adapter1.marble_agent = MagicMock()
-
-        adapter2 = MagicMock()
-        adapter2.agent_id = "agent2"
-        adapter2.run.return_value = "result2"
-        adapter2._communication_log = []
-        adapter2.marble_agent = MagicMock()
-
-        # Set up mock planner that stops after initial assignment
-        mock_planner = MagicMock()
-        mock_planner.summarize_output.return_value = MagicMock(content="summary")
-        mock_planner.decide_next_step.return_value = False  # Stop after first round
-
-        benchmark = MagicMock(spec=MarbleMultiAgentBenchBenchmark)
-        benchmark._marble_planner = mock_planner
-        benchmark._task_content = "Do research"
-        benchmark._output_format = "5Q format"
-        benchmark._coordinate_mode = "graph"
-        benchmark._domain = "research"
-        benchmark.max_invocations = 10
-        benchmark._summarize_results_marble = MarbleMultiAgentBenchBenchmark._summarize_results_marble
+        adapter1 = _make_mock_adapter("agent1", "r1")
+        adapter2 = _make_mock_adapter("agent2", "r2")
+        benchmark = _make_mock_benchmark(planner_decide_sequence=[False])
 
         result = MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter1, adapter2])
 
-        # Both agents called with the task
-        adapter1.run.assert_called_with("Do research")
-        adapter2.run.assert_called_with("Do research")
+        adapter1.run.assert_called_once_with("Do the task")
+        adapter2.run.assert_called_once_with("Do the task")
+        assert len(result["agent_results"]) == 2
+        assert result["agent_results"][0] == {"agent_id": "agent1", "result": "r1"}
 
-        # Planner was consulted
-        mock_planner.summarize_output.assert_called_once()
-        mock_planner.decide_next_step.assert_called_once()
+    def test_planner_stop_after_initial_returns_initial_results(self):
+        """When planner stops after initial assignment, initial results are returned."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
 
-        # Result format
-        assert "agent_results" in result
+        adapter = _make_mock_adapter("agent1", "initial_result")
+        benchmark = _make_mock_benchmark(planner_decide_sequence=[False])
+
+        result = MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter])
+
+        # Only one call (no iterations)
+        assert adapter.run.call_count == 1
+        assert adapter.marble_agent.plan_task.call_count == 0
+        # update_progress NOT called when planner stops after initial (engine.py:283-288)
+        benchmark._marble_planner.update_progress.assert_not_called()
+        assert result["agent_results"][0]["result"] == "initial_result"
+
+    def test_iteration_uses_plan_task(self):
+        """In iterations, agents call plan_task() and execute the planned task."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter = _make_mock_adapter("agent1")
+        adapter.marble_agent.plan_task.return_value = "my planned task"
+        # Continue after initial, then stop after 1 iteration
+        benchmark = _make_mock_benchmark(planner_decide_sequence=[True, False])
+
+        MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter])
+
+        assert adapter.run.call_count == 2
+        assert adapter.run.call_args_list[0].args[0] == "Do the task"  # initial
+        assert adapter.run.call_args_list[1].args[0] == "my planned task"  # iteration
+        adapter.marble_agent.plan_task.assert_called_once()
+
+    def test_update_progress_receives_planner_return(self):
+        """After initial assignment, update_progress receives summarize_output's return."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter = _make_mock_adapter("agent1")
+        planner_return = MagicMock(content="planner summary")
+        benchmark = _make_mock_benchmark(planner_decide_sequence=[True, False])
+        benchmark._marble_planner.summarize_output.return_value = planner_return
+
+        MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter])
+
+        # update_progress should receive the planner's return object, not raw string
+        benchmark._marble_planner.update_progress.assert_called_once_with(planner_return)
+
+    def test_respects_max_invocations(self):
+        """Loop should not exceed max_invocations even if planner always continues."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter = _make_mock_adapter("agent1")
+        # Planner always says continue
+        benchmark = _make_mock_benchmark(max_invocations=3, planner_decide_sequence=None)
+        benchmark._marble_planner.decide_next_step.return_value = True
+
+        MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter])
+
+        # initial(iter0→1) + iterations at 1→2, 2→3 = 3 total agent.run calls
+        assert adapter.run.call_count == 3
+
+    def test_returns_latest_iteration_results_on_stop(self):
+        """When planner stops mid-loop, results from that iteration are returned."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter = _make_mock_adapter("agent1")
+        adapter.run.side_effect = ["initial_r", "iter1_r"]
+        # Continue after initial, stop after first iteration
+        benchmark = _make_mock_benchmark(planner_decide_sequence=[True, False])
+
+        result = MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter])
+
+        # Should return the iteration results, not initial
+        assert result["agent_results"][0]["result"] == "iter1_r"
+
+    def test_agent_error_during_initial_does_not_crash(self):
+        """If one agent fails during initial assignment, others still execute."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter1 = _make_mock_adapter("agent1")
+        adapter1.run.side_effect = RuntimeError("LLM timeout")
+        adapter2 = _make_mock_adapter("agent2", "ok")
+        benchmark = _make_mock_benchmark(planner_decide_sequence=[False])
+
+        result = MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter1, adapter2])
+
+        # agent2 still ran and produced results
+        assert len(result["agent_results"]) == 1
+        assert result["agent_results"][0]["agent_id"] == "agent2"
+
+    def test_agent_error_during_iteration_does_not_crash(self):
+        """If agent.plan_task() or run() fails during iteration, loop continues."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter = _make_mock_adapter("agent1")
+        adapter.marble_agent.plan_task.side_effect = RuntimeError("plan failed")
+        # Continue after initial, stop after iteration
+        benchmark = _make_mock_benchmark(planner_decide_sequence=[True, False])
+
+        MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter])
+
+        # Initial ran ok, iteration failed — planner still consulted
+        assert adapter.run.call_count == 1  # only initial succeeded
+        assert benchmark._marble_planner.decide_next_step.call_count == 2
+
+
+class TestStarCoordinate:
+    """Tests for _star_coordinate — centralized task assignment by planner."""
+
+    def test_planner_assigns_tasks_to_agents(self):
+        """Planner.assign_tasks() distributes work; agents execute assigned tasks."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter1 = _make_mock_adapter("agent1")
+        adapter2 = _make_mock_adapter("agent2")
+        agents_dict = {"agent1": adapter1, "agent2": adapter2}
+
+        benchmark = _make_mock_benchmark(
+            coordinate_mode="star",
+            agents_dict=agents_dict,
+            planner_decide_sequence=[False],
+        )
+        benchmark._planning_method = "naive"
+        benchmark._marble_planner.assign_tasks.return_value = {"tasks": {"agent1": "search papers", "agent2": "analyze data"}}
+
+        result = MarbleMultiAgentBenchBenchmark._star_coordinate(benchmark, [adapter1, adapter2])
+
+        adapter1.run.assert_called_once_with("search papers")
+        adapter2.run.assert_called_once_with("analyze data")
         assert len(result["agent_results"]) == 2
 
-    def test_graph_coordinate_iterates_with_plan_task(self):
-        """_graph_coordinate should call plan_task() in subsequent iterations."""
+    def test_star_update_progress_uses_raw_summary(self):
+        """Star mode passes the raw summary string to update_progress (not planner return)."""
         from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
 
-        adapter1 = MagicMock()
-        adapter1.agent_id = "agent1"
-        adapter1.run.return_value = "result1"
-        adapter1._communication_log = []
-        adapter1.marble_agent = MagicMock()
-        adapter1.marble_agent.plan_task.return_value = "planned task for agent1"
+        adapter = _make_mock_adapter("agent1")
+        agents_dict = {"agent1": adapter}
+        benchmark = _make_mock_benchmark(coordinate_mode="star", agents_dict=agents_dict, planner_decide_sequence=[False])
+        benchmark._planning_method = "naive"
+        benchmark._marble_planner.assign_tasks.return_value = {"tasks": {"agent1": "task"}}
 
-        # Planner: continue once, then stop
-        mock_planner = MagicMock()
-        mock_planner.summarize_output.return_value = MagicMock(content="summary")
-        mock_planner.decide_next_step.side_effect = [True, False]  # continue once, then stop
+        MarbleMultiAgentBenchBenchmark._star_coordinate(benchmark, [adapter])
 
-        benchmark = MagicMock(spec=MarbleMultiAgentBenchBenchmark)
-        benchmark._marble_planner = mock_planner
-        benchmark._task_content = "Do research"
-        benchmark._output_format = "5Q"
-        benchmark._coordinate_mode = "graph"
-        benchmark._domain = "research"
-        benchmark.max_invocations = 10
-        benchmark._summarize_results_marble = MarbleMultiAgentBenchBenchmark._summarize_results_marble
+        # update_progress should receive raw string, not planner object
+        call_arg = benchmark._marble_planner.update_progress.call_args[0][0]
+        assert isinstance(call_arg, str)
+        assert call_arg.startswith("Agents' Results Summary:")
 
-        MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter1])
-
-        # Agent should have been called twice: initial + 1 iteration
-        assert adapter1.run.call_count == 2
-        # First call: with task content
-        assert adapter1.run.call_args_list[0].args[0] == "Do research"
-        # Second call: with planned task
-        assert adapter1.run.call_args_list[1].args[0] == "planned task for agent1"
-        # plan_task called in the iteration
-        adapter1.marble_agent.plan_task.assert_called_once()
-
-    def test_graph_coordinate_respects_max_invocations(self):
-        """_graph_coordinate should stop at max_invocations even if planner says continue."""
+    def test_star_respects_max_invocations(self):
+        """Star loop stops at max_invocations."""
         from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
 
-        adapter1 = MagicMock()
-        adapter1.agent_id = "agent1"
-        adapter1.run.return_value = "result"
-        adapter1._communication_log = []
-        adapter1.marble_agent = MagicMock()
-        adapter1.marble_agent.plan_task.return_value = "task"
+        adapter = _make_mock_adapter("agent1")
+        agents_dict = {"agent1": adapter}
+        benchmark = _make_mock_benchmark(coordinate_mode="star", max_invocations=2, agents_dict=agents_dict)
+        benchmark._planning_method = "naive"
+        benchmark._marble_planner.decide_next_step.return_value = True
+        benchmark._marble_planner.assign_tasks.return_value = {"tasks": {"agent1": "t"}}
 
-        mock_planner = MagicMock()
-        mock_planner.summarize_output.return_value = MagicMock(content="summary")
-        mock_planner.decide_next_step.return_value = True  # Always continue
+        MarbleMultiAgentBenchBenchmark._star_coordinate(benchmark, [adapter])
 
-        benchmark = MagicMock(spec=MarbleMultiAgentBenchBenchmark)
-        benchmark._marble_planner = mock_planner
-        benchmark._task_content = "task"
-        benchmark._output_format = "fmt"
-        benchmark._coordinate_mode = "graph"
-        benchmark._domain = "research"
-        benchmark.max_invocations = 3  # Limit to 3
-        benchmark._summarize_results_marble = MarbleMultiAgentBenchBenchmark._summarize_results_marble
+        assert adapter.run.call_count == 2
 
-        MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter1])
 
-        # Initial (1) + max_invocations iterations (but iteration starts at 1 after initial)
-        # max_invocations=3, initial uses iteration 0→1, loop runs at 1,2 then hits 3
-        assert adapter1.run.call_count == 3  # initial + 2 iterations
+class TestChainCoordinate:
+    """Tests for _chain_coordinate — sequential agent handoff."""
 
-    def test_summarize_results_marble_format(self):
-        """_summarize_results_marble should match MARBLE's Engine._summarize_results format."""
+    def test_starts_with_agent1(self):
+        """Chain should start with agent1 as per MARBLE's _select_initial_agent."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter1 = _make_mock_adapter("agent1", "r1")
+        adapter2 = _make_mock_adapter("agent2", "r2")
+        agents_dict = {"agent1": adapter1, "agent2": adapter2}
+
+        benchmark = _make_mock_benchmark(coordinate_mode="chain", agents_dict=agents_dict, planner_decide_sequence=[False])
+        benchmark._marble_graph = MagicMock()
+        benchmark._marble_graph.get_agent_profiles_linked.return_value = "profiles"
+        adapter1.marble_agent.plan_next_agent.return_value = ("agent2", "next task")
+
+        MarbleMultiAgentBenchBenchmark._chain_coordinate(benchmark, [adapter1, adapter2])
+
+        # agent1 should have been called first
+        assert adapter1.run.call_args_list[0].args[0] == "Do the task"
+
+    def test_task_always_updates_to_plan(self):
+        """Chain should always update task to the plan, even if plan is empty string."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter1 = _make_mock_adapter("agent1")
+        agents_dict = {"agent1": adapter1}
+
+        benchmark = _make_mock_benchmark(coordinate_mode="chain", agents_dict=agents_dict)
+        benchmark._marble_graph = MagicMock()
+        benchmark._marble_graph.get_agent_profiles_linked.return_value = "profiles"
+        # Agent returns empty plan — chain should still use it
+        adapter1.marble_agent.plan_next_agent.return_value = ("agent1", "")
+        # Stop after first link
+        benchmark._marble_planner.decide_next_step.side_effect = [False]
+
+        MarbleMultiAgentBenchBenchmark._chain_coordinate(benchmark, [adapter1])
+
+        # Only one call (planner stopped it)
+        adapter1.run.assert_called_once_with("Do the task")
+
+    def test_chain_handoff_to_next_agent(self):
+        """Chain should hand off to the agent selected by plan_next_agent."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter1 = _make_mock_adapter("agent1", "r1")
+        adapter2 = _make_mock_adapter("agent2", "r2")
+        agents_dict = {"agent1": adapter1, "agent2": adapter2}
+
+        benchmark = _make_mock_benchmark(coordinate_mode="chain", agents_dict=agents_dict)
+        benchmark._marble_graph = MagicMock()
+        benchmark._marble_graph.get_agent_profiles_linked.return_value = "profiles"
+        # agent1 picks agent2, then planner stops
+        adapter1.marble_agent.plan_next_agent.return_value = ("agent2", "task for agent2")
+        benchmark._marble_planner.decide_next_step.side_effect = [True, False]
+
+        result = MarbleMultiAgentBenchBenchmark._chain_coordinate(benchmark, [adapter1, adapter2])
+
+        # agent1 ran first, agent2 ran second
+        adapter1.run.assert_called_once_with("Do the task")
+        adapter2.run.assert_called_once_with("task for agent2")
+        assert len(result["agent_results"]) == 2
+
+    def test_chain_max_length(self):
+        """Chain stops at max_chain_length = max_invocations * num_agents."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter = _make_mock_adapter("agent1")
+        agents_dict = {"agent1": adapter}
+
+        benchmark = _make_mock_benchmark(coordinate_mode="chain", max_invocations=2, agents_dict=agents_dict)
+        benchmark._marble_graph = MagicMock()
+        benchmark._marble_graph.get_agent_profiles_linked.return_value = "profiles"
+        adapter.marble_agent.plan_next_agent.return_value = ("agent1", "keep going")
+        benchmark._marble_planner.decide_next_step.return_value = True
+
+        MarbleMultiAgentBenchBenchmark._chain_coordinate(benchmark, [adapter])
+
+        # max_chain_length = 2 * 1 = 2
+        assert adapter.run.call_count == 2
+
+
+class TestTreeCoordinate:
+    """Tests for _tree_coordinate — recursive hierarchical execution."""
+
+    def test_recursive_execution_from_root(self):
+        """Tree mode should execute from root, delegating to children recursively."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        # Build a tree: root → child
+        child_agent = MagicMock()
+        child_agent.agent_id = "child1"
+        child_agent.children = []
+        child_agent.act.return_value = ("child result", None)
+
+        root_agent = MagicMock()
+        root_agent.agent_id = "root"
+        root_agent.children = [child_agent]
+        root_agent.plan_tasks_for_children.return_value = {"child1": "sub-task"}
+        root_agent.act.return_value = ("root result", "root comm")
+
+        child_adapter = _make_mock_adapter("child1", "child traced result")
+        root_adapter = _make_mock_adapter("root", "root traced result")
+
+        benchmark = _make_mock_benchmark(coordinate_mode="tree", planner_decide_sequence=[False])
+        benchmark._marble_graph = MagicMock()
+        benchmark._marble_graph.get_root_agent.return_value = root_agent
+        benchmark._agents_dict = {"root": root_adapter, "child1": child_adapter}
+        benchmark._execute_agent_task_recursive = MarbleMultiAgentBenchBenchmark._execute_agent_task_recursive.__get__(benchmark)
+
+        MarbleMultiAgentBenchBenchmark._tree_coordinate(benchmark, [root_adapter, child_adapter])
+
+        # Child was executed
+        child_adapter.run.assert_called_once_with("sub-task")
+        # Root was executed with children's results appended
+        assert root_adapter.run.call_count == 1
+        root_call_arg = root_adapter.run.call_args[0][0]
+        assert "results of the children" in root_call_arg
+
+    def test_tree_passes_results_directly_to_planner(self):
+        """Tree mode passes recursive results directly (not reformatted) to summarizer and planner."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        leaf_agent = MagicMock()
+        leaf_agent.agent_id = "leaf"
+        leaf_agent.children = []
+        leaf_agent.act.return_value = ("leaf result", None)
+
+        leaf_adapter = _make_mock_adapter("leaf", "leaf result")
+
+        benchmark = _make_mock_benchmark(coordinate_mode="tree", planner_decide_sequence=[False])
+        benchmark._marble_graph = MagicMock()
+        benchmark._marble_graph.get_root_agent.return_value = leaf_agent
+        benchmark._agents_dict = {"leaf": leaf_adapter}
+        benchmark._execute_agent_task_recursive = MarbleMultiAgentBenchBenchmark._execute_agent_task_recursive.__get__(benchmark)
+
+        MarbleMultiAgentBenchBenchmark._tree_coordinate(benchmark, [leaf_adapter])
+
+        # decide_next_step should receive results in recursive format: [{"agent_id": ..., "result": ...}]
+        decide_call_arg = benchmark._marble_planner.decide_next_step.call_args[0][0]
+        assert isinstance(decide_call_arg, list)
+        assert "agent_id" in decide_call_arg[0]
+
+    def test_tree_leaf_communication_captured(self):
+        """Leaf agent's communication from act() should be captured."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        leaf_agent = MagicMock()
+        leaf_agent.agent_id = "leaf"
+        leaf_agent.children = []
+        leaf_agent.act.return_value = ("result", "leaf comm")
+
+        # No adapter — uses direct agent call
+        benchmark = _make_mock_benchmark(coordinate_mode="tree", planner_decide_sequence=[False])
+        benchmark._marble_graph = MagicMock()
+        benchmark._marble_graph.get_root_agent.return_value = leaf_agent
+        benchmark._agents_dict = {}  # No adapters
+        benchmark._execute_agent_task_recursive = MarbleMultiAgentBenchBenchmark._execute_agent_task_recursive.__get__(benchmark)
+
+        result = MarbleMultiAgentBenchBenchmark._tree_coordinate(benchmark, [])
+
+        assert result["communications"] == ["leaf comm"]
+
+
+class TestSummarizeResults:
+    """Tests for _summarize_results_marble helper."""
+
+    def test_format_matches_marble(self):
+        """Output format should match MARBLE's Engine._summarize_results."""
         from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
 
         agents_results = [
-            {"agent1": "Research finding about federated learning"},
-            {"agent2": "NLP analysis results"},
+            {"agent1": "Research finding"},
+            {"agent2": "NLP results"},
         ]
-
         summary = MarbleMultiAgentBenchBenchmark._summarize_results_marble(agents_results)
 
         assert summary.startswith("Agents' Results Summary:\n")
         assert "agent1" in summary
         assert "agent2" in summary
 
-    def test_summarize_results_marble_truncates(self):
-        """_summarize_results_marble should truncate results at 1000 chars."""
+    def test_truncates_at_1000_chars(self):
+        """Each result line should be truncated to 1000 chars."""
         from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
 
         long_result = "x" * 2000
-        agents_results = [{"agent1": long_result}]
+        summary = MarbleMultiAgentBenchBenchmark._summarize_results_marble([{"agent1": long_result}])
 
-        summary = MarbleMultiAgentBenchBenchmark._summarize_results_marble(agents_results)
-
-        # Each line should be at most 1000 chars (excluding newline)
         lines = summary.strip().split("\n")
         for line in lines[1:]:  # Skip header
             assert len(line) <= 1000
+
+    def test_handles_recursive_result_format(self):
+        """Should also work with tree's [{"agent_id": ..., "result": ...}] format."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        results = [{"agent_id": "root", "result": "done"}]
+        summary = MarbleMultiAgentBenchBenchmark._summarize_results_marble(results)
+
+        assert "agent_id" in summary
+        assert "root" in summary
 
 
 class TestBenchmarkWithDifferentCoordinationModes:
