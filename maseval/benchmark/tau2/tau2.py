@@ -73,6 +73,12 @@ from maseval.core.seeding import DefaultSeedGenerator, SeedGenerator
 from maseval.benchmark.tau2.environment import Tau2Environment
 from maseval.benchmark.tau2.evaluator import Tau2Evaluator
 
+# Initial greeting from the original tau2-bench orchestrator.
+# The orchestrator adds this as the first AssistantMessage in the trajectory.
+# The user simulator sees it; the agent does not.
+# Source: tau2-bench orchestrator.py:L34-36
+INITIAL_GREETING = "Hi! How can I help you today?"
+
 
 # =============================================================================
 # User Simulator
@@ -93,7 +99,7 @@ class Tau2User(AgenticLLMUser):
     get_tool() to return a compatible tool.
     """
 
-    DEFAULT_MAX_TURNS = 50  # tau2-bench uses max_steps=200, ~4 steps per turn
+    DEFAULT_MAX_TURNS = 50  # tau2-bench uses max_steps=100; generous limit to avoid premature cutoff
     # Match tau2-bench tokens - user can stop, transfer, or go out of scope
     DEFAULT_STOP_TOKENS = ["###STOP###", "###TRANSFER###", "###OUT-OF-SCOPE###"]
     DEFAULT_EARLY_STOPPING_CONDITION = "The instruction goal is satisfied"
@@ -239,7 +245,7 @@ class Tau2Benchmark(Benchmark):
         benchmark.run(tasks)
     """
 
-    # Maximum agent-user interaction rounds (tau2-bench uses max_steps=200, where 1 turn ≈ 4 steps)
+    # Maximum agent-user interaction rounds (tau2-bench uses max_steps=100; see PROVENANCE.md)
     MAX_INVOCATIONS = 50
 
     def __init__(
@@ -261,7 +267,7 @@ class Tau2Benchmark(Benchmark):
             callbacks: Optional list of callback handlers for monitoring execution.
             n_task_repeats: Number of times to repeat each task. Default 1.
             max_invocations: Maximum agent-user interaction rounds (default: 50).
-                tau2-bench uses max_steps=200, where 1 turn ≈ 4 steps.
+                Original tau2-bench uses max_steps=100 (all message exchanges).
             num_workers: Number of parallel task executions. Default 1 (sequential).
             fail_on_setup_error: If True, raise on setup errors. Default False.
             fail_on_task_error: If True, raise on task execution errors. Default False.
@@ -500,6 +506,62 @@ class Tau2Benchmark(Benchmark):
 
         return results
 
+    def execution_loop(  # type: ignore[override]
+        self,
+        agents: Sequence[AgentAdapter],
+        task: Task,
+        environment: Tau2Environment,
+        user: Optional[Tau2User],
+    ) -> Any:
+        """Execute agents with initial greeting matching original tau2-bench.
+
+        Overrides the base execution loop to inject the orchestrator's initial
+        greeting into the user's message history. In the original tau2-bench,
+        the orchestrator adds "Hi! How can I help you today?" as the first
+        AssistantMessage before the user's initial query. The user simulator
+        sees this greeting; the agent does not.
+
+        Source: tau2-bench orchestrator.py:L34-36, L223-229
+
+        Args:
+            agents: Agents to execute.
+            task: The task being solved.
+            environment: The Tau2Environment providing tools and state.
+            user: Optional Tau2 user simulator.
+
+        Returns:
+            Final answer from the last agent execution.
+        """
+        final_answer = None
+
+        if user is not None:
+            query_text = user.get_initial_query()
+
+            # Inject greeting into user's message history (matching original orchestrator).
+            # Must happen AFTER get_initial_query() returns — inserting before would cause
+            # get_initial_query() to raise RuntimeError (messages[0]["role"] != "user").
+            # After insertion, user.messages becomes:
+            #   [{"role": "assistant", "content": greeting}, {"role": "user", "content": query}, ...]
+            # Source: tau2-bench orchestrator.py:L223-229
+            user.messages._messages.insert(0, {"role": "assistant", "content": INITIAL_GREETING})
+        else:
+            query_text = task.query
+
+        for _ in range(self.max_invocations):
+            final_answer = self.run_agents(agents, task, environment, query_text)
+
+            if user is None:
+                break
+
+            user_response = user.respond(str(final_answer) if final_answer else "")
+
+            if user.is_done():
+                break
+
+            query_text = user_response
+
+        return final_answer
+
 
 # =============================================================================
 # Default Agent Implementation
@@ -657,6 +719,11 @@ class DefaultTau2Agent:
         Returns:
             Agent's text response to the user
         """
+        # Reset tool call counter for this turn (prevents accumulation across turns).
+        # In the original tau2-bench, each generate_next_message() call is independent.
+        # Source: tau2-bench agent/llm_agent.py
+        self._tool_call_count = 0
+
         self._log(1, f"[Agent] Received query: {query[:100]}{'...' if len(query) > 100 else ''}")
 
         # Add user message to history

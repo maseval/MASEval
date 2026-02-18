@@ -2,8 +2,9 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-from maseval import Task
-from maseval.benchmark.tau2 import Tau2Benchmark, Tau2User
+from maseval import Task, MessageHistory
+from maseval.core.model import ChatResponse
+from maseval.benchmark.tau2 import Tau2Benchmark, Tau2User, INITIAL_GREETING
 
 
 class DummyTau2Benchmark(Tau2Benchmark):
@@ -309,3 +310,141 @@ class TestDefaultAgentTau2BenchmarkSeeding:
         benchmark.setup_agents({"model_id": "test-model"}, mock_env, mock_task, None, seed_generator=seed_gen)
 
         assert "agents/default_agent" in seed_gen.seed_log
+
+
+# =============================================================================
+# Execution Loop Tests (Bug Fix: Initial Greeting)
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestTau2ExecutionLoop:
+    """Tests for Tau2Benchmark.execution_loop() with initial greeting."""
+
+    def test_greeting_constant_matches_original(self):
+        """INITIAL_GREETING matches the original tau2-bench orchestrator.py:L34-36."""
+        assert INITIAL_GREETING == "Hi! How can I help you today?"
+
+    def test_greeting_inserted_into_user_messages(self, benchmark, task):
+        """execution_loop inserts greeting at position 0 of user.messages."""
+        mock_agent = MagicMock()
+        mock_agent.run.return_value = "Agent response"
+
+        user = MagicMock()
+        user.get_initial_query.return_value = "I need help"
+        user.messages = MessageHistory([{"role": "user", "content": "I need help"}])
+        user.respond.return_value = ""
+        user.is_done.return_value = True
+
+        benchmark.execution_loop([mock_agent], task, MagicMock(), user)
+
+        # Greeting should be at position 0
+        assert user.messages[0]["role"] == "assistant"
+        assert user.messages[0]["content"] == INITIAL_GREETING
+        # Original query should be at position 1
+        assert user.messages[1]["role"] == "user"
+        assert user.messages[1]["content"] == "I need help"
+
+    def test_no_greeting_without_user(self, benchmark, task):
+        """execution_loop works without user (uses task.query, no greeting)."""
+        mock_agent = MagicMock()
+        mock_agent.run.return_value = "Response"
+
+        result = benchmark.execution_loop([mock_agent], task, MagicMock(), None)
+
+        assert result == "Response"
+        mock_agent.run.assert_called_once_with(task.query)
+
+    def test_greeting_visible_in_user_respond_context(self, benchmark, task):
+        """User simulator sees greeting in message history during respond()."""
+        mock_agent = MagicMock()
+        mock_agent.run.return_value = "How can I assist?"
+
+        captured_messages = []
+
+        user = MagicMock()
+        user.get_initial_query.return_value = "I need help"
+        user.messages = MessageHistory([{"role": "user", "content": "I need help"}])
+
+        def capture_respond(msg):
+            # Capture the state of user.messages when respond() is called
+            captured_messages.append(list(user.messages))
+            return "Thanks"
+
+        user.respond.side_effect = capture_respond
+        user.is_done.return_value = True
+
+        benchmark.execution_loop([mock_agent], task, MagicMock(), user)
+
+        # When respond() was called, greeting should already be in messages
+        assert len(captured_messages) == 1
+        assert captured_messages[0][0]["role"] == "assistant"
+        assert captured_messages[0][0]["content"] == INITIAL_GREETING
+
+
+# =============================================================================
+# DefaultTau2Agent Tool Call Counter Tests (Bug Fix: Counter Reset)
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestDefaultTau2AgentToolCallReset:
+    """Tests for DefaultTau2Agent._tool_call_count resetting per turn."""
+
+    def test_tool_call_count_resets_per_turn(self):
+        """_tool_call_count resets at the start of each run() call."""
+        from maseval.benchmark.tau2 import DefaultTau2Agent
+
+        mock_model = MagicMock()
+        agent = DefaultTau2Agent(
+            tools={"get_order": lambda order_id: {"id": order_id}},
+            policy="Test policy",
+            model=mock_model,
+            max_tool_calls=10,
+        )
+
+        # Turn 1: model returns tool call then text
+        tool_response = MagicMock(spec=ChatResponse)
+        tool_response.content = ""
+        tool_response.tool_calls = [{"id": "1", "function": {"name": "get_order", "arguments": '{"order_id": "123"}'}}]
+
+        text_response = MagicMock(spec=ChatResponse)
+        text_response.content = "Here is your order."
+        text_response.tool_calls = []
+
+        mock_model.chat.side_effect = [tool_response, text_response]
+        agent.run("Turn 1 query")
+        assert agent._tool_call_count == 1
+
+        # Turn 2: counter should reset, not accumulate from turn 1
+        mock_model.chat.side_effect = [tool_response, tool_response, text_response]
+        agent.run("Turn 2 query")
+        assert agent._tool_call_count == 2  # 2 tool calls in THIS turn, not 3
+
+    def test_tool_call_count_starts_at_zero_each_turn(self):
+        """Each run() call starts with _tool_call_count = 0."""
+        from maseval.benchmark.tau2 import DefaultTau2Agent
+
+        mock_model = MagicMock()
+        agent = DefaultTau2Agent(
+            tools={},
+            policy="Test policy",
+            model=mock_model,
+        )
+
+        # Simulate a text-only response (no tool calls)
+        text_response = MagicMock(spec=ChatResponse)
+        text_response.content = "Hello"
+        text_response.tool_calls = []
+
+        mock_model.chat.side_effect = [text_response]
+        agent.run("Query 1")
+        assert agent._tool_call_count == 0
+
+        # Manually set counter to simulate previous accumulation
+        agent._tool_call_count = 42
+
+        mock_model.chat.side_effect = [text_response]
+        agent.run("Query 2")
+        # Should have been reset to 0 at start of run(), not still 42
+        assert agent._tool_call_count == 0

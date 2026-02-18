@@ -64,6 +64,7 @@ from maseval.benchmark.tau2.tau2 import (
     DefaultTau2Agent,
     DefaultTau2AgentAdapter,
     DefaultAgentTau2Benchmark,
+    INITIAL_GREETING,
 )
 
 # Environment
@@ -108,6 +109,7 @@ __all__ = [
     # Benchmark
     "Tau2Benchmark",
     "Tau2User",
+    "INITIAL_GREETING",
     # Default agent implementation
     "DefaultTau2Agent",
     "DefaultTau2AgentAdapter",

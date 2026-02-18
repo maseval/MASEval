@@ -101,6 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tau2: Fixed telecom domain schema to match tau2-bench, added agent/user state synchronization and deterministic network simulation, fixed initialization flow and tool result serialization (PR: #30)
 - Fixed incorrect return type annotations on `DB.load()` and `DB.copy_deep()` in Tau2 benchmark — now use `Self` instead of `"DB"`, so subclass methods return the correct type (PR: #29)
 - ConVerse: Various fixes for faithful reproduction of original. (PR: #32)
+- Tau2: Added initial agent greeting ("Hi! How can I help you today?") to user simulator's message history, matching the original tau2-bench orchestrator. Fixed tool call counter accumulating across agent turns instead of resetting per turn. Corrected `max_steps` comments (original default is 100, not 200). Documented all known architectural divergences from original tau2-bench in PROVENANCE.md. (PR: #PR_NUMBER_PLACEHOLDER)
 
 ### Removed
 

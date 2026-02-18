@@ -123,6 +123,66 @@ if not order_id.startswith("#"):
 
 MASEval normalizes order IDs by adding the `#` prefix if missing. The original tau2-bench does not normalize, causing "Order not found" errors when LLMs omit the prefix. This is a minor leniency that improves usability without fundamentally changing task difficulty.
 
+## Known Architectural Divergences
+
+These structural differences arise from MASEval's framework architecture. They are
+documented here for transparency.
+
+### Step Counting
+
+**Original:** `max_steps=100` (default) counts ALL message exchanges (agent→user,
+user→agent, agent→env, env→agent). One orchestrator-level counter for the entire
+conversation. Source: tau2-bench `orchestrator.py` default `max_steps=100`.
+
+**MASEval:** Two separate mechanisms:
+
+- `max_invocations=50` (benchmark-level): agent-user interaction rounds
+- `max_tool_calls=50` (agent-internal): tool calls per agent turn
+
+With ~4 message exchanges per invocation, `max_steps=100 ≈ 25 invocations`. The
+value 50 provides headroom.
+
+### Agent Architecture
+
+**Original:** Orchestrator calls `agent.generate_next_message()` which returns ONE
+message (text or tool calls). Tool routing happens at the orchestrator level.
+
+**MASEval:** `DefaultTau2Agent.run()` handles tool routing internally via a ReAct
+loop, returning only the final text response.
+
+### Max Tool Calls Error Message
+
+**Original:** When `max_steps` is reached, the orchestrator stops. No error message
+is generated.
+
+**MASEval:** When `max_tool_calls` is reached, `DefaultTau2Agent._generate_with_tools()`
+returns: `"I apologize, but I've encountered an issue processing your request. Please try again."`
+This message does not exist in the original and could affect evaluation of
+communication-check assertions.
+
+### max_errors
+
+**Original:** Has `max_errors=10` parameter but `num_errors` is never incremented
+(dead code). Source: tau2-bench `orchestrator.py`.
+
+**MASEval:** Does not implement error tracking.
+
+### User Initial Query
+
+**Original:** User simulator generates initial query via LLM in response to the
+agent's greeting.
+
+**MASEval:** Uses pre-set `task.query` as the initial query. The greeting is injected
+into the user's message history (so subsequent `respond()` calls see it), but the
+initial query itself is not LLM-generated.
+
+### Separate Message Histories
+
+**Original:** The orchestrator maintains ONE trajectory (list of messages). Both
+agent and user see filtered views of this shared trajectory.
+
+**MASEval:** Agent and user maintain separate `MessageHistory` instances.
+
 ## Validation Strategy
 
 1. **Deterministic evaluators** (env, action): Exact DB state hash match with upstream v0.2.0
