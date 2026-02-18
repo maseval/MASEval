@@ -800,3 +800,512 @@ class TestExecuteInitializationActions:
 
         with pytest.raises(ValueError, match="not found"):
             env._execute_initialization_actions(actions, mock_toolkit, None, MagicMock())
+
+
+# =============================================================================
+# to_json_str Tests — Lines 425-447
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestToJsonStr:
+    """Tests for Tau2Environment.to_json_str() covering all type branches."""
+
+    def test_string_passthrough(self):
+        """Strings are returned as-is, no JSON wrapping."""
+        assert Tau2Environment.to_json_str("hello") == "hello"
+
+    def test_none(self):
+        """None is serialized to JSON null."""
+        import json
+
+        assert json.loads(Tau2Environment.to_json_str(None)) is None
+
+    def test_int(self):
+        """Integers are converted via str() then JSON."""
+        import json
+
+        assert json.loads(Tau2Environment.to_json_str(42)) == "42"
+
+    def test_float(self):
+        """Floats are converted via str() then JSON."""
+        import json
+
+        assert json.loads(Tau2Environment.to_json_str(3.14)) == "3.14"
+
+    def test_bool(self):
+        """Booleans are converted via str() then JSON."""
+        import json
+
+        assert json.loads(Tau2Environment.to_json_str(True)) == "True"
+
+    def test_dict(self):
+        """Dicts have values processed recursively."""
+        import json
+
+        result = json.loads(Tau2Environment.to_json_str({"key": 42}))
+        assert result["key"] == "42"
+
+    def test_list(self):
+        """Lists have items processed recursively."""
+        import json
+
+        result = json.loads(Tau2Environment.to_json_str([1, "a"]))
+        assert result == ["1", "a"]
+
+    def test_tuple(self):
+        """Tuples are converted to JSON arrays."""
+        import json
+
+        result = json.loads(Tau2Environment.to_json_str((1, "a")))
+        assert result == ["1", "a"]
+
+    def test_datetime(self):
+        """Datetimes are serialized via isoformat."""
+        import json
+        from datetime import datetime
+
+        dt = datetime(2024, 1, 15, 10, 30)
+        result = json.loads(Tau2Environment.to_json_str(dt))
+        assert "2024-01-15" in result
+
+    def test_date(self):
+        """Dates are serialized via isoformat."""
+        import json
+        from datetime import date
+
+        d = date(2024, 1, 15)
+        result = json.loads(Tau2Environment.to_json_str(d))
+        assert result == "2024-01-15"
+
+    def test_unsupported_type_raises(self):
+        """Unsupported types raise ValueError."""
+        with pytest.raises(ValueError, match="Unsupported type"):
+            Tau2Environment.to_json_str(set([1, 2, 3]))
+
+    @pytest.mark.live
+    def test_pydantic_model(self, retail_environment):
+        """Real Pydantic models are serialized via model_dump()."""
+        import json
+
+        user_id = next(iter(retail_environment.db.users))
+        user = retail_environment.db.users[user_id]
+        result = Tau2Environment.to_json_str(user)
+        parsed = json.loads(result)
+        assert isinstance(parsed, dict)
+        assert "user_id" in parsed
+
+
+# =============================================================================
+# get_response Tests — Lines 466-473
+# =============================================================================
+
+
+@pytest.mark.benchmark
+@pytest.mark.live
+class TestGetResponse:
+    """Tests for Tau2Environment.get_response() matching original."""
+
+    def test_successful_tool_call(self, retail_environment):
+        """Successful tool call returns serialized content with error=False."""
+        import json
+
+        user_id = next(iter(retail_environment.db.users))
+        result = retail_environment.get_response(tool_name="get_user_details", requestor="assistant", user_id=user_id)
+
+        assert result["error"] is False
+        assert "content" in result
+        parsed = json.loads(result["content"])
+        assert isinstance(parsed, dict)
+
+    def test_tool_call_error(self, retail_environment):
+        """Failed tool call returns 'Error: ...' with error=True."""
+        result = retail_environment.get_response(tool_name="get_user_details", requestor="assistant", user_id="nonexistent_user_999")
+
+        assert result["error"] is True
+        assert "Error:" in result["content"]
+
+    def test_tool_call_id_preserved(self, retail_environment):
+        """tool_call_id and requestor are preserved in response."""
+        user_id = next(iter(retail_environment.db.users))
+        result = retail_environment.get_response(
+            tool_name="get_user_details",
+            requestor="assistant",
+            tool_call_id="call_abc123",
+            user_id=user_id,
+        )
+
+        assert result["id"] == "call_abc123"
+        assert result["requestor"] == "assistant"
+
+    def test_user_requestor(self, telecom_environment):
+        """User requestor routes to user toolkit."""
+        result = telecom_environment.get_response(tool_name="check_status_bar", requestor="user")
+
+        assert result["error"] is False
+        assert result["requestor"] == "user"
+
+
+# =============================================================================
+# run_env_function_call / run_env_assertion Tests — Lines 382-416
+# =============================================================================
+
+
+@pytest.mark.benchmark
+@pytest.mark.live
+class TestRunEnvFunctionCall:
+    """Tests for run_env_function_call() using getattr."""
+
+    def test_call_assistant_function(self, retail_environment):
+        """Calls assistant toolkit function via getattr."""
+        user_id = next(iter(retail_environment.db.users))
+        result = retail_environment.run_env_function_call(
+            {"env_type": "assistant", "func_name": "get_user_details", "arguments": {"user_id": user_id}}
+        )
+        assert result is not None
+
+    def test_no_user_toolkit_raises(self, retail_environment):
+        """Retail has no user toolkit — ValueError."""
+        with pytest.raises(ValueError, match="No user toolkit"):
+            retail_environment.run_env_function_call({"env_type": "user", "func_name": "foo", "arguments": {}})
+
+    def test_missing_function_raises(self, retail_environment):
+        """Nonexistent function name raises ValueError."""
+        with pytest.raises(ValueError, match="not found"):
+            retail_environment.run_env_function_call({"func_name": "nonexistent_func_xyz", "arguments": {}})
+
+
+@pytest.mark.benchmark
+@pytest.mark.live
+class TestRunEnvAssertion:
+    """Tests for run_env_assertion() matching original."""
+
+    def test_non_bool_raises(self, retail_environment):
+        """Function returning non-bool raises ValueError."""
+        user_id = next(iter(retail_environment.db.users))
+        with pytest.raises(ValueError, match="instead of bool"):
+            retail_environment.run_env_assertion({"func_name": "get_user_details", "arguments": {"user_id": user_id}, "assert_value": True})
+
+    def test_assertion_fail_raises(self, retail_environment):
+        """Failed assertion raises AssertionError with custom message."""
+        # Use a mock function that returns False
+        retail_environment.toolkit.returns_false = lambda: False
+        with pytest.raises(AssertionError, match="Custom fail"):
+            retail_environment.run_env_assertion(
+                {"func_name": "returns_false", "arguments": {}, "assert_value": True, "message": "Custom fail"}
+            )
+
+    def test_assertion_no_raise(self, retail_environment):
+        """Failed assertion returns False with raise_assertion_error=False."""
+        retail_environment.toolkit.returns_false = lambda: False
+        result = retail_environment.run_env_assertion(
+            {"func_name": "returns_false", "arguments": {}, "assert_value": True}, raise_assertion_error=False
+        )
+        assert result is False
+
+    def test_assertion_passes(self, retail_environment):
+        """Passing assertion returns True."""
+        retail_environment.toolkit.returns_true = lambda: True
+        result = retail_environment.run_env_assertion({"func_name": "returns_true", "arguments": {}, "assert_value": True})
+        assert result is True
+
+
+# =============================================================================
+# _get_actions_from_messages Tests — Lines 551-588
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestGetActionsFromMessages:
+    """Tests for static _get_actions_from_messages() message parsing."""
+
+    def test_empty_messages(self):
+        """Empty list returns empty."""
+        assert Tau2Environment._get_actions_from_messages([]) == []
+
+    def test_text_only_no_actions(self):
+        """Text-only messages produce no actions."""
+        msgs = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+        assert Tau2Environment._get_actions_from_messages(msgs) == []
+
+    def test_single_tool_call_pair(self):
+        """Single assistant tool call + tool response → 1 action pair."""
+        msgs = [
+            {"role": "assistant", "tool_calls": [{"name": "get_user", "arguments": {"id": "1"}, "id": "tc1"}], "content": ""},
+            {"role": "tool", "content": '{"name": "Alice"}', "tool_call_id": "tc1"},
+        ]
+        actions = Tau2Environment._get_actions_from_messages(msgs)
+        assert len(actions) == 1
+        tc, tm = actions[0]
+        assert tc["name"] == "get_user"
+        assert tc["arguments"] == {"id": "1"}
+        assert tc["requestor"] == "assistant"
+
+    def test_function_format_tool_calls(self):
+        """OpenAI nested 'function' format with string arguments."""
+        msgs = [
+            {"role": "assistant", "tool_calls": [{"function": {"name": "get_user", "arguments": '{"id": "1"}'}, "id": "tc1"}]},
+            {"role": "tool", "content": "result"},
+        ]
+        actions = Tau2Environment._get_actions_from_messages(msgs)
+        assert actions[0][0]["name"] == "get_user"
+        assert actions[0][0]["arguments"] == {"id": "1"}
+
+    def test_user_tool_calls_requestor(self):
+        """User tool calls have requestor='user'."""
+        msgs = [
+            {"role": "user", "tool_calls": [{"name": "pay_bill", "arguments": {}, "id": "tc1"}], "content": ""},
+            {"role": "tool", "content": "paid"},
+        ]
+        actions = Tau2Environment._get_actions_from_messages(msgs)
+        assert actions[0][0]["requestor"] == "user"
+
+    def test_missing_tool_response_raises(self):
+        """Tool call without following tool message raises ValueError."""
+        msgs = [{"role": "assistant", "tool_calls": [{"name": "foo", "arguments": {}}]}]
+        with pytest.raises(ValueError, match="Tool message expected. Got None"):
+            Tau2Environment._get_actions_from_messages(msgs)
+
+    def test_unexpected_tool_message_raises(self):
+        """Stray tool message raises ValueError."""
+        msgs = [{"role": "tool", "content": "stray"}]
+        with pytest.raises(ValueError, match="Tool message not expected"):
+            Tau2Environment._get_actions_from_messages(msgs)
+
+    def test_wrong_role_after_tool_call_raises(self):
+        """Non-tool message after tool call raises ValueError."""
+        msgs = [
+            {"role": "assistant", "tool_calls": [{"name": "foo", "arguments": {}, "id": "tc1"}]},
+            {"role": "user", "content": "wrong"},
+        ]
+        with pytest.raises(ValueError, match="Tool message expected"):
+            Tau2Environment._get_actions_from_messages(msgs)
+
+    def test_multiple_tool_calls_one_message(self):
+        """Multiple tool calls in one message produce multiple pairs."""
+        msgs = [
+            {"role": "assistant", "tool_calls": [{"name": "f1", "arguments": {}, "id": "tc1"}, {"name": "f2", "arguments": {}, "id": "tc2"}]},
+            {"role": "tool", "content": "r1"},
+            {"role": "tool", "content": "r2"},
+        ]
+        actions = Tau2Environment._get_actions_from_messages(msgs)
+        assert len(actions) == 2
+        assert actions[0][0]["name"] == "f1"
+        assert actions[1][0]["name"] == "f2"
+
+    def test_interleaved_text_and_tools(self):
+        """Text messages between tool calls are skipped."""
+        msgs = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "tool_calls": [{"name": "f1", "arguments": {}, "id": "tc1"}]},
+            {"role": "tool", "content": "r1"},
+            {"role": "assistant", "content": "done"},
+        ]
+        actions = Tau2Environment._get_actions_from_messages(msgs)
+        assert len(actions) == 1
+
+    def test_invalid_json_arguments_fallback(self):
+        """Invalid JSON string arguments fall back to empty dict."""
+        msgs = [
+            {"role": "assistant", "tool_calls": [{"function": {"name": "f", "arguments": "not_json{"}, "id": "tc1"}]},
+            {"role": "tool", "content": "r"},
+        ]
+        actions = Tau2Environment._get_actions_from_messages(msgs)
+        assert actions[0][0]["arguments"] == {}
+
+
+# =============================================================================
+# set_state Tests — Lines 501-534
+# =============================================================================
+
+
+@pytest.mark.benchmark
+@pytest.mark.live
+class TestSetState:
+    """Tests for Tau2Environment.set_state() state replay."""
+
+    def test_set_state_empty(self, retail_environment):
+        """Empty args are a no-op, hash unchanged."""
+        h = retail_environment.get_db_hash()
+        retail_environment.set_state(None, None, [])
+        assert retail_environment.get_db_hash() == h
+
+    def test_set_state_replays_tool_call(self, retail_environment):
+        """set_state replays a tool call and verifies the response matches."""
+        user_id = next(iter(retail_environment.db.users))
+        # Get the expected response from a real tool call
+        expected = retail_environment.get_response(tool_name="get_user_details", requestor="assistant", tool_call_id="tc1", user_id=user_id)
+
+        # Create a fresh environment and replay
+        from maseval.benchmark.tau2.environment import get_environment_constructor
+
+        task_data = {"domain": "retail"}
+        constructor = get_environment_constructor(task_data)
+        env2 = constructor()
+        env2.set_state(
+            None,
+            None,
+            [
+                {"role": "assistant", "tool_calls": [{"name": "get_user_details", "arguments": {"user_id": user_id}, "id": "tc1"}]},
+                {"role": "tool", "content": expected["content"]},
+            ],
+        )
+        # If we get here, the replay matched
+
+    def test_set_state_mismatch_raises(self, retail_environment):
+        """set_state raises ValueError when replayed response doesn't match."""
+        user_id = next(iter(retail_environment.db.users))
+
+        from maseval.benchmark.tau2.environment import get_environment_constructor
+
+        constructor = get_environment_constructor({"domain": "retail"})
+        env2 = constructor()
+        with pytest.raises(ValueError):
+            env2.set_state(
+                None,
+                None,
+                [
+                    {"role": "assistant", "tool_calls": [{"name": "get_user_details", "arguments": {"user_id": user_id}, "id": "tc1"}]},
+                    {"role": "tool", "content": '{"wrong": "data"}'},
+                ],
+            )
+
+    def test_set_state_with_initialization_actions(self, retail_environment):
+        """set_state executes initialization_actions via run_env_function_call."""
+        user_id = next(iter(retail_environment.db.users))
+
+        from maseval.benchmark.tau2.environment import get_environment_constructor
+
+        constructor = get_environment_constructor({"domain": "retail"})
+        env2 = constructor()
+        env2.set_state(
+            None,
+            [{"env_type": "assistant", "func_name": "get_user_details", "arguments": {"user_id": user_id}}],
+            [],
+        )
+        # Success means init action ran without error
+
+    def test_set_state_with_initialization_data(self, retail_environment):
+        """set_state applies initialization_data.agent_data to toolkit DB."""
+        user_id = next(iter(retail_environment.db.users))
+        user = retail_environment.db.users[user_id]
+
+        from maseval.benchmark.tau2.environment import get_environment_constructor
+
+        constructor = get_environment_constructor({"domain": "retail"})
+        env2 = constructor()
+
+        # Build full user dict with modified email
+        user_dict = user.model_dump()
+        user_dict["email"] = "modified_via_set_state@test.com"
+
+        env2.set_state(
+            initialization_data={"agent_data": {"users": {user_id: user_dict}}},
+            initialization_actions=None,
+            message_history=[],
+        )
+        # update_db reassigns toolkit.db to a new model instance;
+        # env.db (via state["db"]) retains the old reference — this is existing behavior.
+        assert env2.toolkit.db.users[user_id].email == "modified_via_set_state@test.com"
+
+    def test_set_state_non_json_response(self, retail_environment):
+        """set_state handles non-JSON tool responses via fallback."""
+        user_id = next(iter(retail_environment.db.users))
+
+        from maseval.benchmark.tau2.environment import get_environment_constructor
+
+        constructor = get_environment_constructor({"domain": "retail"})
+        env2 = constructor()
+
+        # Get real response to construct a valid replay
+        result = env2.get_response(tool_name="get_user_details", requestor="assistant", tool_call_id="tc1", user_id=user_id)
+
+        # Create a fresh env and replay with the actual content
+        env3 = constructor()
+        env3.set_state(
+            None,
+            None,
+            [
+                {"role": "assistant", "tool_calls": [{"name": "get_user_details", "arguments": {"user_id": user_id}, "id": "tc1"}]},
+                {"role": "tool", "content": result["content"]},
+            ],
+        )
+        # If we get here, the replay worked (JSON parse succeeded on both sides)
+
+
+# =============================================================================
+# _sync_tools_internal / sync_tools Tests — Lines 266-318
+# =============================================================================
+
+
+@pytest.mark.benchmark
+@pytest.mark.live
+class TestSyncTools:
+    """Tests for _sync_tools_internal covering telecom sync behavior."""
+
+    def test_sync_noop_for_retail(self, retail_environment):
+        """Retail sync_tools is a no-op."""
+        retail_environment.sync_tools()  # should not raise
+
+    def test_sync_noop_for_airline(self, airline_environment):
+        """Airline sync_tools is a no-op."""
+        airline_environment.sync_tools()  # should not raise
+
+    def test_sync_telecom_line_status(self, telecom_environment):
+        """Telecom sync propagates line status to user surroundings."""
+        telecom_environment.sync_tools()
+        user_db = telecom_environment.db.user_db
+        if user_db is not None:
+            assert isinstance(user_db.surroundings.line_active, bool)
+
+    def test_sync_telecom_roaming(self, telecom_environment):
+        """Telecom sync propagates roaming to user surroundings."""
+        telecom_environment.sync_tools()
+        user_db = telecom_environment.db.user_db
+        if user_db is not None:
+            assert isinstance(user_db.surroundings.roaming_allowed, bool)
+
+    def test_sync_telecom_data_usage(self, telecom_environment):
+        """Telecom sync propagates data usage exceeded to user surroundings."""
+        telecom_environment.sync_tools()
+        user_db = telecom_environment.db.user_db
+        if user_db is not None:
+            assert isinstance(user_db.surroundings.mobile_data_usage_exceeded, bool)
+
+
+# =============================================================================
+# make_user_tool_call / get_user_db_hash Tests — Lines 362, 370, 607-610
+# =============================================================================
+
+
+@pytest.mark.benchmark
+@pytest.mark.live
+class TestUserToolRouting:
+    """Tests for user tool call routing and user DB hashing."""
+
+    def test_make_user_tool_call_telecom(self, telecom_environment):
+        """Telecom user tool call succeeds."""
+        result = telecom_environment.make_user_tool_call("check_status_bar")
+        assert result is not None
+
+    def test_make_user_tool_call_retail_raises(self, retail_environment):
+        """Retail has no user toolkit — raises ValueError."""
+        with pytest.raises(ValueError, match="No user toolkit"):
+            retail_environment.make_user_tool_call("anything")
+
+    def test_get_user_db_hash_telecom(self, telecom_environment):
+        """Telecom returns user DB hash string."""
+        h = telecom_environment.get_user_db_hash()
+        # May be None if user_db is not initialized for this task
+        if h is not None:
+            assert isinstance(h, str)
+            assert len(h) == 64
+
+    def test_get_user_db_hash_retail_none(self, retail_environment):
+        """Retail returns None for user DB hash."""
+        assert retail_environment.get_user_db_hash() is None
+
+    def test_gather_config_with_user_toolkit(self, telecom_environment):
+        """gather_config includes user_toolkit_stats for telecom."""
+        config = telecom_environment.gather_config()
+        assert "user_toolkit_stats" in config

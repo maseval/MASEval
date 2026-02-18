@@ -352,3 +352,177 @@ class TestCompareToolCalls:
         )
 
         assert result is False
+
+    def test_compare_args_filters_both_sides(self):
+        """compare_args filters both expected and actual for subset comparison."""
+        result = compare_tool_calls(
+            expected_name="update",
+            expected_args={"id": "1", "name": "Alice", "extra_expected": "x"},
+            actual_name="update",
+            actual_args={"id": "1", "name": "Alice", "extra_actual": "y"},
+            compare_args=["id", "name"],
+        )
+        assert result is True
+
+    def test_none_compare_args_uses_actual_keys(self):
+        """None compare_args uses actual_args.keys() for comparison."""
+        result = compare_tool_calls(
+            expected_name="tool",
+            expected_args={"a": 1, "b": 2},
+            actual_name="tool",
+            actual_args={"a": 1},
+        )
+        # compare_args defaults to actual_args.keys() = ["a"]
+        # expected_subset = {"a": 1}, actual_subset = {"a": 1} → True
+        assert result is True
+
+    def test_empty_args_both_sides(self):
+        """Empty args on both sides match."""
+        result = compare_tool_calls(
+            expected_name="noop",
+            expected_args={},
+            actual_name="noop",
+            actual_args={},
+        )
+        assert result is True
+
+
+# =============================================================================
+# dump_file TOML Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestDumpFileToml:
+    """Tests for dump_file TOML path."""
+
+    def test_dump_toml_roundtrip(self):
+        """Dumps and loads TOML file."""
+        pytest.importorskip("tomli_w")
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "test.toml"
+            data = {"key": "value", "number": 42}
+            dump_file(path, data)
+
+            loaded = load_file(path)
+            assert loaded == data
+
+    def test_load_toml(self):
+        """Loads TOML file correctly."""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "test.toml"
+            path.write_text('[section]\nkey = "value"\n')
+
+            result = load_file(path)
+            assert result["section"]["key"] == "value"
+
+
+# =============================================================================
+# update_pydantic_model_with_dict Edge Cases
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestUpdatePydanticModelEdgeCases:
+    """Edge case tests for update_pydantic_model_with_dict."""
+
+    def test_none_update_returns_same(self):
+        """None update_data returns original model."""
+
+        class Config(BaseModel):
+            x: int
+
+        config = Config(x=1)
+        result = update_pydantic_model_with_dict(config, {})
+        assert result.x == 1
+
+
+# =============================================================================
+# YAML Loading Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestLoadFileYaml:
+    """Tests for load_file YAML path."""
+
+    def test_load_yaml(self):
+        """Loads YAML file correctly."""
+        pytest.importorskip("yaml")
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "test.yaml"
+            path.write_text("key: value\nnumber: 42\n")
+
+            result = load_file(path)
+            assert result["key"] == "value"
+            assert result["number"] == 42
+
+    def test_load_yml_extension(self):
+        """Loads .yml file extension correctly."""
+        pytest.importorskip("yaml")
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "test.yml"
+            path.write_text("items:\n  - a\n  - b\n")
+
+            result = load_file(path)
+            assert result["items"] == ["a", "b"]
+
+
+# =============================================================================
+# DB.load Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestDBLoad:
+    """Tests for DB.load class method."""
+
+    def test_load_json(self):
+        """DB.load loads from JSON file."""
+        from maseval.benchmark.tau2.domains.base import DB
+
+        class SimpleDB(DB):
+            x: int
+            y: str
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "db.json"
+            path.write_text('{"x": 42, "y": "hello"}')
+
+            db = SimpleDB.load(path)
+            assert db.x == 42
+            assert db.y == "hello"
+
+    def test_load_nonexistent_raises(self):
+        """DB.load raises FileNotFoundError."""
+        from maseval.benchmark.tau2.domains.base import DB
+
+        class SimpleDB(DB):
+            x: int
+
+        with pytest.raises(FileNotFoundError):
+            SimpleDB.load("/nonexistent/path.json")
+
+
+# =============================================================================
+# dump_file JSON kwargs Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestDumpFileKwargs:
+    """Tests for dump_file kwargs passthrough."""
+
+    def test_dump_json_with_sort_keys(self):
+        """dump_file passes kwargs to json.dump."""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "test.json"
+            data = {"z": 1, "a": 2}
+            dump_file(path, data, sort_keys=True)
+
+            content = path.read_text()
+            # sort_keys=True means "a" appears before "z"
+            assert content.index('"a"') < content.index('"z"')

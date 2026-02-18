@@ -1,5 +1,7 @@
 """Unit tests for Tau2Evaluator."""
 
+import json
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -580,3 +582,385 @@ class TestPassHatK:
         assert pass_at["pass@4"] == 1.0
         # pass^4: C(1,4)/C(4,4) = 0 (can't pick 4 from 1 success)
         assert pass_hat["pass^4"] == 0.0
+
+
+# =============================================================================
+# _build_full_trajectory Tests — Lines 146-189
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestBuildFullTrajectory:
+    """Tests for Tau2Evaluator._build_full_trajectory() message merging."""
+
+    def test_empty_agents_returns_empty(self):
+        """No agent messages → empty trajectory."""
+        traces = {"agents": {}, "users": {"u1": {"messages": [{"role": "user", "content": "hi"}]}}}
+        assert Tau2Evaluator._build_full_trajectory(traces) == []
+
+    def test_agent_only_no_user(self):
+        """Agent messages only, no user traces → returns agent messages."""
+        agent_msgs = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+        traces = {"agents": {"a1": {"messages": agent_msgs}}, "users": {}}
+        result = Tau2Evaluator._build_full_trajectory(traces)
+        assert result == agent_msgs
+
+    def test_greeting_first_in_trajectory(self):
+        """Greeting from user trace appears first in trajectory."""
+        agent_msgs = [{"role": "user", "content": "I need help"}, {"role": "assistant", "content": "Sure"}]
+        user_msgs = [
+            {"role": "assistant", "content": "Hi! How can I help you today?"},
+            {"role": "user", "content": "I need help"},
+        ]
+        traces = {"agents": {"a1": {"messages": agent_msgs}}, "users": {"u1": {"messages": user_msgs}}}
+        result = Tau2Evaluator._build_full_trajectory(traces)
+        assert result[0]["content"] == "Hi! How can I help you today?"
+
+    def test_user_tool_calls_inserted(self):
+        """User tool call sequences inserted after matching agent text."""
+        agent_msgs = [
+            {"role": "user", "content": "I need help"},
+            {"role": "assistant", "content": "Here's the result"},
+        ]
+        user_msgs = [
+            {"role": "assistant", "content": "Hi!"},
+            {"role": "user", "content": "I need help"},
+            {"role": "assistant", "content": "Here's the result"},
+            {"role": "user", "tool_calls": [{"name": "pay_bill", "id": "tc1"}], "content": ""},
+            {"role": "tool", "content": "paid"},
+        ]
+        traces = {"agents": {"a1": {"messages": agent_msgs}}, "users": {"u1": {"messages": user_msgs}}}
+        result = Tau2Evaluator._build_full_trajectory(traces)
+
+        # User tool calls should appear somewhere in the trajectory
+        has_user_tc = any(m.get("tool_calls") and m.get("role") == "user" for m in result)
+        has_tool_response = any(m.get("role") == "tool" for m in result)
+        assert has_user_tc
+        assert has_tool_response
+
+    def test_agent_tool_calls_preserved(self):
+        """Agent tool calls from agent msgs remain in trajectory."""
+        agent_msgs = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "tool_calls": [{"name": "lookup"}], "content": ""},
+            {"role": "tool", "content": "result"},
+            {"role": "assistant", "content": "Found it"},
+        ]
+        traces = {"agents": {"a1": {"messages": agent_msgs}}, "users": {}}
+        result = Tau2Evaluator._build_full_trajectory(traces)
+        assert any(m.get("tool_calls") for m in result)
+
+    def test_empty_user_messages(self):
+        """Empty user message list → same as no user traces."""
+        agent_msgs = [{"role": "user", "content": "hi"}]
+        traces = {"agents": {"a1": {"messages": agent_msgs}}, "users": {"u1": {"messages": []}}}
+        result = Tau2Evaluator._build_full_trajectory(traces)
+        assert result == agent_msgs
+
+
+# =============================================================================
+# _evaluate_nl_assertions Tests — Lines 485-558
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestEvaluateNLAssertions:
+    """Tests for _evaluate_nl_assertions() NL evaluation."""
+
+    def test_no_assertions_returns_1(self, evaluator):
+        """No NL assertions → reward=1.0 (skipped)."""
+        evaluator.nl_assertions = None
+        result = evaluator._evaluate_nl_assertions([])
+        assert result["reward"] == 1.0
+
+    def test_no_model_skips(self):
+        """NL assertions without model → reward=1.0 with skip note."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["NL_ASSERTION"],
+            "nl_assertions": ["The agent should greet the user"],
+            "actions": None,
+            "communicate_info": None,
+            "env_assertions": None,
+        }
+        env = MagicMock()
+        ev = Tau2Evaluator(task, env, nl_model=None)
+        result = ev._evaluate_nl_assertions([{"role": "assistant", "content": "Hello"}])
+        assert result["reward"] == 1.0
+        assert "skipped" in result.get("note", "")
+
+    def test_all_met(self):
+        """All NL assertions met → reward=1.0."""
+        mock_model = MagicMock()
+        mock_model.chat.return_value = MagicMock(
+            content=json.dumps({"results": [{"expectedOutcome": "greet", "metExpectation": True, "reasoning": "ok"}]})
+        )
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["NL_ASSERTION"],
+            "nl_assertions": ["greet"],
+            "actions": None,
+            "communicate_info": None,
+            "env_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock(), nl_model=mock_model)
+        result = ev._evaluate_nl_assertions([{"role": "assistant", "content": "Hello!"}])
+        assert result["reward"] == 1.0
+        assert len(result["nl_checks"]) == 1
+        assert result["nl_checks"][0]["met"] is True
+
+    def test_some_not_met(self):
+        """Some NL assertions not met → reward=0.0."""
+        mock_model = MagicMock()
+        mock_model.chat.return_value = MagicMock(
+            content=json.dumps(
+                {
+                    "results": [
+                        {"expectedOutcome": "greet", "metExpectation": True, "reasoning": "ok"},
+                        {"expectedOutcome": "apologize", "metExpectation": False, "reasoning": "no"},
+                    ]
+                }
+            )
+        )
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["NL_ASSERTION"],
+            "nl_assertions": ["greet", "apologize"],
+            "actions": None,
+            "communicate_info": None,
+            "env_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock(), nl_model=mock_model)
+        result = ev._evaluate_nl_assertions([{"role": "assistant", "content": "Hi!"}])
+        assert result["reward"] == 0.0
+
+    def test_model_error_returns_0(self):
+        """Model exception → reward=0.0 (graceful degradation)."""
+        mock_model = MagicMock()
+        mock_model.chat.side_effect = Exception("API error")
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["NL_ASSERTION"],
+            "nl_assertions": ["greet"],
+            "actions": None,
+            "communicate_info": None,
+            "env_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock(), nl_model=mock_model)
+        result = ev._evaluate_nl_assertions([{"role": "assistant", "content": "Hi"}])
+        assert result["reward"] == 0.0
+
+
+# =============================================================================
+# __call__ Branch Tests — Lines 246-247
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestEvaluatorCallBranches:
+    """Tests for Tau2Evaluator.__call__() reward_basis branches."""
+
+    def test_nl_assertion_in_reward_basis(self):
+        """NL_ASSERTION in reward_basis contributes to final reward."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["NL_ASSERTION"],
+            "nl_assertions": ["something"],
+            "actions": None,
+            "communicate_info": None,
+            "env_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        ev._evaluate_environment = MagicMock(return_value={"reward": 1.0, "breakdown": {}})  # type: ignore[assignment]
+        ev._evaluate_actions = MagicMock(return_value={"reward": 1.0, "breakdown": {}})  # type: ignore[assignment]
+        ev._evaluate_communication = MagicMock(return_value={"reward": 1.0, "breakdown": {}})  # type: ignore[assignment]
+        ev._evaluate_nl_assertions = MagicMock(return_value={"reward": 0.5, "breakdown": {"NL_ASSERTION": 0.5}})  # type: ignore[assignment]
+
+        result = ev({"termination_reason": "agent_stop", "full_trajectory": []})
+        assert result["reward"] == 0.5
+        assert "NL_ASSERTION" in result["reward_breakdown"]
+
+    def test_env_assertion_in_reward_basis(self):
+        """ENV_ASSERTION in reward_basis contributes to final reward."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["ENV_ASSERTION"],
+            "actions": None,
+            "communicate_info": None,
+            "env_assertions": [{"func_name": "f", "assert_value": True}],
+            "nl_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        ev._evaluate_environment = MagicMock(return_value={"reward": 0.0, "breakdown": {"ENV_ASSERTION": 0.0}})  # type: ignore[assignment]
+        ev._evaluate_actions = MagicMock(return_value={"reward": 1.0, "breakdown": {}})  # type: ignore[assignment]
+        ev._evaluate_communication = MagicMock(return_value={"reward": 1.0, "breakdown": {}})  # type: ignore[assignment]
+        ev._evaluate_nl_assertions = MagicMock(return_value={"reward": 1.0})  # type: ignore[assignment]
+
+        result = ev({"termination_reason": "agent_stop", "full_trajectory": []})
+        assert result["reward"] == 0.0
+        assert "ENV_ASSERTION" in result["reward_breakdown"]
+
+    def test_no_environment_criteria(self):
+        """No actions/assertions → environment returns reward=1.0."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["COMMUNICATE"],
+            "actions": None,
+            "communicate_info": ["hello"],
+            "env_assertions": None,
+            "nl_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        result = ev._evaluate_environment([])
+        assert result["reward"] == 1.0
+
+    def test_no_action_criteria(self):
+        """No actions → actions returns reward=1.0."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["COMMUNICATE"],
+            "actions": None,
+            "communicate_info": ["hello"],
+            "env_assertions": None,
+            "nl_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        result = ev._evaluate_actions([])
+        assert result["reward"] == 1.0
+
+    def test_no_communicate_criteria(self):
+        """No communicate_info → communication returns reward=1.0."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["DB"],
+            "actions": None,
+            "communicate_info": None,
+            "env_assertions": None,
+            "nl_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        result = ev._evaluate_communication([])
+        assert result["reward"] == 1.0
+
+
+# =============================================================================
+# _evaluate_actions Branch Tests — Lines 380-389
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestEvaluateActionsBranches:
+    """Tests for _evaluate_actions() edge cases."""
+
+    def test_function_format_in_trajectory(self):
+        """Tool calls in OpenAI 'function' format are parsed correctly."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["ACTION"],
+            "actions": [{"name": "check_order", "arguments": {"order_id": "123"}}],
+            "communicate_info": None,
+            "env_assertions": None,
+            "nl_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        trajectory = [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"function": {"name": "check_order", "arguments": '{"order_id": "123"}'}, "id": "tc1"}],
+            },
+            {"role": "tool", "content": "result"},
+        ]
+        result = ev._evaluate_actions(trajectory)
+        assert result["all_matched"] is True
+        assert result["reward"] == 1.0
+
+    def test_string_arguments_parsed(self):
+        """String arguments in tool calls are JSON-parsed."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["ACTION"],
+            "actions": [{"name": "get_user", "arguments": {"user_id": "u1"}}],
+            "communicate_info": None,
+            "env_assertions": None,
+            "nl_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        trajectory = [
+            {"role": "assistant", "content": "", "tool_calls": [{"name": "get_user", "arguments": '{"user_id": "u1"}', "id": "tc1"}]},
+            {"role": "tool", "content": "result"},
+        ]
+        result = ev._evaluate_actions(trajectory)
+        assert result["all_matched"] is True
+
+    def test_user_tool_calls_included(self):
+        """User tool calls in trajectory also checked."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["ACTION"],
+            "actions": [{"name": "pay_bill", "arguments": {"bill_id": "b1"}}],
+            "communicate_info": None,
+            "env_assertions": None,
+            "nl_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        trajectory = [
+            {"role": "user", "content": "", "tool_calls": [{"name": "pay_bill", "arguments": {"bill_id": "b1"}}]},
+            {"role": "tool", "content": "paid"},
+        ]
+        result = ev._evaluate_actions(trajectory)
+        assert result["all_matched"] is True
+
+
+# =============================================================================
+# _evaluate_communication Branch Tests — Lines 447-452
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestEvaluateCommunicationBranches:
+    """Tests for _evaluate_communication() edge cases."""
+
+    def test_list_content_handled(self):
+        """List content (multi-part messages) is joined for matching."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["COMMUNICATE"],
+            "communicate_info": ["refund processed"],
+            "actions": None,
+            "env_assertions": None,
+            "nl_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        trajectory = [{"role": "assistant", "content": [{"text": "Your refund processed OK"}]}]
+        result = ev._evaluate_communication(trajectory)
+        assert result["all_found"] is True
+
+    def test_empty_content_skipped(self):
+        """Empty assistant content is skipped."""
+        task = MagicMock(spec=Task)
+        task.environment_data = {"domain": "retail"}
+        task.evaluation_data = {
+            "reward_basis": ["COMMUNICATE"],
+            "communicate_info": ["hello"],
+            "actions": None,
+            "env_assertions": None,
+            "nl_assertions": None,
+        }
+        ev = Tau2Evaluator(task, MagicMock())
+        trajectory = [{"role": "assistant", "content": ""}, {"role": "assistant", "content": "hello world"}]
+        result = ev._evaluate_communication(trajectory)
+        assert result["all_found"] is True

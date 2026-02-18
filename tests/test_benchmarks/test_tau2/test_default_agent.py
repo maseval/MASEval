@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from typing import Any, Dict
 
+from pydantic import BaseModel
 from maseval import Task, AgentAdapter
 from maseval.core.model import ChatResponse
 from maseval.benchmark.tau2 import (
@@ -991,3 +992,314 @@ class TestDummyBenchmarkModelAdapter:
         result = adapter.chat(messages=[], tools=[])
         assert isinstance(result, ChatResponse)
         assert result.content == "I can help with that."
+
+
+# =============================================================================
+# Module-level _build_tool_definitions Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestBuildToolDefinitions:
+    """Tests for module-level _build_tool_definitions()."""
+
+    def test_basic_tools(self):
+        """Builds definitions from simple tool dict."""
+        from maseval.benchmark.tau2.tau2 import _build_tool_definitions
+
+        def greet(name: str) -> str:
+            """Greet a user by name."""
+            return f"Hello, {name}!"
+
+        defs = _build_tool_definitions({"greet": greet})
+        assert len(defs) == 1
+        assert defs[0]["type"] == "function"
+        assert defs[0]["function"]["name"] == "greet"
+        assert "parameters" in defs[0]["function"]
+        assert defs[0]["function"]["description"] == "Greet a user by name."
+
+    def test_no_docstring_uses_name(self):
+        """Function without docstring uses name as description."""
+        from maseval.benchmark.tau2.tau2 import _build_tool_definitions
+
+        def my_func(x: int) -> int:
+            return x
+
+        defs = _build_tool_definitions({"my_func": my_func})
+        assert defs[0]["function"]["description"] == "my_func"
+
+    def test_required_vs_optional(self):
+        """Required and optional params detected correctly."""
+        from maseval.benchmark.tau2.tau2 import _build_tool_definitions
+
+        def tool(required: str, optional: str = "default") -> str:
+            """A tool."""
+            return required
+
+        defs = _build_tool_definitions({"tool": tool})
+        required = defs[0]["function"]["parameters"].get("required", [])
+        assert "required" in required
+        assert "optional" not in required
+
+    @pytest.mark.live
+    def test_with_real_retail_tools(self, ensure_tau2_data):
+        """Builds definitions from real retail environment tools."""
+        from maseval.benchmark.tau2.tau2 import _build_tool_definitions
+
+        env = Tau2Environment({"domain": "retail"})
+        tools = env.create_tools()
+        defs = _build_tool_definitions(tools)
+        assert len(defs) == 15
+        for d in defs:
+            assert d["type"] == "function"
+            assert "name" in d["function"]
+            assert "parameters" in d["function"]
+
+    @pytest.mark.live
+    def test_with_real_telecom_user_tools(self, ensure_tau2_data):
+        """Builds definitions from real telecom user tools."""
+        from maseval.benchmark.tau2.tau2 import _build_tool_definitions
+
+        env = Tau2Environment({"domain": "telecom"})
+        user_tools = env.create_user_tools()
+        if user_tools:
+            defs = _build_tool_definitions(user_tools)
+            assert len(defs) > 0
+            for d in defs:
+                assert d["type"] == "function"
+
+    def test_empty_dict(self):
+        """Empty tools dict returns empty list."""
+        from maseval.benchmark.tau2.tau2 import _build_tool_definitions
+
+        defs = _build_tool_definitions({})
+        assert defs == []
+
+    def test_long_description(self):
+        """Docstring with short + long description concatenated."""
+        from maseval.benchmark.tau2.tau2 import _build_tool_definitions
+
+        def detailed_tool(x: int) -> int:
+            """Short description.
+
+            This is the long description with more details.
+            """
+            return x
+
+        defs = _build_tool_definitions({"detailed_tool": detailed_tool})
+        desc = defs[0]["function"]["description"]
+        assert "Short description." in desc
+        assert "long description" in desc
+
+
+# =============================================================================
+# Module-level _to_json_str Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestModuleLevelToJsonStr:
+    """Tests for module-level _to_json_str() in tau2.py."""
+
+    def test_string_passthrough(self):
+        """Strings returned as-is (no JSON wrapping)."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        assert _to_json_str("hello") == "hello"
+
+    def test_none(self):
+        """None serialized to JSON null."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        assert json.loads(_to_json_str(None)) is None
+
+    def test_int(self):
+        """Integers converted via str() then JSON."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        assert json.loads(_to_json_str(42)) == "42"
+
+    def test_float(self):
+        """Floats converted via str() then JSON."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        assert json.loads(_to_json_str(3.14)) == "3.14"
+
+    def test_bool(self):
+        """Booleans converted via str() then JSON."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        assert json.loads(_to_json_str(True)) == "True"
+
+    def test_dict(self):
+        """Dicts processed recursively."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        result = json.loads(_to_json_str({"key": 42}))
+        assert result["key"] == "42"
+
+    def test_list(self):
+        """Lists processed recursively."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        result = json.loads(_to_json_str([1, "a"]))
+        assert result == ["1", "a"]
+
+    def test_tuple(self):
+        """Tuples converted to JSON arrays."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        result = json.loads(_to_json_str((1, "a")))
+        # Tuples become arrays after json.dumps
+        assert result == ["1", "a"]
+
+    def test_datetime(self):
+        """Datetimes serialized via isoformat."""
+        from datetime import datetime
+
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        dt = datetime(2024, 1, 15, 10, 30)
+        result = json.loads(_to_json_str(dt))
+        assert "2024-01-15" in result
+
+    def test_date(self):
+        """Dates serialized via isoformat."""
+        from datetime import date
+
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        d = date(2024, 1, 15)
+        result = json.loads(_to_json_str(d))
+        assert result == "2024-01-15"
+
+    def test_pydantic_model(self):
+        """Pydantic models serialized via model_dump()."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        class TestModel(BaseModel):
+            name: str
+            value: int
+
+        model = TestModel(name="test", value=42)
+        result = json.loads(_to_json_str(model))
+        assert result["name"] == "test"
+        assert result["value"] == 42
+
+    def test_unsupported_type_raises(self):
+        """Unsupported types raise ValueError."""
+        from maseval.benchmark.tau2.tau2 import _to_json_str
+
+        with pytest.raises(ValueError, match="Unsupported type"):
+            _to_json_str(set([1, 2, 3]))
+
+
+# =============================================================================
+# DefaultAgentTau2Benchmark.execution_loop Step Counting Tests
+# =============================================================================
+
+
+@pytest.mark.benchmark
+class TestExecutionLoopStepCounting:
+    """Tests for DefaultAgentTau2Benchmark.execution_loop step counting."""
+
+    def test_steps_count_agent_messages(self):
+        """Steps accumulate from agent._last_turn_steps."""
+        benchmark = DummyDefaultAgentBenchmark(max_invocations=200)
+
+        mock_agent_inner = MagicMock()
+        mock_agent_inner.run.return_value = "Response"
+        mock_agent_inner._last_turn_steps = 3  # Simulate 3 messages added
+
+        adapter = MagicMock(spec=DefaultTau2AgentAdapter)
+        adapter._agent = mock_agent_inner
+
+        mock_user = MagicMock(spec=Tau2User)
+        mock_user.respond.side_effect = ["Initial query", ""]
+        mock_user._last_respond_steps = 2
+        mock_user.is_done.return_value = True
+
+        task = MagicMock(spec=Task)
+        task.query = "Hello"
+
+        result = benchmark.execution_loop([adapter], task, MagicMock(), mock_user)
+
+        assert result == "Response"
+        # Agent.run should have been called
+        assert mock_agent_inner.run.call_count >= 1
+
+    def test_max_invocations_terminates(self):
+        """Loop terminates when steps >= max_invocations."""
+        benchmark = DummyDefaultAgentBenchmark(max_invocations=5)
+
+        mock_agent_inner = MagicMock()
+        mock_agent_inner.run.return_value = "Response"
+        mock_agent_inner._last_turn_steps = 3  # 3 steps per turn
+
+        adapter = MagicMock(spec=DefaultTau2AgentAdapter)
+        adapter._agent = mock_agent_inner
+
+        mock_user = MagicMock(spec=Tau2User)
+        call_count = [0]
+
+        def user_respond(msg):
+            call_count[0] += 1
+            return f"Query {call_count[0]}"
+
+        mock_user.respond.side_effect = user_respond
+        mock_user._last_respond_steps = 2  # 2 steps per user response
+        mock_user.is_done.return_value = False
+
+        task = MagicMock(spec=Task)
+        task.query = "Hello"
+
+        benchmark.execution_loop([adapter], task, MagicMock(), mock_user)
+
+        # Should terminate due to step limit, not user.is_done
+        # With 3+2=5 steps per full turn and max_invocations=5, should do 1 turn
+        assert mock_agent_inner.run.call_count <= 2
+
+    def test_no_user_single_turn(self):
+        """Without user, loop runs agent once and returns."""
+        benchmark = DummyDefaultAgentBenchmark(max_invocations=200)
+
+        mock_agent_inner = MagicMock()
+        mock_agent_inner.run.return_value = "Done"
+        mock_agent_inner._last_turn_steps = 2
+
+        adapter = MagicMock(spec=DefaultTau2AgentAdapter)
+        adapter._agent = mock_agent_inner
+
+        task = MagicMock(spec=Task)
+        task.query = "Hello"
+
+        result = benchmark.execution_loop([adapter], task, MagicMock(), None)
+
+        assert result == "Done"
+        mock_agent_inner.run.assert_called_once_with("Hello")
+
+    def test_user_done_terminates(self):
+        """Loop terminates when user.is_done() returns True."""
+        benchmark = DummyDefaultAgentBenchmark(max_invocations=200)
+
+        mock_agent_inner = MagicMock()
+        mock_agent_inner.run.return_value = "Response"
+        mock_agent_inner._last_turn_steps = 1
+
+        adapter = MagicMock(spec=DefaultTau2AgentAdapter)
+        adapter._agent = mock_agent_inner
+
+        mock_user = MagicMock(spec=Tau2User)
+        # respond() calls: (1) greeting → initial query, (2) agent response → stop
+        mock_user.respond.side_effect = ["Initial query", "###STOP###"]
+        mock_user._last_respond_steps = 1
+        # is_done() checked after respond(agent_response): True → loop ends
+        mock_user.is_done.return_value = True
+
+        task = MagicMock(spec=Task)
+        task.query = "Hello"
+
+        benchmark.execution_loop([adapter], task, MagicMock(), mock_user)
+
+        # Agent runs once, user responds with stop, is_done → True → loop ends
+        assert mock_agent_inner.run.call_count == 1
