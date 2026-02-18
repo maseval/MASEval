@@ -547,12 +547,18 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         ensure_marble_on_path()
         try:
             from marble.engine.engine_planner import EnginePlanner  # type: ignore[import-untyped]
+            from marble.memory.base_memory import BaseMemory  # type: ignore[import-untyped]
             from marble.memory.shared_memory import SharedMemory  # type: ignore[import-untyped]
         except ImportError as e:
             raise ImportError(MARBLE_IMPORT_ERROR.format(error=e)) from e
 
-        # Create shared memory (marble/engine/engine.py:179-198)
-        self._marble_memory: Any = SharedMemory()
+        # Initialize memory matching marble/engine/engine.py:179-198
+        memory_config = task.environment_data.get("memory", {})
+        memory_type = memory_config.get("type", "SharedMemory")
+        if memory_type == "SharedMemory":
+            self._marble_memory: Any = SharedMemory()
+        else:
+            self._marble_memory: Any = BaseMemory()
 
         # Extract task metadata for the planner
         engine_planner_config = task.environment_data.get("engine_planner", {})
@@ -579,6 +585,12 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         self._coordinate_mode = task.environment_data.get("coordinate_mode", "graph")
         self._planning_method = engine_planner_config.get("planning_method", "naive")
         self._domain = task.environment_data.get("scenario", "")
+
+        # Per-task iteration limit matching marble/engine/engine.py:97
+        # MARBLE reads config.environment["max_iterations"] with default 10.
+        # task.environment_data["environment"] is always populated by data_loader.
+        env_config = task.environment_data["environment"]
+        self._marble_max_iterations: int = env_config.get("max_iterations", 10)
 
     def execution_loop(
         self,
@@ -641,12 +653,13 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
         for adapter in agents:
             try:
+                comm_count_before = len(adapter._communication_log)  # type: ignore[union-attr]
                 result = adapter.run(task_content)
                 agents_results.append({adapter.agent_id: result})  # type: ignore[union-attr]
                 latest_results.append({"agent_id": adapter.agent_id, "result": result})  # type: ignore[union-attr]
-                if hasattr(adapter, "_communication_log") and adapter._communication_log:  # type: ignore[union-attr]
-                    last_comm = adapter._communication_log[-1]  # type: ignore[union-attr]
-                    comm_text = last_comm.get("communication", "")
+                # Only capture NEW communication (avoid stale re-capture)
+                if len(adapter._communication_log) > comm_count_before:  # type: ignore[union-attr]
+                    comm_text = adapter._communication_log[-1].get("communication", "")  # type: ignore[union-attr]
                     if comm_text:
                         communications.append(comm_text)
             except Exception as e:
@@ -672,7 +685,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         # Use end_on_iter_0 flag matching engine.py:319-322
         end_on_iter_0 = not continue_simulation
 
-        while current_iteration < self.max_invocations and not end_on_iter_0:
+        while current_iteration < self._marble_max_iterations and not end_on_iter_0:
             agents_results = []
             iteration_results: List[Dict[str, Any]] = []
             communications = []
@@ -682,12 +695,13 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                     # Each agent plans its own task (engine.py:344)
                     planned_task = adapter.marble_agent.plan_task()  # type: ignore[union-attr]
                     # Agent acts on planned task (engine.py:356)
+                    comm_count_before = len(adapter._communication_log)  # type: ignore[union-attr]
                     result = adapter.run(planned_task)
                     agents_results.append({adapter.agent_id: result})  # type: ignore[union-attr]
                     iteration_results.append({"agent_id": adapter.agent_id, "result": result})  # type: ignore[union-attr]
-                    if hasattr(adapter, "_communication_log") and adapter._communication_log:  # type: ignore[union-attr]
-                        last_comm = adapter._communication_log[-1]  # type: ignore[union-attr]
-                        comm_text = last_comm.get("communication", "")
+                    # Only capture NEW communication (avoid stale re-capture)
+                    if len(adapter._communication_log) > comm_count_before:  # type: ignore[union-attr]
+                        comm_text = adapter._communication_log[-1].get("communication", "")  # type: ignore[union-attr]
                         if comm_text:
                             communications.append(comm_text)
                 except Exception as e:
@@ -731,7 +745,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         iteration_results: List[Dict[str, Any]] = []
         communications: List[str] = []
 
-        while current_iteration < self.max_invocations:
+        while current_iteration < self._marble_max_iterations:
             # Planner assigns tasks (engine.py:519-523)
             assignment = planner.assign_tasks(planning_method=self._planning_method)
             tasks = assignment.get("tasks", {})
@@ -746,12 +760,13 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
                     logger.error(f"Agent '{agent_id}' not found in agents dict.")
                     continue
                 try:
+                    comm_count_before = len(adapter._communication_log)
                     result = adapter.run(agent_task)
                     agents_results.append({agent_id: result})
                     iteration_results.append({"agent_id": agent_id, "result": result})
-                    if adapter._communication_log:
-                        last_comm = adapter._communication_log[-1]
-                        comm_text = last_comm.get("communication", "")
+                    # Only capture NEW communication (avoid stale re-capture)
+                    if len(adapter._communication_log) > comm_count_before:
+                        comm_text = adapter._communication_log[-1].get("communication", "")
                         if comm_text:
                             communications.append(comm_text)
                 except Exception as e:
@@ -790,17 +805,14 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         graph = self._marble_graph
 
         # Select initial agent (engine.py:1015-1032: starts with "agent1")
+        # MARBLE aborts chain if starting agent not found (engine.py:668-670)
         starting_agent_id = "agent1"
         current_adapter = self._agents_dict.get(starting_agent_id)
         if current_adapter is None:
-            # Fallback to first agent
-            if self._agents_dict:
-                current_adapter = next(iter(self._agents_dict.values()))
-            else:
-                logger.error("No agents available for chain coordination.")
-                return {"agent_results": [], "communications": [], "coordination_mode": self._coordinate_mode}
+            logger.error(f"Starting agent '{starting_agent_id}' not found for chain coordination.")
+            return {"agent_results": [], "communications": [], "coordination_mode": self._coordinate_mode}
 
-        max_chain_length = self.max_invocations * len(self._agents_dict)
+        max_chain_length = self._marble_max_iterations * len(self._agents_dict)
         chain_length = 0
         current_task = task_content
 
@@ -808,48 +820,50 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         agents_results_accumulated: List[Dict[str, Any]] = []
         communications: List[str] = []
 
+        # No try/except around loop body — matching MARBLE (engine.py:680-764).
+        # Errors propagate to MASEval's task error handling.
         while current_adapter and chain_length < max_chain_length:
+            # Agent acts (engine.py:691)
+            comm_count_before = len(current_adapter._communication_log)
+            result = current_adapter.run(current_task)
+            agents_results_accumulated.append({current_adapter.agent_id: result})
+            all_results.append({"agent_id": current_adapter.agent_id, "result": result})
+
+            # Only capture NEW communication (engine.py:720)
+            if len(current_adapter._communication_log) > comm_count_before:
+                comm_text = current_adapter._communication_log[-1].get("communication", "")
+                if comm_text:
+                    communications.append(comm_text)
+
+            # Current agent chooses next agent (engine.py:702-717)
+            agent_profiles = graph.get_agent_profiles_linked(current_adapter.agent_id)
+            next_agent_id, plan = current_adapter.marble_agent.plan_next_agent(result, agent_profiles)
+
+            # engine.py:709-717: fall back to current agent if next not found
+            prev_adapter = current_adapter
             try:
-                # Agent acts (engine.py:691)
-                result = current_adapter.run(current_task)
-                agents_results_accumulated.append({current_adapter.agent_id: result})
-                all_results.append({"agent_id": current_adapter.agent_id, "result": result})
+                next_adapter = self._agents_dict.get(next_agent_id) if next_agent_id else None
+            except Exception:
+                next_adapter = None
+            current_adapter = next_adapter if next_adapter is not None else prev_adapter
+            # engine.py:717: always update task to the plan
+            current_task = plan
 
-                if current_adapter._communication_log:
-                    last_comm = current_adapter._communication_log[-1]
-                    comm_text = last_comm.get("communication", "")
-                    if comm_text:
-                        communications.append(comm_text)
+            chain_length += 1
+            planner.update_progress(result)
 
-                # Current agent chooses next agent (engine.py:702-717)
-                agent_profiles = graph.get_agent_profiles_linked(current_adapter.agent_id)
-                next_agent_id, plan = current_adapter.marble_agent.plan_next_agent(result, agent_profiles)
+            # Summarize (engine.py:734-738)
+            summary = self._summarize_results_marble(agents_results_accumulated)
+            planner.summarize_output(summary, task_content, output_format)
 
-                # engine.py:709-717: fall back to current agent if next not found
-                prev_adapter = current_adapter
-                try:
-                    next_adapter = self._agents_dict.get(next_agent_id) if next_agent_id else None
-                except Exception:
-                    next_adapter = None
-                current_adapter = next_adapter if next_adapter is not None else prev_adapter
-                # engine.py:717: always update task to the plan
-                current_task = plan
-
-                chain_length += 1
-                planner.update_progress(result)
-
-                # Summarize (engine.py:734-738)
-                summary = self._summarize_results_marble(agents_results_accumulated)
-                planner.summarize_output(summary, task_content, output_format)
-
-                # Decide whether to continue (engine.py:755-764)
-                continue_simulation = planner.decide_next_step([{"root_agent": result}])
-                if not continue_simulation:
-                    break
-
-            except Exception as e:
-                logger.error(f"Error in chain coordination at agent '{getattr(current_adapter, 'agent_id', '?')}': {e}")
+            # Decide whether to continue (engine.py:755-764)
+            continue_simulation = planner.decide_next_step([{"root_agent": result}])
+            if not continue_simulation:
                 break
+
+        # Post-loop update_progress (engine.py:766-768)
+        summary = self._summarize_results_marble(agents_results_accumulated)
+        planner.update_progress(summary)
 
         return {
             "agent_results": all_results,
@@ -877,7 +891,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         all_results: List[Dict[str, Any]] = []
         communications: List[str] = []
 
-        while current_iteration < self.max_invocations:
+        while current_iteration < self._marble_max_iterations:
             current_iteration += 1
 
             # Recursive execution from root (engine.py:843-845)
@@ -954,10 +968,10 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
             # engine.py:995-998: agent acts and communication is captured
             if adapter is not None:
+                comm_count_before = len(adapter._communication_log)
                 own_result = adapter.run(task_for_parent)
-                # adapter._run_agent already called marble_agent.act() and logged
-                # communication in adapter._communication_log — extract it
-                if adapter._communication_log:
+                # Only capture NEW communication (avoid stale re-capture)
+                if len(adapter._communication_log) > comm_count_before:
                     last_comm = adapter._communication_log[-1].get("communication", "")
                     if last_comm:
                         communications_list.append(last_comm)
@@ -973,10 +987,11 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         else:
             # Leaf agent acts directly (engine.py:1007-1013)
             if adapter is not None:
+                comm_count_before = len(adapter._communication_log)
                 result = adapter.run(task)
-                # Extract communication captured by adapter
+                # Only capture NEW communication (avoid stale re-capture)
                 communication = None
-                if adapter._communication_log:
+                if len(adapter._communication_log) > comm_count_before:
                     communication = adapter._communication_log[-1].get("communication", "")
             else:
                 result, communication = marble_agent.act(task)

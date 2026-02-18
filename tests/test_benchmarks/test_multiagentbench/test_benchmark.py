@@ -624,7 +624,7 @@ def _make_mock_adapter(agent_id: str, run_return: str = "result") -> MagicMock:
 def _make_mock_benchmark(
     coordinate_mode: str = "graph",
     domain: str = "research",
-    max_invocations: int = 10,
+    max_iterations: int = 10,
     planner_decide_sequence: Any = None,
     agents_dict: Any = None,
 ) -> MagicMock:
@@ -644,7 +644,7 @@ def _make_mock_benchmark(
     benchmark._output_format = "output format"
     benchmark._coordinate_mode = coordinate_mode
     benchmark._domain = domain
-    benchmark.max_invocations = max_invocations
+    benchmark._marble_max_iterations = max_iterations
     benchmark._summarize_results_marble = MarbleMultiAgentBenchBenchmark._summarize_results_marble
     if agents_dict is not None:
         benchmark._agents_dict = agents_dict
@@ -742,13 +742,13 @@ class TestGraphCoordinate:
         # update_progress should receive the planner's return object, not raw string
         benchmark._marble_planner.update_progress.assert_called_once_with(planner_return)
 
-    def test_respects_max_invocations(self):
-        """Loop should not exceed max_invocations even if planner always continues."""
+    def test_respects_max_iterations(self):
+        """Loop should not exceed per-task max_iterations even if planner always continues."""
         from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
 
         adapter = _make_mock_adapter("agent1")
         # Planner always says continue
-        benchmark = _make_mock_benchmark(max_invocations=3, planner_decide_sequence=None)
+        benchmark = _make_mock_benchmark(max_iterations=3, planner_decide_sequence=None)
         benchmark._marble_planner.decide_next_step.return_value = True
 
         MarbleMultiAgentBenchBenchmark._graph_coordinate(benchmark, [adapter])
@@ -843,13 +843,13 @@ class TestStarCoordinate:
         assert isinstance(call_arg, str)
         assert call_arg.startswith("Agents' Results Summary:")
 
-    def test_star_respects_max_invocations(self):
-        """Star loop stops at max_invocations."""
+    def test_star_respects_max_iterations(self):
+        """Star loop stops at max_iterations."""
         from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
 
         adapter = _make_mock_adapter("agent1")
         agents_dict = {"agent1": adapter}
-        benchmark = _make_mock_benchmark(coordinate_mode="star", max_invocations=2, agents_dict=agents_dict)
+        benchmark = _make_mock_benchmark(coordinate_mode="star", max_iterations=2, agents_dict=agents_dict)
         benchmark._planning_method = "naive"
         benchmark._marble_planner.decide_next_step.return_value = True
         benchmark._marble_planner.assign_tasks.return_value = {"tasks": {"agent1": "t"}}
@@ -911,8 +911,9 @@ class TestChainCoordinate:
         benchmark = _make_mock_benchmark(coordinate_mode="chain", agents_dict=agents_dict)
         benchmark._marble_graph = MagicMock()
         benchmark._marble_graph.get_agent_profiles_linked.return_value = "profiles"
-        # agent1 picks agent2, then planner stops
+        # agent1 picks agent2, agent2 picks agent1 (but planner stops)
         adapter1.marble_agent.plan_next_agent.return_value = ("agent2", "task for agent2")
+        adapter2.marble_agent.plan_next_agent.return_value = ("agent1", "back to agent1")
         benchmark._marble_planner.decide_next_step.side_effect = [True, False]
 
         result = MarbleMultiAgentBenchBenchmark._chain_coordinate(benchmark, [adapter1, adapter2])
@@ -923,13 +924,13 @@ class TestChainCoordinate:
         assert len(result["agent_results"]) == 2
 
     def test_chain_max_length(self):
-        """Chain stops at max_chain_length = max_invocations * num_agents."""
+        """Chain stops at max_chain_length = max_iterations * num_agents."""
         from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
 
         adapter = _make_mock_adapter("agent1")
         agents_dict = {"agent1": adapter}
 
-        benchmark = _make_mock_benchmark(coordinate_mode="chain", max_invocations=2, agents_dict=agents_dict)
+        benchmark = _make_mock_benchmark(coordinate_mode="chain", max_iterations=2, agents_dict=agents_dict)
         benchmark._marble_graph = MagicMock()
         benchmark._marble_graph.get_agent_profiles_linked.return_value = "profiles"
         adapter.marble_agent.plan_next_agent.return_value = ("agent1", "keep going")
@@ -939,6 +940,58 @@ class TestChainCoordinate:
 
         # max_chain_length = 2 * 1 = 2
         assert adapter.run.call_count == 2
+
+    def test_chain_aborts_when_agent1_not_found(self):
+        """Chain should abort (not fallback) when 'agent1' is not in agents_dict."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter = _make_mock_adapter("researcher")
+        agents_dict = {"researcher": adapter}  # No "agent1" key
+
+        benchmark = _make_mock_benchmark(coordinate_mode="chain", agents_dict=agents_dict)
+        benchmark._marble_graph = MagicMock()
+
+        result = MarbleMultiAgentBenchBenchmark._chain_coordinate(benchmark, [adapter])
+
+        # Should return empty — no silent fallback to first agent
+        assert result["agent_results"] == []
+        adapter.run.assert_not_called()
+
+    def test_chain_error_propagates(self):
+        """Chain should NOT catch agent errors — they must propagate (matching MARBLE)."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter = _make_mock_adapter("agent1")
+        adapter.run.side_effect = RuntimeError("LLM failure")
+        agents_dict = {"agent1": adapter}
+
+        benchmark = _make_mock_benchmark(coordinate_mode="chain", agents_dict=agents_dict)
+        benchmark._marble_graph = MagicMock()
+        benchmark._marble_graph.get_agent_profiles_linked.return_value = "profiles"
+
+        with pytest.raises(RuntimeError, match="LLM failure"):
+            MarbleMultiAgentBenchBenchmark._chain_coordinate(benchmark, [adapter])
+
+    def test_chain_post_loop_update_progress(self):
+        """Chain should call update_progress with accumulated summary after loop ends."""
+        from maseval.benchmark.multiagentbench.multiagentbench import MarbleMultiAgentBenchBenchmark
+
+        adapter = _make_mock_adapter("agent1", "result_text")
+        agents_dict = {"agent1": adapter}
+
+        benchmark = _make_mock_benchmark(coordinate_mode="chain", agents_dict=agents_dict, planner_decide_sequence=[False])
+        benchmark._marble_graph = MagicMock()
+        benchmark._marble_graph.get_agent_profiles_linked.return_value = "profiles"
+        adapter.marble_agent.plan_next_agent.return_value = ("agent1", "next")
+
+        MarbleMultiAgentBenchBenchmark._chain_coordinate(benchmark, [adapter])
+
+        # update_progress called twice: once in-loop (engine.py:719) + once post-loop (engine.py:768)
+        assert benchmark._marble_planner.update_progress.call_count == 2
+        # Post-loop call should be the accumulated summary string
+        post_loop_arg = benchmark._marble_planner.update_progress.call_args_list[-1][0][0]
+        assert isinstance(post_loop_arg, str)
+        assert post_loop_arg.startswith("Agents' Results Summary:")
 
 
 class TestTreeCoordinate:

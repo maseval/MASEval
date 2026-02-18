@@ -209,8 +209,11 @@ def create_marble_agents(
     for config in agent_configs:
         agent_id = config.get("agent_id", f"agent_{len(agents_list)}")
 
+        # Per-agent LLM override matching marble/engine/engine.py:158-159
+        agent_llm = config.get("llm", model)
+
         # Create MARBLE agent
-        marble_agent = BaseAgent(config=config, env=marble_env, model=model)
+        marble_agent = BaseAgent(config=config, env=marble_env, model=agent_llm)
 
         # Wrap in adapter
         adapter = MarbleAgentAdapter(marble_agent=marble_agent, agent_id=agent_id)
