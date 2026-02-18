@@ -11,39 +11,20 @@ def mock_model():
 
 
 @pytest.mark.benchmark
-def test_extract_user_profile():
-    """Test extracting persona and profile from scenario."""
-    scenario = "Persona: Angry Customer\n\nTask: Return item."
-
-    profile = Tau2User._extract_user_profile(scenario)
-
-    assert profile["persona"] == "Angry Customer"
-    assert profile["full_scenario"] == scenario
-
-
-@pytest.mark.benchmark
-def test_extract_user_profile_no_persona():
-    """Test extracting profile when no persona is present."""
-    scenario = "Just a task."
-
-    profile = Tau2User._extract_user_profile(scenario)
-
-    assert "persona" not in profile
-    assert profile["full_scenario"] == scenario
-
-
-@pytest.mark.benchmark
-def test_get_tool_raises(mock_model):
-    """Test that base Tau2User raises NotImplementedError for get_tool."""
+def test_init_basic(mock_model):
+    """Test basic Tau2User initialization."""
     user = Tau2User(model=mock_model, scenario="test", initial_query="hi")
 
-    with pytest.raises(NotImplementedError):
-        user.get_tool()
+    assert user.scenario == "test"
+    assert user.tools == {}
+    assert user.tool_definitions is None
+    assert user.llm_args == {}
+    assert user.max_turns == 50
 
 
 @pytest.mark.benchmark
 def test_init_passes_tools(mock_model):
-    """Test that tools are correctly passed to parent AgenticUser."""
+    """Test that tools are correctly stored."""
     tools = {"test_tool": lambda x: x}
 
     user = Tau2User(model=mock_model, scenario="test", initial_query="hi", tools=tools)
@@ -56,7 +37,6 @@ def test_user_has_initial_query(mock_model):
     """Test that user has initial query method."""
     user = Tau2User(model=mock_model, scenario="test", initial_query="Hello!")
 
-    # Check that get_initial_query method returns the query
     assert user.get_initial_query() == "Hello!"
 
 
@@ -67,31 +47,7 @@ def test_user_has_scenario(mock_model):
 
     user = Tau2User(model=mock_model, scenario=scenario, initial_query="hi")
 
-    # Check that scenario is accessible
-    assert hasattr(user, "scenario") or hasattr(user, "_scenario")
-
-
-@pytest.mark.benchmark
-def test_extract_profile_with_task():
-    """Test extracting profile with Task field."""
-    scenario = "Persona: Helpful Customer\n\nTask: Buy a new phone."
-
-    profile = Tau2User._extract_user_profile(scenario)
-
-    assert profile["persona"] == "Helpful Customer"
-    assert "full_scenario" in profile
-
-
-@pytest.mark.benchmark
-def test_user_profile_initialization(mock_model):
-    """Test that user profile is initialized correctly."""
-    scenario = "Persona: Test User\n\nTask: Test task."
-
-    user = Tau2User(model=mock_model, scenario=scenario, initial_query="hi")
-
-    # User profile should be extracted from scenario
-    assert user.user_profile is not None
-    assert isinstance(user.user_profile, dict)
+    assert user.scenario == scenario
 
 
 @pytest.mark.benchmark
@@ -110,53 +66,114 @@ def test_gather_traces(mock_model):
     traces = user.gather_traces()
 
     assert isinstance(traces, dict)
-    # Should have expected trace fields
     assert "type" in traces
     assert "messages" in traces
-    assert "message_count" in traces
+    assert "max_turns" in traces
+    assert "turns_used" in traces
+    assert "stopped_by_user" in traces
     assert traces["type"] == "Tau2User"
-    assert traces["message_count"] == 1
+    assert traces["turns_used"] == 0
+    assert traces["stopped_by_user"] is False
+
+
+@pytest.mark.benchmark
+def test_is_done_initially_false(mock_model):
+    """Test that user is not done initially."""
+    user = Tau2User(model=mock_model, scenario="test", initial_query="hi")
+
+    assert user.is_done() is False
+
+
+@pytest.mark.benchmark
+def test_inject_greeting(mock_model):
+    """Test that inject_greeting prepends an assistant message."""
+    user = Tau2User(model=mock_model, scenario="test", initial_query="hi")
+
+    user.inject_greeting("Hi! How can I help?")
+
+    assert len(user._messages) == 1
+    assert user._messages[0]["role"] == "assistant"
+    assert user._messages[0]["content"] == "Hi! How can I help?"
+
+
+@pytest.mark.benchmark
+def test_stop_tokens_exact_case(mock_model):
+    """Test that stop tokens use exact case matching."""
+    assert Tau2User.STOP == "###STOP###"
+    assert Tau2User.TRANSFER == "###TRANSFER###"
+    assert Tau2User.OUT_OF_SCOPE == "###OUT-OF-SCOPE###"
+
+
+@pytest.mark.benchmark
+def test_system_prompt_contains_scenario(mock_model):
+    """Test that system prompt includes scenario in <scenario> tags."""
+    user = Tau2User(model=mock_model, scenario="My test scenario", initial_query="hi")
+
+    assert "<scenario>" in user._system_prompt
+    assert "My test scenario" in user._system_prompt
+    assert "</scenario>" in user._system_prompt
+
+
+@pytest.mark.benchmark
+def test_guidelines_loaded_no_tools(mock_model):
+    """Test that simulation_guidelines.md is loaded when no tools."""
+    user = Tau2User(model=mock_model, scenario="test", initial_query="hi")
+
+    # Should load the no-tools guidelines
+    assert "User Simulation Guidelines" in user._system_prompt
+
+
+@pytest.mark.benchmark
+def test_guidelines_loaded_with_tools(mock_model):
+    """Test that simulation_guidelines_tools.md is loaded when tools provided."""
+    user = Tau2User(
+        model=mock_model,
+        scenario="test",
+        initial_query="hi",
+        tools={"my_tool": lambda: None},
+    )
+
+    # Should load the tools guidelines
+    assert "User Simulation Guidelines" in user._system_prompt
+
+
+@pytest.mark.benchmark
+def test_llm_args_passed(mock_model):
+    """Test that llm_args are stored."""
+    user = Tau2User(
+        model=mock_model,
+        scenario="test",
+        initial_query="hi",
+        llm_args={"temperature": 0.0},
+    )
+
+    assert user.llm_args == {"temperature": 0.0}
+
+
+@pytest.mark.benchmark
+def test_max_turns_custom(mock_model):
+    """Test custom max_turns."""
+    user = Tau2User(model=mock_model, scenario="test", initial_query="hi", max_turns=10)
+
+    assert user.max_turns == 10
 
 
 @pytest.mark.benchmark
 class TestTau2UserScenarios:
     """Tests for various Tau2User scenario handling."""
 
-    def test_multiline_persona(self, mock_model):
-        """Test extracting persona from multiline scenario."""
-        scenario = """Persona: Frustrated customer who has been waiting
-for a long time
+    def test_scenario_stored_as_is(self, mock_model):
+        """Test that scenario is stored verbatim."""
+        scenario = "Persona:\n\tFrustrated customer\nInstructions:\n\tGet a refund."
 
-Task: Get a refund."""
+        user = Tau2User(model=mock_model, scenario=scenario, initial_query="hi")
 
-        profile = Tau2User._extract_user_profile(scenario)
+        assert user.scenario == scenario
 
-        # Should capture the first line after Persona:
-        assert "Frustrated" in profile.get("persona", "")
+    def test_scenario_in_system_prompt(self, mock_model):
+        """Test scenario appears in system prompt."""
+        scenario = "Instructions:\n\tTest instructions here"
 
-    def test_scenario_with_context(self, mock_model):
-        """Test scenario with additional context."""
-        scenario = """Persona: Regular customer
+        user = Tau2User(model=mock_model, scenario=scenario, initial_query="hi")
 
-Context: Customer has been with the company for 5 years.
-
-Task: Upgrade their plan."""
-
-        profile = Tau2User._extract_user_profile(scenario)
-
-        assert profile["full_scenario"] == scenario
-
-    def test_complex_scenario(self, mock_model):
-        """Test complex real-world scenario."""
-        scenario = """Persona: Jane, a busy professional
-
-Background: Jane is a software engineer at a startup. She travels frequently
-for work and needs reliable phone service.
-
-Task: Jane wants to enable international roaming on her line before
-her upcoming trip to Europe."""
-
-        profile = Tau2User._extract_user_profile(scenario)
-
-        assert "Jane" in profile.get("persona", "")
-        assert profile["full_scenario"] == scenario
+        assert scenario in user._system_prompt

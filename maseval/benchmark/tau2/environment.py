@@ -258,7 +258,8 @@ class Tau2Environment(Environment):
         Only applies to telecom domain.
 
         Matches tau2-bench TelecomEnvironment.sync_tools()
-        (telecom/environment.py:40-94).
+        (telecom/environment.py:40-94). No try/except — errors propagate
+        as in the original.
 
         Args:
             toolkit: Agent-side toolkit
@@ -272,7 +273,6 @@ class Tau2Environment(Environment):
         if not hasattr(db, "user_db") or db.user_db is None:
             return
 
-        # Narrow types after domain + hasattr guards
         telecom_db = cast(TelecomDB, db)
         telecom_tools = cast(TelecomTools, toolkit)
         user_db = telecom_db.user_db
@@ -281,54 +281,45 @@ class Tau2Environment(Environment):
 
         phone_number = user_db.surroundings.phone_number
 
-        try:
-            line = telecom_tools._get_line_by_phone(phone_number)
-        except (ValueError, AttributeError):
-            return
-
         from maseval.benchmark.tau2.domains.telecom.models import LineStatus
-
-        # Sync line active status (agent DB → user surroundings)
-        user_db.surroundings.line_active = line.status == LineStatus.ACTIVE
-
-        # Sync roaming capability (agent DB → user surroundings)
-        user_db.surroundings.roaming_allowed_in_location = line.roaming_enabled
-
-        # Sync data usage exceeded (agent DB → user surroundings)
-        try:
-            plan = telecom_tools._get_plan_by_id(line.plan_id)
-            data_limit = plan.data_limit_gb + getattr(line, "data_refueling_gb", 0.0)
-            user_db.surroundings.mobile_data_usage_exceeded = line.data_used_gb >= data_limit
-        except (ValueError, AttributeError):
-            pass
-
-        # Sync paid bills (user surroundings → agent DB)
-        # Original: tau2-bench telecom/environment.py:76-81
         from maseval.benchmark.tau2.domains.telecom.user_models import PaymentRequest
 
-        paid_ids = set()
-        for req in user_db.surroundings.payment_requests:
-            if req.paid:
-                try:
-                    telecom_tools._set_bill_to_paid(req.bill_id)
-                except (ValueError, AttributeError):
-                    pass
-                paid_ids.add(req.bill_id)
-        if paid_ids:
-            user_db.surroundings.payment_requests = [r for r in user_db.surroundings.payment_requests if r.bill_id not in paid_ids]
+        line = telecom_tools._get_line_by_phone(phone_number)
+
+        # Sync line active status (agent DB → user surroundings)
+        if line.status == LineStatus.ACTIVE:
+            user_db.surroundings.line_active = True
+        else:
+            user_db.surroundings.line_active = False
+
+        # Sync roaming capability (agent DB → user surroundings)
+        if line.roaming_enabled:
+            user_db.surroundings.roaming_allowed = True
+        else:
+            user_db.surroundings.roaming_allowed = False
+
+        # Sync data usage exceeded (agent DB → user surroundings)
+        plan = telecom_tools._get_plan_by_id(line.plan_id)
+        if line.data_used_gb >= plan.data_limit_gb + line.data_refueling_gb:
+            user_db.surroundings.mobile_data_usage_exceeded = True
+        else:
+            user_db.surroundings.mobile_data_usage_exceeded = False
+
+        # Sync paid bills (user surroundings → agent DB)
+        current_payment_request = user_db.surroundings.payment_request
+        if current_payment_request is not None:
+            if current_payment_request.paid:
+                telecom_tools._set_bill_to_paid(current_payment_request.bill_id)
+                user_db.surroundings.payment_request = None
 
         # Sync payment requests (agent DB → user surroundings)
-        # Original: tau2-bench telecom/environment.py:83-94
-        has_pending = any(not r.paid for r in user_db.surroundings.payment_requests)
-        if not has_pending:
-            try:
-                customer = telecom_tools.get_customer_by_phone(phone_number)
-                bills = telecom_tools._get_bills_awaiting_payment(customer)
-                if bills:
-                    bill = bills[0]
-                    user_db.surroundings.payment_requests.append(PaymentRequest(bill_id=bill.bill_id, amount_due=bill.total_due))
-            except (ValueError, AttributeError):
-                pass
+        current_payment_request = user_db.surroundings.payment_request
+        if current_payment_request is None:
+            customer = telecom_tools.get_customer_by_phone(phone_number)
+            bills = telecom_tools._get_bills_awaiting_payment(customer)
+            if len(bills) != 0:
+                bill = bills[0]
+                user_db.surroundings.payment_request = PaymentRequest(bill_id=bill.bill_id, amount_due=bill.total_due)
 
     def sync_tools(self) -> None:
         """Synchronize agent-side and user-side state.
@@ -385,7 +376,7 @@ class Tau2Environment(Environment):
         return {}
 
     def get_db_hash(self) -> str:
-        """Get hash of current database state.
+        """Get hash of current agent database state.
 
         Used by evaluator to verify correct state changes.
         Critical for deterministic evaluation.
@@ -394,6 +385,23 @@ class Tau2Environment(Environment):
             SHA-256 hash hex string
         """
         return self.db.get_hash()
+
+    def get_user_db_hash(self) -> Optional[str]:
+        """Get hash of current user database state.
+
+        For telecom domain, hashes just the user_db (TelecomUserDB),
+        matching original tau2-bench's get_user_db_hash() which calls
+        user_tools.get_db_hash() on a separate user DB.
+
+        Returns:
+            SHA-256 hash hex string, or None if no user toolkit
+        """
+        if self.user_toolkit is None:
+            return None
+        telecom_db = cast(TelecomDB, self.db)
+        if telecom_db.user_db is not None:
+            return telecom_db.user_db.get_hash()
+        return None
 
     def get_initial_db_hash(self) -> str:
         """Get hash of initial database state.
@@ -452,6 +460,7 @@ class Tau2Environment(Environment):
                 "domain": self._domain,
                 "initial_db_hash": self.state["initial_db_hash"],
                 "final_db_hash": self.get_db_hash(),
+                "final_user_db_hash": self.get_user_db_hash(),
                 "db_changed": self.state["initial_db_hash"] != self.get_db_hash(),
             }
         )

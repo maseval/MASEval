@@ -694,17 +694,6 @@ class TestDefaultAgentIntegration:
 class TestTau2UserAdditional:
     """Additional tests for Tau2User to improve coverage."""
 
-    def test_get_tool_raises_not_implemented(self, mock_model):
-        """Test that base Tau2User.get_tool() raises NotImplementedError."""
-        user = Tau2User(
-            model=mock_model,
-            scenario="Test scenario",
-            initial_query="Hello",
-        )
-
-        with pytest.raises(NotImplementedError):
-            user.get_tool()
-
     def test_gather_traces(self, mock_model):
         """Test gather_traces returns expected tau2-specific fields."""
         user = Tau2User(
@@ -721,9 +710,9 @@ class TestTau2UserAdditional:
         assert "turns_used" in traces
         assert "stopped_by_user" in traces
 
-    def test_user_with_persona_and_task(self, mock_model):
-        """Test user with structured scenario."""
-        scenario = "Persona: Frustrated customer\n\nTask: Get refund"
+    def test_user_scenario_stored(self, mock_model):
+        """Test user stores scenario."""
+        scenario = "Persona:\n\tFrustrated customer\nInstructions:\n\tGet refund"
 
         user = Tau2User(
             model=mock_model,
@@ -731,10 +720,7 @@ class TestTau2UserAdditional:
             initial_query="I need a refund",
         )
 
-        # Check user profile extraction
-        assert user.user_profile is not None
-        assert "persona" in user.user_profile
-        assert "Frustrated" in user.user_profile["persona"]
+        assert user.scenario == scenario
 
 
 @pytest.mark.benchmark
@@ -817,7 +803,9 @@ class TestTau2BenchmarkMethods:
 
         assert user is not None
         assert isinstance(user, Tau2User)
-        assert user.scenario == "Simple string instructions"
+        # String instructions are wrapped in UserScenario.__str__() format
+        assert "Instructions:" in user.scenario
+        assert "Simple string instructions" in user.scenario
 
     def test_setup_user_empty_instructions(self):
         """Test setup_user with no instructions."""
@@ -841,7 +829,8 @@ class TestTau2BenchmarkMethods:
 
         assert user is not None
         assert isinstance(user, Tau2User)
-        assert user.scenario == ""
+        # Empty instructions still get wrapped in UserScenario format
+        assert "Instructions:" in user.scenario
 
     def test_setup_evaluators(self, sample_task):
         """Test setup_evaluators creates Tau2Evaluator."""

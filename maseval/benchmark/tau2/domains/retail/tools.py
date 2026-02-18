@@ -52,8 +52,7 @@ class RetailTools(ToolKitBase[RetailDB]):
         """Get the order from the database.
 
         Args:
-            order_id: The order id, such as '#W0000000' or 'W0000000'.
-                The '#' prefix is optional and will be added if missing.
+            order_id: The order id, such as '#W0000000'. Be careful there is a '#' symbol at the beginning of the order id.
 
         Returns:
             The order.
@@ -63,9 +62,6 @@ class RetailTools(ToolKitBase[RetailDB]):
         """
         if self.db is None:
             raise ValueError("Database not initialized")
-        # Normalize order_id: add '#' prefix if missing (LLMs often omit it)
-        if not order_id.startswith("#"):
-            order_id = f"#{order_id}"
         if order_id not in self.db.orders:
             raise ValueError("Order not found")
         return self.db.orders[order_id]

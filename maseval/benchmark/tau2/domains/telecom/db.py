@@ -63,9 +63,8 @@ class TelecomDB(DB):
 
         if self.user_db:
             stats["user_db"] = {
-                "device_on": self.user_db.device.is_on,
                 "network_status": self.user_db.device.network_connection_status.value,
-                "sim_status": self.user_db.device.sim_status.value,
+                "sim_status": self.user_db.device.sim_card_status.value,
             }
 
         return stats

@@ -57,16 +57,17 @@ Default Agent Implementation:
     results = benchmark.run(tasks)
 """
 
+import inspect
 import json
+import textwrap
 from abc import abstractmethod
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, create_model
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
-from maseval.core.user import AgenticLLMUser
 from maseval.core.callback import BenchmarkCallback
 from maseval.core.seeding import DefaultSeedGenerator, SeedGenerator
 
@@ -85,37 +86,42 @@ INITIAL_GREETING = "Hi! How can I help you today?"
 # =============================================================================
 
 
-class Tau2User(AgenticLLMUser):
-    """Tau2-specific user simulator with customer service personas.
+class Tau2User(User):
+    """Tau2-specific user simulator matching original tau2-bench UserSimulator.
 
-    Extends the AgenticLLMUser class with tau2-specific behavior:
-    - Customer personas from user_scenario
-    - Domain-aware responses (airline, retail, telecom)
-    - Multi-turn interaction support
-    - Tool usage capabilities
-    - Tau2-specific prompt template and stop tokens
+    Uses chat API with role-flipped messages, matching the original's architecture:
+    - System message: simulation_guidelines + scenario
+    - Messages: role-flipped (user->assistant, assistant->user) matching
+      original's UserState.flip_roles()
+    - Tools: native OpenAI function calling for user tools
+    - Stop: exact case match for ###STOP###, ###TRANSFER###, ###OUT-OF-SCOPE###
+      (tokens kept in content, skipped if message has tool_calls)
 
-    Note: This is a base class. Framework-specific subclasses should override
-    get_tool() to return a compatible tool.
+    Adapted from: tau2-bench src/tau2/user/user_simulator.py
     """
 
-    DEFAULT_MAX_TURNS = 50  # tau2-bench uses max_steps=100; generous limit to avoid premature cutoff
-    # Match tau2-bench tokens - user can stop, transfer, or go out of scope
-    DEFAULT_STOP_TOKENS = ["###STOP###", "###TRANSFER###", "###OUT-OF-SCOPE###"]
-    DEFAULT_EARLY_STOPPING_CONDITION = "The instruction goal is satisfied"
-    DEFAULT_TEMPLATE_PATH = Path(__file__).parent / "prompt_templates" / "user_simulator.txt"
+    STOP = "###STOP###"
+    TRANSFER = "###TRANSFER###"
+    OUT_OF_SCOPE = "###OUT-OF-SCOPE###"
+
+    GUIDELINES_DIR = Path(__file__).parent / "prompt_templates"
+
+    SYSTEM_PROMPT_TEMPLATE = """\
+{global_user_sim_guidelines}
+
+<scenario>
+{instructions}
+</scenario>"""
 
     def __init__(
         self,
         model: ModelAdapter,
         scenario: str,
         initial_query: str,
-        name: str = "Customer",
-        template: Optional[str] = None,
-        max_turns: int = DEFAULT_MAX_TURNS,
-        stop_tokens: Optional[List[str]] = None,
-        early_stopping_condition: str = DEFAULT_EARLY_STOPPING_CONDITION,
         tools: Optional[Dict[str, Callable]] = None,
+        tool_definitions: Optional[List[Dict[str, Any]]] = None,
+        llm_args: Optional[Dict[str, Any]] = None,
+        max_turns: int = 50,
     ):
         """Initialize Tau2 user simulator.
 
@@ -123,86 +129,229 @@ class Tau2User(AgenticLLMUser):
             model: ModelAdapter for LLM-based response generation
             scenario: Full scenario text containing user instructions
             initial_query: The initial query to the agent
-            name: User name for identification (default: "Customer")
-            template: Optional custom prompt template (uses tau2-specific template by default)
+            tools: Optional dictionary of user tools (name -> callable)
+            tool_definitions: Optional OpenAI-format tool definitions for LLM
+            llm_args: Optional additional args for model.chat() (e.g. temperature)
             max_turns: Maximum conversation turns
-            stop_tokens: List of tokens indicating termination (default: ###STOP###, ###TRANSFER###, ###OUT-OF-SCOPE###)
-            early_stopping_condition: Description of when to emit stop token
-            tools: Optional dictionary of tools available to the user
         """
-        # Load tau2-specific template if not provided
-        if template is None:
-            template = self.DEFAULT_TEMPLATE_PATH.read_text()
+        self.model = model
+        self.scenario = scenario
+        self._initial_query = initial_query
+        self.tools = tools or {}
+        self.tool_definitions = tool_definitions
+        self.llm_args = llm_args or {}
+        self.max_turns = max_turns
 
-        # Extract user profile from scenario
-        user_profile = self._extract_user_profile(scenario)
+        # Load guidelines matching original tau2-bench
+        use_tools = bool(self.tools)
+        if use_tools:
+            guidelines_path = self.GUIDELINES_DIR / "simulation_guidelines_tools.md"
+        else:
+            guidelines_path = self.GUIDELINES_DIR / "simulation_guidelines.md"
+        guidelines = guidelines_path.read_text()
 
-        # Use default stop tokens if not provided
-        if stop_tokens is None:
-            stop_tokens = self.DEFAULT_STOP_TOKENS.copy()
-
-        super().__init__(
-            name=name,
-            model=model,
-            user_profile=user_profile,
-            scenario=scenario,
-            initial_query=initial_query,
-            template=template,
-            max_turns=max_turns,
-            stop_tokens=stop_tokens,
-            early_stopping_condition=early_stopping_condition,
-            tools=tools,
+        # Build system prompt matching original format
+        self._system_prompt = self.SYSTEM_PROMPT_TEMPLATE.format(
+            global_user_sim_guidelines=guidelines,
+            instructions=self.scenario,
         )
 
-    def get_tool(self) -> Any:
-        """Return a tool for agent interaction.
+        # Message history in original role format (before flipping)
+        # Contains: {"role": "user"/"assistant"/"tool", "content": ..., ...}
+        self._messages: List[Dict[str, Any]] = []
+        self._turn_count = 0
+        self._stopped = False
 
-        This base implementation raises NotImplementedError.
-        Framework-specific subclasses should override this method.
+    def get_initial_query(self) -> str:
+        """Return the initial query to start the conversation."""
+        return self._initial_query
 
-        Raises:
-            NotImplementedError: Always, as this must be implemented by subclass.
-        """
-        raise NotImplementedError("Tau2User.get_tool() must be overridden by framework-specific subclass.")
+    def respond(self, message: str) -> str:
+        """Respond to an agent message.
 
-    @staticmethod
-    def _extract_user_profile(scenario: str) -> Dict[str, Any]:
-        """Extract user profile from scenario text.
+        Matches original tau2-bench UserSimulator._generate_next_message:
+        1. Add agent message to history (as AssistantMessage)
+        2. Flip roles and generate via model.chat()
+        3. If tool_calls: execute, add results, generate again
+        4. Return final text response (with stop tokens kept in content)
 
         Args:
-            scenario: Full scenario/instructions text
+            message: The agent's message
 
         Returns:
-            Dict with user profile fields
+            The user's response text
         """
-        profile: Dict[str, Any] = {}
+        self._turn_count += 1
+        if self._stopped or self._turn_count > self.max_turns:
+            self._stopped = True
+            return ""
 
-        # Parse structured format if present
-        if "Persona:" in scenario or "persona:" in scenario:
-            # Try to extract persona section
-            for prefix in ["Persona:", "persona:"]:
-                if prefix in scenario:
-                    parts = scenario.split(prefix, 1)
-                    if len(parts) > 1:
-                        persona_section = parts[1].split("\n")[0].strip()
-                        profile["persona"] = persona_section
+        # Add agent's message as assistant message
+        self._messages.append({"role": "assistant", "content": message})
 
-        # Include full scenario as context
-        profile["full_scenario"] = scenario
+        # Generate response (may loop for tool calls)
+        return self._generate_response()
 
-        return profile
+    def _generate_response(self) -> str:
+        """Generate user response via chat API with role flipping.
+
+        Matches original's generate flow:
+        - Flip roles (user<->assistant)
+        - Call model.chat() with system prompt + flipped messages + tools
+        - If tool_calls returned: execute, feed results, generate again
+        - If text returned: create user message and return
+        """
+        while True:
+            # Build flipped messages for the LLM
+            flipped = self._flip_roles()
+            messages = [{"role": "system", "content": self._system_prompt}] + flipped
+
+            # Generate via model.chat with tools (native function calling)
+            response = self.model.chat(
+                messages=messages,
+                tools=self.tool_definitions,
+                **self.llm_args,
+            )
+
+            content = response.content or ""
+            tool_calls = response.tool_calls or []
+
+            if tool_calls:
+                # User wants to make tool calls
+                # Add as user message with tool_calls (original format)
+                self._messages.append(
+                    {
+                        "role": "user",
+                        "content": content,
+                        "tool_calls": tool_calls,
+                    }
+                )
+
+                # Execute each tool call and add results
+                for tc in tool_calls:
+                    tool_result = self._execute_tool(tc)
+                    self._messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "content": _to_json_str(tool_result),
+                            "requestor": "user",
+                        }
+                    )
+
+                # Continue loop to generate next response
+                continue
+            else:
+                # Text response - add to history and return
+                # Original keeps stop tokens in content (no stripping)
+                self._messages.append({"role": "user", "content": content})
+
+                # Check stop (exact case match, skip if tool_calls)
+                # Matching original: STOP in message.content, returns False if is_tool_call()
+                if self.STOP in content or self.TRANSFER in content or self.OUT_OF_SCOPE in content:
+                    self._stopped = True
+
+                return content
+
+    def _flip_roles(self) -> List[Dict[str, Any]]:
+        """Flip message roles matching original's UserState.flip_roles().
+
+        Original behavior:
+        - UserMessage -> AssistantMessage (with tool_calls if present)
+        - AssistantMessage -> UserMessage (only if NOT a tool call)
+        - ToolMessage with requestor="user" -> ToolMessage (kept)
+        - AssistantMessage with tool_calls -> SKIPPED (raises error in original)
+        """
+        flipped = []
+        for msg in self._messages:
+            role = msg.get("role")
+            if role == "user":
+                # User -> Assistant (for the LLM, user plays assistant role)
+                entry: Dict[str, Any] = {
+                    "role": "assistant",
+                    "content": msg.get("content", ""),
+                }
+                if "tool_calls" in msg:
+                    entry["tool_calls"] = msg["tool_calls"]
+                flipped.append(entry)
+            elif role == "assistant":
+                # Assistant -> User (only non-tool-call messages)
+                # Original skips assistant messages that have tool_calls
+                if not msg.get("tool_calls"):
+                    flipped.append(
+                        {
+                            "role": "user",
+                            "content": msg.get("content", ""),
+                        }
+                    )
+            elif role == "tool":
+                # Keep tool messages for user tool results only
+                if msg.get("requestor") == "user":
+                    flipped.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": msg.get("tool_call_id", ""),
+                            "content": msg.get("content", ""),
+                        }
+                    )
+        return flipped
+
+    def _execute_tool(self, tool_call: Dict[str, Any]) -> Any:
+        """Execute a user tool call.
+
+        Args:
+            tool_call: Tool call dict in OpenAI format
+
+        Returns:
+            Tool execution result
+        """
+        if "function" in tool_call:
+            name = tool_call["function"].get("name", "")
+            arguments = tool_call["function"].get("arguments", {})
+        else:
+            name = tool_call.get("name", "")
+            arguments = tool_call.get("arguments", {})
+
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                arguments = {}
+
+        if name not in self.tools:
+            return f"Error: Tool '{name}' not found"
+
+        try:
+            return self.tools[name](**arguments)
+        except Exception as e:
+            return f"Error executing tool '{name}': {str(e)}"
+
+    def is_done(self) -> bool:
+        """Check if the user interaction should terminate."""
+        return self._stopped or self._turn_count >= self.max_turns
+
+    def inject_greeting(self, greeting: str) -> None:
+        """Inject the agent's initial greeting into message history.
+
+        Must be called AFTER get_initial_query() returns.
+        In the original tau2-bench, the orchestrator adds
+        "Hi! How can I help you today?" as the first AssistantMessage
+        before the user's initial query.
+
+        Args:
+            greeting: The greeting message to inject
+        """
+        self._messages.insert(0, {"role": "assistant", "content": greeting})
 
     def gather_traces(self) -> Dict[str, Any]:
         """Gather traces with Tau2-specific information."""
-        traces = super().gather_traces()
-        traces.update(
-            {
-                "max_turns": self.max_turns,
-                "turns_used": self._turn_count,
-                "stopped_by_user": self._stopped,
-            }
-        )
-        return traces
+        return {
+            "type": type(self).__name__,
+            "max_turns": self.max_turns,
+            "turns_used": self._turn_count,
+            "stopped_by_user": self._stopped,
+            "messages": list(self._messages),
+        }
 
 
 # =============================================================================
@@ -342,9 +491,10 @@ class Tau2Benchmark(Benchmark):
         Creates a Tau2User with scenario from the task.
         Model ID is read from task.user_data["model_id"].
 
-        Note: Tau2User.get_tool() raises NotImplementedError.
-        Framework-specific subclasses should wrap this user
-        or override setup_user() to return a user with get_tool() implemented.
+        Scenario text is formatted to match original tau2-bench's
+        ``str(task.user_scenario)`` chain:
+        - ``StructuredUserInstructions.__str__()`` for dict instructions
+        - ``UserScenario.__str__()`` wrapping persona + instructions
 
         Args:
             agent_data: Agent configuration
@@ -354,30 +504,39 @@ class Tau2Benchmark(Benchmark):
         Returns:
             Tau2User instance
         """
-        # Build scenario from user instructions (matching tau2-bench format)
+        # Build scenario matching original tau2-bench str(task.user_scenario)
         user_data = task.user_data
         instructions = user_data.get("instructions", {})
 
+        # Format instructions matching StructuredUserInstructions.__str__()
         if isinstance(instructions, str):
-            scenario = instructions
+            instructions_str = instructions
         elif isinstance(instructions, dict):
-            parts = []
-            if instructions.get("task_instructions"):
-                parts.append(f"Persona/Style: {instructions['task_instructions']}")
+            tab = "\t"
+            lines = []
+            if instructions.get("domain"):
+                lines.append(f"Domain: {instructions['domain']}")
             if instructions.get("reason_for_call"):
-                parts.append(f"Reason for call: {instructions['reason_for_call']}")
-            if instructions.get("known_info"):
-                parts.append(f"Information you know: {instructions['known_info']}")
-            if instructions.get("unknown_info"):
-                parts.append(f"Information you do NOT know: {instructions['unknown_info']}")
-            scenario = "\n".join(parts)
+                lines.append(f"Reason for call:\n{textwrap.indent(instructions['reason_for_call'], tab)}")
+            if instructions.get("known_info") is not None:
+                lines.append(f"Known info:\n{textwrap.indent(instructions['known_info'], tab)}")
+            if instructions.get("unknown_info") is not None:
+                lines.append(f"Unknown info:\n{textwrap.indent(instructions['unknown_info'], tab)}")
+            if instructions.get("task_instructions"):
+                lines.append(f"Task instructions:\n{textwrap.indent(instructions['task_instructions'], tab)}")
+            instructions_str = "\n".join(lines)
         else:
-            scenario = ""
+            instructions_str = ""
 
-        # Add persona if available
+        # Format scenario matching UserScenario.__str__()
+        scenario_lines = []
         persona = user_data.get("persona")
-        if persona:
-            scenario = f"Persona: {persona}\n\n{scenario}"
+        if persona is not None:
+            scenario_lines.append("Persona:")
+            scenario_lines.append(textwrap.indent(persona, "\t"))
+        scenario_lines.append("Instructions:")
+        scenario_lines.append(textwrap.indent(instructions_str, "\t"))
+        scenario = "\n".join(scenario_lines)
 
         user_model_id = self._get_user_model_id(task)
 
@@ -388,6 +547,16 @@ class Tau2Benchmark(Benchmark):
         # Get user tools from environment
         user_tools = environment.create_user_tools()
 
+        # Build OpenAI-format tool definitions for the LLM
+        # Matches original tau2-bench Tool.openai_schema format
+        tool_definitions = _build_tool_definitions(user_tools) if user_tools else None
+
+        # D19: Default temperature=0.0 matching original tau2-bench
+        # D20: Disable Claude thinking for Claude models
+        user_llm_args: Dict[str, Any] = {"temperature": 0.0}
+        if user_model_id.startswith("claude"):
+            user_llm_args["thinking"] = {"type": "disabled"}
+
         return Tau2User(
             model=self.get_model_adapter(
                 user_model_id,
@@ -397,6 +566,8 @@ class Tau2Benchmark(Benchmark):
             scenario=scenario,
             initial_query=task.query,
             tools=user_tools,
+            tool_definitions=tool_definitions,
+            llm_args=user_llm_args,
         )
 
     @abstractmethod
@@ -538,12 +709,11 @@ class Tau2Benchmark(Benchmark):
             query_text = user.get_initial_query()
 
             # Inject greeting into user's message history (matching original orchestrator).
-            # Must happen AFTER get_initial_query() returns — inserting before would cause
-            # get_initial_query() to raise RuntimeError (messages[0]["role"] != "user").
-            # After insertion, user.messages becomes:
-            #   [{"role": "assistant", "content": greeting}, {"role": "user", "content": query}, ...]
+            # In the original, the orchestrator prepends DEFAULT_FIRST_AGENT_MESSAGE
+            # as an AssistantMessage before the user's initial query. The user simulator
+            # sees this greeting; the agent does not.
             # Source: tau2-bench orchestrator.py:L223-229
-            user.messages._messages.insert(0, {"role": "assistant", "content": INITIAL_GREETING})
+            user.inject_greeting(INITIAL_GREETING)
         else:
             query_text = task.query
 
@@ -588,6 +758,74 @@ _SYSTEM_PROMPT_TEMPLATE = """
 """.strip()
 
 
+def _build_tool_definitions(tools: Dict[str, Callable]) -> List[Dict[str, Any]]:
+    """Build OpenAI-format tool definitions from a dict of callables.
+
+    Matches the original tau2-bench Tool.openai_schema format:
+    uses docstring_parser + Pydantic create_model for parameter schemas.
+
+    Args:
+        tools: Dictionary mapping tool names to callables
+
+    Returns:
+        List of tool definitions in OpenAI function calling format
+    """
+    from docstring_parser import parse as parse_docstring
+    from typing import Any as TypingAny
+
+    definitions = []
+    for name, func in tools.items():
+        sig = inspect.signature(func)
+        doc = parse_docstring(func.__doc__ or "")
+
+        # Build tool description from parsed docstring (short + long)
+        if doc.short_description:
+            description = doc.short_description
+            if doc.long_description:
+                description += "\n\n" + doc.long_description
+        else:
+            description = name
+
+        # Build Pydantic model from signature + docstring params
+        doc_params = {p.arg_name: p for p in doc.params}
+        model_fields = {}
+
+        for param_name, param in sig.parameters.items():
+            if param_name == "self":
+                continue
+
+            anno = param.annotation
+            default = param.default
+
+            if default is param.empty:
+                default = ...  # required
+
+            if param_name in doc_params:
+                default = Field(default, description=doc_params[param_name].description)
+                if (anno is param.empty) and (doc_params[param_name].type_name is not None):
+                    anno = doc_params[param_name].type_name
+
+            if anno is param.empty:
+                anno = TypingAny
+
+            model_fields[param_name] = (anno, default)
+
+        params_model = create_model("parameters", **model_fields)  # type: ignore[call-overload]
+
+        definitions.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": description,
+                    "parameters": params_model.model_json_schema(),
+                },
+            }
+        )
+
+    return definitions
+
+
 def _to_json_str(resp: Any) -> str:
     """Convert a tool response to a JSON string.
 
@@ -610,7 +848,7 @@ def _to_json_str(resp: Any) -> str:
         elif obj is None:
             return obj
         elif isinstance(obj, (int, float, bool)):
-            return obj
+            return str(obj)
         elif isinstance(obj, list):
             return [_process(item) for item in obj]
         elif isinstance(obj, tuple):
@@ -1048,9 +1286,18 @@ class DefaultAgentTau2Benchmark(Tau2Benchmark):
         """
         # Get configuration
         model_id = self._get_agent_model_id(agent_data)
-        llm_args = agent_data.get("llm_args", {})
+        llm_args = dict(agent_data.get("llm_args", {}))
         max_tool_calls = agent_data.get("max_tool_calls", 50)
         verbose = agent_data.get("verbose", 0)
+
+        # D19: Default temperature=0.0 matching original tau2-bench
+        # (config.py: DEFAULT_LLM_TEMPERATURE_AGENT = 0.0)
+        llm_args.setdefault("temperature", 0.0)
+
+        # D20: Disable Claude thinking matching original tau2-bench
+        # (llm_utils.py: kwargs["thinking"] = {"type": "disabled"} for Claude)
+        if model_id.startswith("claude"):
+            llm_args.setdefault("thinking", {"type": "disabled"})
 
         # Get tools and policy from environment
         tools = environment.create_tools()

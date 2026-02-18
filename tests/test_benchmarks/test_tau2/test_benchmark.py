@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-from maseval import Task, MessageHistory
+from maseval import Task
 from maseval.core.model import ChatResponse
 from maseval.benchmark.tau2 import Tau2Benchmark, Tau2User, INITIAL_GREETING
 
@@ -154,9 +154,9 @@ def test_setup_user(benchmark, task):
     user = benchmark.setup_user({}, mock_env, task, seed_gen)
 
     assert isinstance(user, Tau2User)
-    assert user.scenario == "Call about order."
-    # Check that model adapter was requested with correct ID
-    # Since we use DummyTau2Benchmark which returns a mock, we assume it worked if user is created.
+    # Scenario is formatted matching original tau2-bench UserScenario.__str__()
+    assert "Instructions:" in user.scenario
+    assert "Call about order." in user.scenario
 
 
 @pytest.mark.benchmark
@@ -325,25 +325,20 @@ class TestTau2ExecutionLoop:
         """INITIAL_GREETING matches the original tau2-bench orchestrator.py:L34-36."""
         assert INITIAL_GREETING == "Hi! How can I help you today?"
 
-    def test_greeting_inserted_into_user_messages(self, benchmark, task):
-        """execution_loop inserts greeting at position 0 of user.messages."""
+    def test_greeting_injected_via_inject_greeting(self, benchmark, task):
+        """execution_loop calls user.inject_greeting(INITIAL_GREETING)."""
         mock_agent = MagicMock()
         mock_agent.run.return_value = "Agent response"
 
         user = MagicMock()
         user.get_initial_query.return_value = "I need help"
-        user.messages = MessageHistory([{"role": "user", "content": "I need help"}])
         user.respond.return_value = ""
         user.is_done.return_value = True
 
         benchmark.execution_loop([mock_agent], task, MagicMock(), user)
 
-        # Greeting should be at position 0
-        assert user.messages[0]["role"] == "assistant"
-        assert user.messages[0]["content"] == INITIAL_GREETING
-        # Original query should be at position 1
-        assert user.messages[1]["role"] == "user"
-        assert user.messages[1]["content"] == "I need help"
+        # inject_greeting should have been called with INITIAL_GREETING
+        user.inject_greeting.assert_called_once_with(INITIAL_GREETING)
 
     def test_no_greeting_without_user(self, benchmark, task):
         """execution_loop works without user (uses task.query, no greeting)."""
@@ -355,31 +350,31 @@ class TestTau2ExecutionLoop:
         assert result == "Response"
         mock_agent.run.assert_called_once_with(task.query)
 
-    def test_greeting_visible_in_user_respond_context(self, benchmark, task):
-        """User simulator sees greeting in message history during respond()."""
+    def test_greeting_injected_before_respond(self, benchmark, task):
+        """inject_greeting is called before respond() in the execution loop."""
         mock_agent = MagicMock()
         mock_agent.run.return_value = "How can I assist?"
 
-        captured_messages = []
+        call_order = []
 
         user = MagicMock()
         user.get_initial_query.return_value = "I need help"
-        user.messages = MessageHistory([{"role": "user", "content": "I need help"}])
 
-        def capture_respond(msg):
-            # Capture the state of user.messages when respond() is called
-            captured_messages.append(list(user.messages))
+        def track_inject_greeting(greeting):
+            call_order.append("inject_greeting")
+
+        def track_respond(msg):
+            call_order.append("respond")
             return "Thanks"
 
-        user.respond.side_effect = capture_respond
+        user.inject_greeting.side_effect = track_inject_greeting
+        user.respond.side_effect = track_respond
         user.is_done.return_value = True
 
         benchmark.execution_loop([mock_agent], task, MagicMock(), user)
 
-        # When respond() was called, greeting should already be in messages
-        assert len(captured_messages) == 1
-        assert captured_messages[0][0]["role"] == "assistant"
-        assert captured_messages[0][0]["content"] == INITIAL_GREETING
+        # inject_greeting must be called before respond
+        assert call_order == ["inject_greeting", "respond"]
 
 
 # =============================================================================

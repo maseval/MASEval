@@ -512,7 +512,31 @@ class TestSetupStateOffline:
         db_path = tmp_path / "db.json"
         db_path.write_text(json.dumps(db_data))
 
-        initial_state = {"initialization_data": {"agent_data": {"users": {"u1": {"email": "new@test.com"}}}}}
+        # Shallow merge (matching original tau2-bench AddictDict.update) replaces
+        # top-level keys entirely, so we must provide the full user object.
+        initial_state = {
+            "initialization_data": {
+                "agent_data": {
+                    "users": {
+                        "u1": {
+                            "user_id": "u1",
+                            "name": {"first_name": "Alice", "last_name": "Smith"},
+                            "address": {
+                                "address1": "123 Main St",
+                                "address2": "",
+                                "city": "Anytown",
+                                "country": "US",
+                                "state": "CA",
+                                "zip": "90001",
+                            },
+                            "email": "new@test.com",
+                            "payment_methods": {"pm1": {"source": "credit_card", "id": "pm1", "brand": "visa", "last_four": "1234"}},
+                            "orders": [],
+                        }
+                    }
+                }
+            }
+        }
         env = Tau2Environment({"domain": "retail", "db_path": str(db_path), "policy": "p", "initial_state": initial_state})
 
         assert env.db.users["u1"].email == "new@test.com"  # type: ignore[union-attr]

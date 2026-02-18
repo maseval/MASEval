@@ -203,7 +203,16 @@ class Tau2Evaluator(Evaluator):
             reward_breakdown.update(communicate_result.get("breakdown", {}))
             reward *= communicate_result.get("reward", 1.0)
 
-        passed = reward == 1.0
+        # D12: Raise error if NL_ASSERTION is in reward_basis but not evaluated
+        nl_bases = {RewardType.NL_ASSERTION}
+        if set(self.reward_basis) & nl_bases:
+            raise ValueError(
+                "NL assertions are part of the reward basis, but they are not being evaluated. "
+                "NL assertion evaluation requires LLM-based judging."
+            )
+
+        # D22: Use epsilon comparison matching original agent_metrics.py
+        passed = (1 - 1e-6) <= reward <= (1 + 1e-6)
 
         return {
             "reward": reward,
@@ -231,9 +240,10 @@ class Tau2Evaluator(Evaluator):
         if self.actions is None and self.env_assertions is None:
             return {"reward": 1.0, "note": "No environment criteria"}
 
-        # Get current (predicted) database state hash
+        # Get current (predicted) database state hashes
         env_trace = traces.get("environment", {})
         predicted_db_hash = env_trace.get("final_db_hash") or self.environment.get_db_hash()
+        predicted_user_db_hash = env_trace.get("final_user_db_hash") or self.environment.get_user_db_hash()
 
         # Create gold environment and replay expected actions
         # Gold environment is fully initialized via setup_state() (including
@@ -242,12 +252,18 @@ class Tau2Evaluator(Evaluator):
         gold_env = gold_env_constructor()
 
         # Replay expected actions on gold environment
+        # Routes based on requestor (D2: original replays ALL actions regardless of requestor)
         golden_actions = self.actions or []
         action_errors = []
         for action in golden_actions:
             try:
                 requestor = action.get("requestor", "assistant")
-                if requestor == "assistant":
+                if requestor == "user":
+                    gold_env.make_user_tool_call(
+                        tool_name=action["name"],
+                        **action.get("arguments", {}),
+                    )
+                else:
                     gold_env.make_tool_call(
                         tool_name=action["name"],
                         **action.get("arguments", {}),
@@ -255,9 +271,14 @@ class Tau2Evaluator(Evaluator):
             except Exception as e:
                 action_errors.append({"action": action, "error": str(e)})
 
-        # Compare database states
+        # Compare database states (D3: compare BOTH agent and user DB hashes)
         gold_db_hash = gold_env.get_db_hash()
-        db_match = predicted_db_hash == gold_db_hash
+        gold_user_db_hash = gold_env.get_user_db_hash()
+
+        agent_db_match = predicted_db_hash == gold_db_hash
+        user_db_match = (gold_user_db_hash is None and predicted_user_db_hash is None) or (gold_user_db_hash == predicted_user_db_hash)
+
+        db_match = agent_db_match and user_db_match
         db_reward = 1.0 if db_match else 0.0
 
         # Run environment assertions (if any)
@@ -294,9 +315,13 @@ class Tau2Evaluator(Evaluator):
             "reward": reward,
             "breakdown": breakdown,
             "db_match": db_match,
+            "agent_db_match": agent_db_match,
+            "user_db_match": user_db_match,
             "db_reward": db_reward,
             "predicted_hash": predicted_db_hash,
             "expected_hash": gold_db_hash,
+            "predicted_user_hash": predicted_user_db_hash,
+            "expected_user_hash": gold_user_db_hash,
             "env_assertions": env_assertion_checks,
             "action_errors": action_errors,
         }
@@ -419,22 +444,27 @@ class Tau2Evaluator(Evaluator):
 
         messages = traces.get("messages", [])
 
-        # Combine all message content
-        all_content = ""
-        for msg in messages:
-            content = msg.get("content", "")
-            if isinstance(content, list):
-                content = " ".join(item.get("text", "") if isinstance(item, dict) else str(item) for item in content)
-            all_content += " " + content
-
-        all_content = all_content.lower()
-
         # Check each required info
+        # D5: Only search assistant messages (matching original evaluator_communicate.py)
+        # D4: Strip commas from content before searching (matching original)
         comm_checks = []
         all_found = True
 
         for info in self.communicate_info:
-            found = info.lower() in all_content
+            found = False
+            for msg in messages:
+                # D5: Only check assistant messages with text content
+                if msg.get("role") != "assistant":
+                    continue
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    content = " ".join(item.get("text", "") if isinstance(item, dict) else str(item) for item in content)
+                if not content:
+                    continue
+                # D4: Strip commas from content before matching
+                if info.lower() in content.lower().replace(",", ""):
+                    found = True
+                    break
             comm_checks.append({"info": info, "found": found})
             if not found:
                 all_found = False

@@ -41,8 +41,8 @@ def get_dict_hash(data: Dict[str, Any]) -> str:
         >>> get_dict_hash({"a": 1, "b": 2})
         '...'
     """
-    # Sort keys and use separators without spaces for compact, consistent output
-    serialized = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    # Match original tau2-bench: json.dumps with default separators (", ", ": ")
+    serialized = json.dumps(data, sort_keys=True, default=str)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
@@ -65,11 +65,9 @@ def get_pydantic_hash(model: BaseModel) -> str:
         >>> get_pydantic_hash(MyModel(x=1))
         '...'
     """
-    # Use Pydantic's model_dump_json for proper datetime serialization
-    # Sort keys by dumping to dict first, sorting, then re-serializing
-    data = model.model_dump(mode="json")  # Converts datetimes to ISO strings
-    serialized = json.dumps(data, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    # Match original tau2-bench: model_dump() (python mode) + get_dict_hash
+    data = model.model_dump()
+    return get_dict_hash(data)
 
 
 # =============================================================================
@@ -80,7 +78,8 @@ def get_pydantic_hash(model: BaseModel) -> str:
 def update_pydantic_model_with_dict(model: T, update_data: Dict[str, Any]) -> T:
     """Update a Pydantic model with values from a dictionary.
 
-    Recursively updates nested models. Creates a new model instance.
+    Uses SHALLOW merge matching original tau2-bench behavior (AddictDict.update).
+    Top-level keys are replaced entirely — nested dicts are NOT deep-merged.
 
     Args:
         model: Pydantic model to update
@@ -102,35 +101,11 @@ def update_pydantic_model_with_dict(model: T, update_data: Dict[str, Any]) -> T:
     if not update_data:
         return model
 
-    # Get current data
-    current_data = model.model_dump()
+    # Shallow merge matching original: AddictDict(model.model_dump()).update(AddictDict(update_data))
+    raw_data = model.model_dump()
+    raw_data.update(update_data)
 
-    # Deep merge update_data into current_data
-    merged = _deep_merge(current_data, update_data)
-
-    # Create new model with merged data
-    return model.__class__.model_validate(merged)
-
-
-def _deep_merge(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
-    """Deep merge two dictionaries.
-
-    Args:
-        base: Base dictionary
-        updates: Dictionary with updates
-
-    Returns:
-        New merged dictionary
-    """
-    result = base.copy()
-
-    for key, value in updates.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = value
-
-    return result
+    return model.__class__.model_validate(raw_data)
 
 
 # =============================================================================

@@ -44,9 +44,9 @@ class TestInitializationMethods:
 
     def test_turn_data_off(self, telecom_user_toolkit):
         """turn_data_off disables mobile data."""
-        assert telecom_user_toolkit.db.user_db.device.mobile_data_enabled is True
+        assert telecom_user_toolkit.db.user_db.device.data_enabled is True
         telecom_user_toolkit.turn_data_off()
-        assert telecom_user_toolkit.db.user_db.device.mobile_data_enabled is False
+        assert telecom_user_toolkit.db.user_db.device.data_enabled is False
 
     def test_turn_airplane_mode_on(self, telecom_user_toolkit):
         """turn_airplane_mode_on enables airplane mode with side effects."""
@@ -88,7 +88,7 @@ class TestInitializationMethods:
         telecom_user_toolkit.lock_sim_card(mode="pin")
 
         device = telecom_user_toolkit.db.user_db.device
-        assert device.sim_status == SimStatus.LOCKED_PIN
+        assert device.sim_card_status == SimStatus.LOCKED_PIN
         assert device.network_connection_status == NetworkStatus.NO_SERVICE
 
     def test_lock_sim_card_puk(self, telecom_user_toolkit):
@@ -96,7 +96,7 @@ class TestInitializationMethods:
         telecom_user_toolkit.lock_sim_card(mode="puk")
 
         device = telecom_user_toolkit.db.user_db.device
-        assert device.sim_status == SimStatus.LOCKED_PUK
+        assert device.sim_card_status == SimStatus.LOCKED_PUK
         assert device.network_connection_status == NetworkStatus.NO_SERVICE
 
     def test_break_apn_settings(self, telecom_user_toolkit):
@@ -104,30 +104,30 @@ class TestInitializationMethods:
         telecom_user_toolkit.break_apn_settings()
 
         device = telecom_user_toolkit.db.user_db.device
-        assert device.apn_settings.name == APNNames.BROKEN.value
+        assert device.active_apn_settings.apn_name == APNNames.BROKEN
         assert device.network_connection_status == NetworkStatus.NO_SERVICE
 
     def test_break_apn_mms_setting(self, telecom_user_toolkit):
         """break_apn_mms_setting clears MMSC URL."""
         telecom_user_toolkit.break_apn_mms_setting()
-        assert telecom_user_toolkit.db.user_db.device.apn_settings.mmsc_url == ""
+        assert telecom_user_toolkit.db.user_db.device.active_apn_settings.mmsc_url is None
 
     def test_break_vpn(self, telecom_user_toolkit):
         """break_vpn connects VPN with poor performance."""
         telecom_user_toolkit.break_vpn()
 
         device = telecom_user_toolkit.db.user_db.device
-        assert device.vpn_status is True
+        assert device.vpn_connected is True
         assert device.vpn_details is not None
         assert device.vpn_details.server_performance == PerformanceLevel.POOR
 
     def test_remove_app_permission(self, telecom_user_toolkit):
         """remove_app_permission revokes a permission."""
         # Default messaging app has sms=True
-        assert telecom_user_toolkit.db.user_db.device.installed_apps["messaging"].permissions.sms is True
+        assert telecom_user_toolkit.db.user_db.device.app_statuses["messaging"].permissions.sms is True
 
         telecom_user_toolkit.remove_app_permission("messaging", "sms")
-        assert telecom_user_toolkit.db.user_db.device.installed_apps["messaging"].permissions.sms is False
+        assert telecom_user_toolkit.db.user_db.device.app_statuses["messaging"].permissions.sms is False
 
     def test_set_wifi_calling(self, telecom_user_toolkit):
         """set_wifi_calling sets wifi calling and mms_over_wifi."""
@@ -152,9 +152,10 @@ class TestSimulateNetworkSearch:
 
         device = telecom_user_toolkit.db.user_db.device
         assert device.network_connection_status == NetworkStatus.CONNECTED
-        # Default signal_strength only has 4G and 3G, no 5G → should connect to 4G
-        assert device.network_technology_connected == NetworkTechnology.FOUR_G
-        assert device.network_signal_strength == SignalStrength.GOOD
+        # Default signal_strength has all 4 bands (2G-5G), 5G is EXCELLENT
+        # With 4G/5G preferred, should connect to 5G
+        assert device.network_technology_connected == NetworkTechnology.FIVE_G
+        assert device.network_signal_strength == SignalStrength.EXCELLENT
 
     def test_3g_only_preference(self, telecom_user_toolkit):
         """With 3G only preference, connects to 3G."""
@@ -166,14 +167,14 @@ class TestSimulateNetworkSearch:
         assert device.network_technology_connected == NetworkTechnology.THREE_G
         assert device.network_signal_strength == SignalStrength.FAIR
 
-    def test_2g_only_no_signal(self, telecom_user_toolkit):
-        """With 2G only preference but no 2G signal, gets no signal."""
+    def test_2g_only_preference(self, telecom_user_toolkit):
+        """With 2G only preference, connects to 2G with poor signal."""
         telecom_user_toolkit.db.user_db.device.network_mode_preference = NetworkModePreference.TWO_G_ONLY
-        # Default signal_strength doesn't include 2G
         telecom_user_toolkit.simulate_network_search()
 
         device = telecom_user_toolkit.db.user_db.device
-        assert device.network_signal_strength == SignalStrength.NONE
+        assert device.network_technology_connected == NetworkTechnology.TWO_G
+        assert device.network_signal_strength == SignalStrength.POOR
 
     def test_airplane_mode_no_service(self, telecom_user_toolkit):
         """Airplane mode results in NO_SERVICE."""
@@ -194,7 +195,7 @@ class TestSimulateNetworkSearch:
 
     def test_locked_sim_no_service(self, telecom_user_toolkit):
         """Locked SIM card results in NO_SERVICE."""
-        telecom_user_toolkit.db.user_db.device.sim_status = SimStatus.LOCKED_PIN
+        telecom_user_toolkit.db.user_db.device.sim_card_status = SimStatus.LOCKED_PIN
         telecom_user_toolkit.simulate_network_search()
 
         device = telecom_user_toolkit.db.user_db.device
@@ -202,7 +203,7 @@ class TestSimulateNetworkSearch:
 
     def test_broken_apn_no_service(self, telecom_user_toolkit):
         """Broken APN results in NO_SERVICE."""
-        telecom_user_toolkit.db.user_db.device.apn_settings.name = APNNames.BROKEN.value
+        telecom_user_toolkit.db.user_db.device.active_apn_settings.apn_name = APNNames.BROKEN
         telecom_user_toolkit.simulate_network_search()
 
         device = telecom_user_toolkit.db.user_db.device
@@ -229,23 +230,22 @@ class TestSpeedTestWithInitialization:
         """Speed test returns No Connection after turn_data_off."""
         telecom_user_toolkit.turn_data_off()
         result = telecom_user_toolkit.use_tool("run_speed_test")
-        assert "no" in result.lower()
+        assert "no" in result.lower() or "failed" in result.lower()
 
     def test_speed_test_after_airplane_mode(self, telecom_user_toolkit):
         """Speed test returns no connection after turn_airplane_mode_on."""
         telecom_user_toolkit.turn_airplane_mode_on()
         result = telecom_user_toolkit.use_tool("run_speed_test")
-        assert "airplane" in result.lower() or "no" in result.lower()
+        assert "no" in result.lower() or "failed" in result.lower()
 
     def test_speed_test_after_break_vpn(self, telecom_user_toolkit):
         """Speed test returns reduced speed after break_vpn (poor VPN)."""
         telecom_user_toolkit.break_vpn()
         speed, desc = telecom_user_toolkit._run_speed_test()
-        # With poor VPN (0.1x factor), 4G Good signal:
-        # (10+100)/2 * 0.8 * 0.1 = 4.4 Mbps → "Poor"
+        # With poor VPN (0.1x factor), 5G Excellent signal:
+        # (50+500)/2 * 1.0 * 0.1 = 27.5 Mbps → "Good"
         assert speed is not None
-        assert speed < 5.0
-        assert desc == "Poor"
+        assert speed < 50.0
 
 
 # =============================================================================

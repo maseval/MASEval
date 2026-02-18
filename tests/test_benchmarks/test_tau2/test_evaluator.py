@@ -77,12 +77,13 @@ def test_filter_traces(evaluator):
 @pytest.mark.benchmark
 def test_evaluate_environment_success(evaluator, mock_environment):
     """Test environment evaluation with matching hashes."""
-    traces = {"environment": {"final_db_hash": "hash_gold"}}
+    traces = {"environment": {"final_db_hash": "hash_gold", "final_user_db_hash": "user_hash_gold"}}
 
-    # Mock gold environment creation
+    # Mock gold environment creation (must mock both agent and user DB hashes)
     with patch("maseval.benchmark.tau2.evaluator.get_environment_constructor") as mock_get_const:
         mock_gold_env = MagicMock()
         mock_gold_env.get_db_hash.return_value = "hash_gold"
+        mock_gold_env.get_user_db_hash.return_value = "user_hash_gold"
         mock_get_const.return_value.return_value = mock_gold_env
 
         result = evaluator._evaluate_environment(traces)
@@ -95,11 +96,12 @@ def test_evaluate_environment_success(evaluator, mock_environment):
 @pytest.mark.benchmark
 def test_evaluate_environment_failure(evaluator, mock_environment):
     """Test environment evaluation with mismatching hashes."""
-    traces = {"environment": {"final_db_hash": "hash_actual"}}
+    traces = {"environment": {"final_db_hash": "hash_actual", "final_user_db_hash": None}}
 
     with patch("maseval.benchmark.tau2.evaluator.get_environment_constructor") as mock_get_const:
         mock_gold_env = MagicMock()
         mock_gold_env.get_db_hash.return_value = "hash_expected"
+        mock_gold_env.get_user_db_hash.return_value = None
         mock_get_const.return_value.return_value = mock_gold_env
 
         result = evaluator._evaluate_environment(traces)
@@ -174,7 +176,7 @@ def test_evaluate_actions_missing(evaluator):
 @pytest.mark.benchmark
 def test_evaluate_communication_success(evaluator):
     """Test communication evaluation finding required info."""
-    traces = {"messages": [{"content": "Your refund processed successfully."}]}
+    traces = {"messages": [{"role": "assistant", "content": "Your refund processed successfully."}]}
 
     result = evaluator._evaluate_communication(traces)
 
@@ -185,7 +187,7 @@ def test_evaluate_communication_success(evaluator):
 @pytest.mark.benchmark
 def test_evaluate_communication_failure(evaluator):
     """Test communication evaluation failing to find info."""
-    traces = {"messages": [{"content": "I cannot help you."}]}
+    traces = {"messages": [{"role": "assistant", "content": "I cannot help you."}]}
 
     result = evaluator._evaluate_communication(traces)
 
