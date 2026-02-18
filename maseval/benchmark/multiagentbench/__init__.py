@@ -103,6 +103,7 @@ from maseval.benchmark.multiagentbench.environment import (
 
 # Evaluator
 from maseval.benchmark.multiagentbench.evaluator import (
+    MarbleReproductionEvaluator,
     MultiAgentBenchEvaluator,
     MultiAgentBenchMetrics,
 )
@@ -135,6 +136,7 @@ __all__ = [
     "MultiAgentBenchEnvironment",
     "INFRASTRUCTURE_DOMAINS",
     # Evaluator
+    "MarbleReproductionEvaluator",
     "MultiAgentBenchEvaluator",
     "MultiAgentBenchMetrics",
     # Agent adapters

@@ -686,6 +686,22 @@ def _make_mock_benchmark(
     benchmark._domain = domain
     benchmark._marble_max_iterations = max_iterations
     benchmark._summarize_results_marble = MarbleMultiAgentBenchBenchmark._summarize_results_marble
+
+    # Mock MARBLE evaluator with proper metrics structure matching evaluator.py:31-40
+    mock_evaluator = MagicMock()
+    mock_evaluator.metrics = {
+        "task_completion": [],
+        "token_consumption": [],
+        "planning_score": [],
+        "communication_score": [],
+        "task_evaluation": {},
+        "total_milestones": 0,
+        "agent_kpis": {},
+        "code_quality": {},
+    }
+    benchmark._marble_evaluator = mock_evaluator
+    benchmark._task_data = {}
+
     if agents_dict is not None:
         benchmark._agents_dict = agents_dict
     return benchmark

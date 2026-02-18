@@ -8,6 +8,7 @@ This module provides benchmark classes for the MARBLE MultiAgentBench suite:
 import json
 import logging
 from abc import abstractmethod
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
@@ -26,6 +27,7 @@ from maseval.core.seeding import SeedGenerator
 from maseval.benchmark.multiagentbench._constants import MARBLE_IMPORT_ERROR, ensure_marble_on_path
 from maseval.benchmark.multiagentbench.environment import MultiAgentBenchEnvironment
 from maseval.benchmark.multiagentbench.evaluator import (
+    MarbleReproductionEvaluator,
     MultiAgentBenchEvaluator,
 )
 
@@ -33,6 +35,88 @@ if TYPE_CHECKING:
     from maseval.benchmark.multiagentbench.adapters.marble_adapter import MarbleAgentAdapter
 
 logger = logging.getLogger(__name__)
+
+
+def _create_patched_marble_evaluator(metrics_config: Dict[str, Any]) -> Any:
+    """Create a MARBLE Evaluator with corrected ``evaluator_prompts.json`` path.
+
+    The original ``Evaluator.__init__`` (evaluator.py:41) uses a hardcoded
+    relative path ``'evaluator/evaluator_prompts.json'``. This function creates
+    a subclass that fixes the path while inheriting all ~600 lines of evaluation
+    methods (``evaluate_communication``, ``evaluate_planning``, ``evaluate_kpi``,
+    ``evaluate_task_research``, ``evaluate_task_world``, ``evaluate_task_db``,
+    ``evaluate_code_quality``, and all ``parse_*`` methods) unchanged.
+
+    Args:
+        metrics_config: MARBLE metrics configuration dict. The ``evaluate_llm``
+            key controls which model is used for LLM-based evaluation calls.
+            Structure: ``{"evaluate_llm": {"model": "gpt-4o"}}``
+
+    Returns:
+        Instance of patched MARBLE Evaluator with all methods inherited.
+    """
+    ensure_marble_on_path()
+    from marble.evaluator.evaluator import Evaluator as MarbleEvaluator  # type: ignore[import-untyped]
+    from marble.utils.logger import get_logger  # type: ignore[import-untyped]
+
+    class _Patched(MarbleEvaluator):
+        def __init__(self, mc: Dict[str, Any]) -> None:
+            # Replicate evaluator.py:22-45 with corrected prompts path.
+            # We duplicate only these ~15 init lines; all ~600 lines of
+            # evaluation methods are inherited from MarbleEvaluator.
+            self.logger = get_logger(self.__class__.__name__)
+            self.metrics_config = mc
+            # Metrics dict structure from evaluator.py:31-40
+            self.metrics: Dict[str, Any] = {
+                "task_completion": [],
+                "token_consumption": [],
+                "planning_score": [],
+                "communication_score": [],
+                "task_evaluation": {},
+                "total_milestones": 0,
+                "agent_kpis": {},
+                "code_quality": {},
+            }
+            # Fix: absolute path to vendored evaluator_prompts.json
+            # (original uses relative 'evaluator/evaluator_prompts.json')
+            prompts_path = Path(__file__).parent / "marble" / "marble" / "evaluator" / "evaluator_prompts.json"
+            with open(prompts_path, "r", encoding="utf-8") as f:
+                self.evaluation_prompts = json.load(f)
+            # LLM model selection from evaluator.py:44-45
+            evaluate_llm_config = self.metrics_config.get("evaluate_llm", {})
+            # Default 'gpt-3.5-turbo' from evaluator.py:45
+            self.llm = evaluate_llm_config.get("model", "gpt-3.5-turbo") if isinstance(evaluate_llm_config, dict) else evaluate_llm_config
+
+        def evaluate_communication(self, task: str, communications: str) -> None:
+            """Override evaluator.py:66-93 to fix prompt formatting bug.
+
+            MARBLE's evaluator_prompts.json has a bug in the Graph.Communication
+            prompt: ``{"rating": X}`` uses single braces, unlike the research
+            and bargaining prompts which correctly use ``{{`` double braces.
+            This causes ``str.format()`` to raise ``KeyError: '"rating"'``.
+
+            We use ``.replace()`` instead of ``.format()`` to avoid this.
+            All other logic is identical to evaluator.py:66-93.
+            """
+            from marble.utils.utils import model_prompting  # type: ignore[import-untyped]
+
+            communication_prompt_template = self.evaluation_prompts["Graph"]["Communication"]["prompt"]
+            # Fix: .replace() instead of .format() — see docstring
+            prompt = communication_prompt_template.replace("{task}", task).replace("{communications}", communications)
+            result = model_prompting(
+                llm_model=self.llm,
+                messages=[{"role": "user", "content": prompt}],
+                return_num=1,
+                max_token_num=512,
+                temperature=0.0,
+                top_p=None,
+                stream=None,
+            )[0]
+            assert isinstance(result.content, str)
+            score = self.parse_score(result.content)
+            self.metrics["communication_score"].append(score)
+
+    return _Patched(metrics_config)
 
 
 class MultiAgentBenchBenchmark(Benchmark):
@@ -470,6 +554,36 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
 
         return agents_list, agents_dict  # type: ignore[return-value]
 
+    def setup_evaluators(
+        self,
+        environment: Environment,
+        task: Task,
+        agents: Sequence[AgentAdapter],
+        user: Optional[User],
+        seed_generator: SeedGenerator,
+    ) -> Sequence[Evaluator]:
+        """Create a thin evaluator for MARBLE reproduction mode.
+
+        All LLM-based evaluation happens inside the coordination loop via
+        MARBLE's Evaluator (imported directly). The ``MarbleReproductionEvaluator``
+        only reformats pre-computed metrics into MASEval's result format.
+
+        No ``ModelAdapter`` is needed — evaluation LLM calls are handled by
+        MARBLE's ``model_prompting()`` in the coordination loop.
+
+        Args:
+            environment: The environment
+            task: The task with evaluation data
+            agents: The agents
+            user: User simulator (None for MultiAgentBench)
+            seed_generator: Seed generator for reproducibility
+
+        Returns:
+            List containing a single MarbleReproductionEvaluator
+        """
+        domain = task.environment_data.get("scenario", "")
+        return [MarbleReproductionEvaluator(domain=domain)]
+
     def _create_marble_env(self, task: Task) -> Any:
         """Create a MARBLE environment for the task.
 
@@ -592,6 +706,19 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         env_config = task.environment_data["environment"]
         self._marble_max_iterations: int = env_config.get("max_iterations", 10)
 
+        # Store task data for domain evaluation (DB needs labels, root_causes;
+        # Coding needs workspace_dir). Matches engine.py:83 (self.config.task).
+        self._task_data = task_data
+
+        # Create MARBLE evaluator for in-loop evaluation (engine.py:82).
+        # MARBLE: Evaluator(metrics_config=config.metrics)
+        # metrics_config.evaluate_llm.model controls the LLM (evaluator.py:44-45).
+        marble_metrics_config: Dict[str, Any] = dict(task.evaluation_data.get("metrics", {}))
+        eval_model_id = task.evaluation_data.get("model_id")
+        if eval_model_id:
+            marble_metrics_config["evaluate_llm"] = {"model": eval_model_id}
+        self._marble_evaluator: Any = _create_patched_marble_evaluator(marble_metrics_config)
+
     def execution_loop(
         self,
         agents: Sequence[AgentAdapter],
@@ -645,6 +772,8 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         task_content = self._task_content
         output_format = self._output_format
         current_iteration = 0
+        # Matches engine.py:223 iteration_data["summary"] = "" initialization
+        iteration_summary = ""
 
         # -- Initial assignment (engine.py:211-260) --
         agents_results: List[Dict[str, Any]] = []
@@ -669,6 +798,8 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         # engine.py:264 overwrites summary with planner return
         summary = self._summarize_results_marble(agents_results)
         summary = planner.summarize_output(summary, task_content, output_format)
+        # engine.py:267: iteration_data["summary"] = summary.content
+        iteration_summary = summary.content
 
         # Decide whether to continue (engine.py:270-289)
         if self._domain.lower() == "minecraft":
@@ -680,6 +811,12 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             # engine.py:288 passes the planner return object (not raw string)
             planner.update_progress(summary)
             current_iteration += 1
+
+        # Per-iteration evaluation: graph mode always -1 (engine.py:293-317)
+        # Communication eval is COMMENTED OUT in MARBLE's graph_coordinate
+        # (engine.py:297-299), always stores -1. Same for planning (engine.py:317).
+        self._marble_evaluator.metrics["communication_score"].append(-1)
+        self._marble_evaluator.metrics["planning_score"].append(-1)
 
         # -- Iteration loop (engine.py:323-433) --
         # Use end_on_iter_0 flag matching engine.py:319-322
@@ -710,7 +847,13 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             # Summarize (engine.py:379-387)
             summary = self._summarize_results_marble(agents_results)
             current_iteration += 1
-            planner.summarize_output(summary, task_content, output_format)
+            summary_from_planner = planner.summarize_output(summary, task_content, output_format)
+            # engine.py:387: iteration_data["summary"] = summary_from_planner.content
+            iteration_summary = summary_from_planner.content
+
+            # Per-iteration evaluation: graph mode always -1 (engine.py:389-413)
+            self._marble_evaluator.metrics["communication_score"].append(-1)
+            self._marble_evaluator.metrics["planning_score"].append(-1)
 
             # Update latest results from this iteration
             latest_results = iteration_results
@@ -724,10 +867,15 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             if not continue_simulation:
                 break
 
+        # Domain-specific final evaluation (engine.py:451-484)
+        # Uses last iteration's planner summary, matching MARBLE exactly.
+        self._run_domain_evaluation(iteration_summary)
+
         return {
             "agent_results": latest_results,
             "communications": communications,
             "coordination_mode": self._coordinate_mode,
+            "marble_evaluation": self._marble_evaluator.metrics,
         }
 
     def _star_coordinate(self, agents: Sequence[AgentAdapter]) -> Dict[str, Any]:
@@ -744,6 +892,8 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         latest_results: List[Dict[str, Any]] = []
         iteration_results: List[Dict[str, Any]] = []
         communications: List[str] = []
+        # Matches engine.py:511 iteration_data["summary"] = "" initialization
+        iteration_summary = ""
 
         while current_iteration < self._marble_max_iterations:
             # Planner assigns tasks (engine.py:519-523)
@@ -775,9 +925,26 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             # Summarize and update progress (engine.py:550-557)
             # star mode passes raw summary string to update_progress (engine.py:556)
             summary = self._summarize_results_marble(agents_results)
-            planner.summarize_output(summary, task_content, output_format)
+            summary_from_planner = planner.summarize_output(summary, task_content, output_format)
+            # engine.py:554: iteration_data["summary"] = summary_from_planner.content
+            iteration_summary = summary_from_planner.content
             planner.update_progress(summary)
             current_iteration += 1
+
+            # Per-iteration evaluation (engine.py:559-581)
+            # Communication (engine.py:560-567)
+            if communications:
+                communications_str = self._format_communications(communications)
+                self._marble_evaluator.evaluate_communication(task_content, communications_str)
+            else:
+                self._marble_evaluator.metrics["communication_score"].append(-1)
+            # Planning (engine.py:570-580)
+            agent_profiles = self._get_agent_profiles()
+            agent_tasks_str = self._format_agent_tasks(tasks)
+            results_str = self._format_results(agents_results)
+            self._marble_evaluator.evaluate_planning(iteration_summary, agent_profiles, agent_tasks_str, results_str)
+            # KPI (engine.py:581)
+            self._marble_evaluator.evaluate_kpi(task_content, results_str)
 
             # Update latest results from this iteration
             latest_results = iteration_results
@@ -787,10 +954,14 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             if not continue_simulation:
                 break
 
+        # Domain-specific final evaluation (engine.py:606-644)
+        self._run_domain_evaluation(iteration_summary)
+
         return {
             "agent_results": latest_results,
             "communications": communications,
             "coordination_mode": self._coordinate_mode,
+            "marble_evaluation": self._marble_evaluator.metrics,
         }
 
     def _chain_coordinate(self, agents: Sequence[AgentAdapter]) -> Dict[str, Any]:
@@ -815,6 +986,8 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         max_chain_length = self._marble_max_iterations * len(self._agents_dict)
         chain_length = 0
         current_task = task_content
+        # Matches engine.py:684 iteration_data["summary"] implicit "" initialization
+        iteration_summary = ""
 
         all_results: List[Dict[str, Any]] = []
         agents_results_accumulated: List[Dict[str, Any]] = []
@@ -826,14 +999,21 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             # Agent acts (engine.py:691)
             comm_count_before = len(current_adapter._communication_log)
             result = current_adapter.run(current_task)
+            # engine.py:692: formatted result string for KPI evaluation
+            result_str = f"AgentID: '{current_adapter.agent_id}' completed task with result: {result}"
+            # engine.py:695: per-step task assignment for planning eval
+            step_task_assignments = {current_adapter.agent_id: current_task}
             agents_results_accumulated.append({current_adapter.agent_id: result})
             all_results.append({"agent_id": current_adapter.agent_id, "result": result})
 
-            # Only capture NEW communication (engine.py:720)
+            # Capture per-step communication (engine.py:720)
+            # In MARBLE chain, communication is evaluated per-step (not accumulated)
+            step_communication: List[Any] = []
             if len(current_adapter._communication_log) > comm_count_before:
                 comm_text = current_adapter._communication_log[-1].get("communication", "")
                 if comm_text:
                     communications.append(comm_text)
+                    step_communication.append(comm_text)
 
             # Current agent chooses next agent (engine.py:702-717)
             agent_profiles = graph.get_agent_profiles_linked(current_adapter.agent_id)
@@ -852,9 +1032,28 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             chain_length += 1
             planner.update_progress(result)
 
+            # Per-step communication evaluation (engine.py:722-732)
+            # Note: in chain mode, communication eval comes BEFORE summarize
+            if step_communication:
+                communications_str = self._format_communications(step_communication)
+                self._marble_evaluator.evaluate_communication(task_content, communications_str)
+            else:
+                self._marble_evaluator.metrics["communication_score"].append(-1)
+
             # Summarize (engine.py:734-738)
             summary = self._summarize_results_marble(agents_results_accumulated)
-            planner.summarize_output(summary, task_content, output_format)
+            summary_from_planner = planner.summarize_output(summary, task_content, output_format)
+            # engine.py:738: iteration_data["summary"] = summary_from_planner.content
+            iteration_summary = summary_from_planner.content
+
+            # Planning evaluation (engine.py:740-752)
+            # Chain mode uses _get_agent_profiles() (all agents), per-step task_assignments,
+            # and passes raw `result` (not formatted results_str) to evaluate_planning
+            agent_profiles_all = self._get_agent_profiles()
+            agent_tasks_str = self._format_agent_tasks(step_task_assignments)
+            self._marble_evaluator.evaluate_planning(iteration_summary, agent_profiles_all, agent_tasks_str, result)
+            # engine.py:752: KPI uses result_str (formatted with AgentID prefix)
+            self._marble_evaluator.evaluate_kpi(task_content, result_str)
 
             # Decide whether to continue (engine.py:755-764)
             continue_simulation = planner.decide_next_step([{"root_agent": result}])
@@ -865,10 +1064,14 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         summary = self._summarize_results_marble(agents_results_accumulated)
         planner.update_progress(summary)
 
+        # Domain-specific final evaluation (engine.py:780-803)
+        self._run_domain_evaluation(iteration_summary)
+
         return {
             "agent_results": all_results,
             "communications": communications,
             "coordination_mode": self._coordinate_mode,
+            "marble_evaluation": self._marble_evaluator.metrics,
         }
 
     def _tree_coordinate(self, agents: Sequence[AgentAdapter]) -> Dict[str, Any]:
@@ -882,6 +1085,8 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         output_format = self._output_format
         graph = self._marble_graph
         current_iteration = 0
+        # Matches engine.py:838 implicit "" initialization
+        iteration_summary = ""
 
         root_marble_agent = graph.get_root_agent()
         if not root_marble_agent:
@@ -895,7 +1100,7 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             current_iteration += 1
 
             # Recursive execution from root (engine.py:843-845)
-            results, communication, _tasks = self._execute_agent_task_recursive(root_marble_agent, task_content)
+            results, communication, tasks_collected = self._execute_agent_task_recursive(root_marble_agent, task_content)
 
             all_results = results
             if communication:
@@ -905,7 +1110,29 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             # tree_coordinate passes recursive results directly (not reformatted)
             summary = self._summarize_results_marble(results)
             summary = planner.summarize_output(summary, task_content, output_format)
+            # engine.py:851: iteration_data["summary"] = summary.content
+            iteration_summary = summary.content
             planner.update_progress(summary)
+
+            # Per-iteration evaluation (engine.py:859-881)
+            # Communication (engine.py:860-867)
+            # Note: communication from _execute_agent_task_recursive is a string
+            # or None. MARBLE passes it directly to _format_communications which
+            # iterates over it (engine.py:861-863). We replicate this exactly.
+            if communication:
+                communications_str = self._format_communications(communication)
+                self._marble_evaluator.evaluate_communication(task_content, communications_str)
+            else:
+                self._marble_evaluator.metrics["communication_score"].append(-1)
+            # Planning (engine.py:870-880)
+            # tasks_collected is a list from recursive exec; _format_agent_tasks
+            # handles this via its except branch (engine.py:1147-1148).
+            agent_profiles = self._get_agent_profiles()
+            agent_tasks_str = self._format_agent_tasks(tasks_collected)
+            results_str = self._format_results(results)
+            self._marble_evaluator.evaluate_planning(iteration_summary, agent_profiles, agent_tasks_str, results_str)
+            # KPI (engine.py:881)
+            self._marble_evaluator.evaluate_kpi(task_content, results_str)
 
             # Decide whether to continue (engine.py:884)
             # tree_coordinate passes results directly to decide_next_step
@@ -913,10 +1140,14 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
             if not continue_simulation:
                 break
 
+        # Domain-specific final evaluation (engine.py:902-940)
+        self._run_domain_evaluation(iteration_summary)
+
         return {
             "agent_results": all_results,
             "communications": communications,
             "coordination_mode": self._coordinate_mode,
+            "marble_evaluation": self._marble_evaluator.metrics,
         }
 
     def _execute_agent_task_recursive(self, marble_agent: Any, task: str) -> Tuple[List[Dict[str, Any]], Optional[str], List[Any]]:
@@ -1027,6 +1258,121 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         except Exception:
             block_hit_rate = 0.0
         return int(block_hit_rate) != 1
+
+    # -- MARBLE Engine helper methods for evaluation --
+    # Copied from marble/engine/engine.py:1119-1163. These format data
+    # for MARBLE's evaluator methods (evaluate_communication, evaluate_planning,
+    # evaluate_kpi) which are called per-iteration inside coordination loops.
+
+    def _format_communications(self, communications: Any) -> str:
+        """Format communications into a string for the evaluator.
+
+        Copied from engine.py:1119-1124. Accepts any iterable — in star/chain
+        mode this is a list of strings; in tree mode MARBLE passes the raw
+        communication string from ``_execute_agent_task_recursive``
+        (engine.py:856, 861).
+        """
+        # Assuming each communication is a string or can be converted to string
+        return "\n".join(str(c) for c in communications)
+
+    def _get_agent_profiles(self) -> str:
+        """Retrieve and format agent profiles from the agent graph.
+
+        Copied from engine.py:1126-1136.
+        """
+        agent_profiles = []
+        for agent in self._marble_graph.get_all_agents():
+            agent_profiles.append(f"Agent ID: {agent.agent_id}, Profile: {agent.profile}")
+        return "\n".join(agent_profiles)
+
+    def _format_agent_tasks(self, agent_tasks: Any) -> str:
+        """Format agent task assignments into a string.
+
+        Copied from engine.py:1138-1148. Accepts a dict (star mode) or a list
+        (tree mode where ``_execute_agent_task_recursive`` returns a list of
+        collected task dicts). The ``except`` branch handles the list case.
+        """
+        try:
+            return "\n".join(f"Agent {agent_id}: Task: {task}" for agent_id, task in agent_tasks.items())
+        except Exception:
+            return "\n".join(json.dumps(item) for item in agent_tasks)
+
+    def _format_results(self, results: List[Dict[str, Any]]) -> str:
+        """Format task results into a string.
+
+        Copied from engine.py:1150-1163.
+        """
+        results_str = []
+        for result in results:
+            if "agent_id" in result and "result" in result:
+                agent_id = result["agent_id"]
+                res_content = result["result"]
+                results_str.append(f"AgentID: {agent_id}: Result: {res_content}")
+            else:
+                for agent_id, res_content in result.items():
+                    results_str.append(f"Agent {agent_id}: Result: {res_content}")
+        return "\n".join(results_str)
+
+    def _read_code_from_file(self) -> str:
+        """Read solution code from workspace for coding evaluation.
+
+        Replicates engine.py:49-59. MARBLE reads from a hardcoded path
+        ``MARBLE/marble/workspace/solution.py`` (engine.py:615, 911).
+        """
+        file_path = "MARBLE/marble/workspace/solution.py"
+        try:
+            with open(file_path, "r", encoding="utf-8") as file:
+                return file.read()
+        except IOError as e:
+            logger.error(f"Failed to read code from {file_path}: {e}")
+            return ""
+
+    def _run_domain_evaluation(self, summary: str) -> None:
+        """Run domain-specific final evaluation via MARBLE evaluator.
+
+        Replicates the domain dispatch at the end of each coordination method:
+        engine.py:451-484 (graph), engine.py:606-644 (star),
+        engine.py:780-803 (chain), engine.py:902-940 (tree).
+
+        Args:
+            summary: The planner's summary string (``iteration_data["summary"]``
+                in MARBLE, which is ``planner.summarize_output().content``).
+        """
+        domain = self._domain.lower()
+        evaluator = self._marble_evaluator
+
+        if domain == "research":
+            # engine.py:454, 607, 781, 903
+            evaluator.evaluate_task_research(self._task_content, summary)
+        elif domain == "bargaining":
+            # engine.py:460, 628, 787, 924
+            # MARBLE checks environment.name == "World Simulation Environment"
+            evaluator.evaluate_task_world(self._task_content, summary)
+        elif domain == "database":
+            # engine.py:473-479, 634-640, 793-799, 930-936
+            # MARBLE reads labels/root_causes from self.config.task
+            task_data = self._task_data
+            evaluator.evaluate_task_db(
+                self._task_content,
+                summary,
+                task_data["labels"],
+                task_data["number_of_labels_pred"],
+                task_data["root_causes"],
+            )
+        elif domain == "coding":
+            # engine.py:614-626, 910-921
+            # MARBLE reads from workspace/solution.py
+            code = self._read_code_from_file()
+            if code:
+                evaluator.evaluate_code_quality(task=self._task_content, code_result=code)
+        elif domain == "minecraft":
+            # engine.py:465-471
+            try:
+                with open("../data/score.json", "r") as f:
+                    block_hit_rate = json.load(f)[-1]["block_hit_rate"]
+            except Exception:
+                block_hit_rate = 0.0
+            evaluator.metrics["task_evaluation"] = block_hit_rate * 5
 
     @abstractmethod
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> ModelAdapter:
