@@ -138,26 +138,11 @@ def get_provider_from_model(model_id: str) -> Literal["openai", "google", "anthr
 # =============================================================================
 
 
-class DefaultTau2User(Tau2User):
-    """Tau2 User that provides a simple callable for the default agent."""
-
-    def get_tool(self) -> Dict[str, Any]:
-        """Return user tool info for the default agent."""
-
-        def ask_user(question: str) -> str:
-            """Ask the customer a question to clarify their request or get additional information."""
-            return self.respond(question)
-
-        return {"ask_user": ask_user}
-
-
 class GoogleGenAITau2Benchmark(DefaultAgentTau2Benchmark):
     """Tau2 Benchmark using Google GenAI for the default agent."""
 
     def __init__(self, model_id: str = "gemini-2.5-flash", **kwargs: Any):
-        agent_data = kwargs.pop("agent_data", {})
-        agent_data["model_id"] = model_id
-        super().__init__(agent_data=agent_data, **kwargs)
+        super().__init__(**kwargs)
         self._model_id = model_id
 
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> GoogleGenAIModelAdapter:
@@ -168,71 +153,12 @@ class GoogleGenAITau2Benchmark(DefaultAgentTau2Benchmark):
             self.register("models", kwargs["register_name"], adapter)
         return adapter
 
-    def setup_user(
-        self,
-        agent_data: Dict[str, Any],
-        environment: Tau2Environment,
-        task: Task,
-        seed_generator: SeedGenerator,
-    ) -> DefaultTau2User:
-        """Create user simulator with tool support for default agent."""
-        user_data = task.user_data
-        instructions = user_data.get("instructions", {})
-
-        if isinstance(instructions, str):
-            scenario = instructions
-        elif isinstance(instructions, dict):
-            parts = []
-            if instructions.get("reason_for_call"):
-                parts.append(f"Reason for call: {instructions['reason_for_call']}")
-            if instructions.get("known_info"):
-                parts.append(f"Known info: {instructions['known_info']}")
-            if instructions.get("task_instructions"):
-                parts.append(f"Task: {instructions['task_instructions']}")
-            scenario = "\n".join(parts)
-        else:
-            scenario = ""
-
-        persona = user_data.get("persona")
-        if persona:
-            scenario = f"Persona: {persona}\n\n{scenario}"
-
-        user_model_id = self._get_user_model_id(task)
-        user_model = self.get_model_adapter(user_model_id, register_name="user_simulator")
-
-        return DefaultTau2User(
-            model=user_model,
-            scenario=scenario,
-            initial_query=task.query,
-            tools=environment.create_user_tools(),
-        )
-
-    def setup_agents(
-        self,
-        agent_data: Dict[str, Any],
-        environment: Tau2Environment,
-        task: Task,
-        user: Optional[DefaultTau2User],
-        seed_generator: SeedGenerator,
-    ):
-        """Create the default agent with user tool support."""
-        agents_to_run, agents_dict = super().setup_agents(agent_data, environment, task, user, seed_generator)
-
-        if user is not None:
-            agent = agents_dict["default_agent"]._agent
-            user_tools = user.get_tool()
-            agent.tools.update(user_tools)
-
-        return agents_to_run, agents_dict
-
 
 class OpenAITau2Benchmark(DefaultAgentTau2Benchmark):
     """Tau2 Benchmark using OpenAI for the default agent."""
 
     def __init__(self, model_id: str = "gpt-5-mini", **kwargs: Any):
-        agent_data = kwargs.pop("agent_data", {})
-        agent_data["model_id"] = model_id
-        super().__init__(agent_data=agent_data, **kwargs)
+        super().__init__(**kwargs)
         self._model_id = model_id
 
     def get_model_adapter(self, model_id: str, **kwargs: Any) -> OpenAIModelAdapter:
@@ -242,63 +168,6 @@ class OpenAITau2Benchmark(DefaultAgentTau2Benchmark):
         if "register_name" in kwargs:
             self.register("models", kwargs["register_name"], adapter)
         return adapter
-
-    def setup_user(
-        self,
-        agent_data: Dict[str, Any],
-        environment: Tau2Environment,
-        task: Task,
-        seed_generator: SeedGenerator,
-    ) -> DefaultTau2User:
-        """Create user simulator with tool support for default agent."""
-        user_data = task.user_data
-        instructions = user_data.get("instructions", {})
-
-        if isinstance(instructions, str):
-            scenario = instructions
-        elif isinstance(instructions, dict):
-            parts = []
-            if instructions.get("reason_for_call"):
-                parts.append(f"Reason for call: {instructions['reason_for_call']}")
-            if instructions.get("known_info"):
-                parts.append(f"Known info: {instructions['known_info']}")
-            if instructions.get("task_instructions"):
-                parts.append(f"Task: {instructions['task_instructions']}")
-            scenario = "\n".join(parts)
-        else:
-            scenario = ""
-
-        persona = user_data.get("persona")
-        if persona:
-            scenario = f"Persona: {persona}\n\n{scenario}"
-
-        user_model_id = self._get_user_model_id(task)
-        user_model = self.get_model_adapter(user_model_id, register_name="user_simulator")
-
-        return DefaultTau2User(
-            model=user_model,
-            scenario=scenario,
-            initial_query=task.query,
-            tools=environment.create_user_tools(),
-        )
-
-    def setup_agents(
-        self,
-        agent_data: Dict[str, Any],
-        environment: Tau2Environment,
-        task: Task,
-        user: Optional[DefaultTau2User],
-        seed_generator: SeedGenerator,
-    ):
-        """Create the default agent with user tool support."""
-        agents_to_run, agents_dict = super().setup_agents(agent_data, environment, task, user, seed_generator)
-
-        if user is not None:
-            agent = agents_dict["default_agent"]._agent
-            user_tools = user.get_tool()
-            agent.tools.update(user_tools)
-
-        return agents_to_run, agents_dict
 
 
 # =============================================================================
@@ -712,19 +581,19 @@ def run_benchmark(
     }
 
     if framework == "default":
-        benchmark_kwargs["agent_data"] = {
+        agent_data = {
             "model_id": model_id,
             "verbose": 2,
             "llm_args": {"temperature": temperature},
         }
         benchmark = BenchmarkClass(model_id=model_id, **benchmark_kwargs)
     else:
-        benchmark_kwargs["agent_data"] = {"model_id": model_id}
+        agent_data = {"model_id": model_id}
         benchmark = BenchmarkClass(**benchmark_kwargs)
 
     print(f"\nRunning {framework} benchmark on {domain} domain...")
     print(f"Model: {model_id}")
-    results = benchmark.run(tasks=tasks)
+    results = benchmark.run(tasks=tasks, agent_data=agent_data)
 
     summary = compute_benchmark_metrics(results)
 

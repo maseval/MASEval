@@ -195,21 +195,20 @@ class GoogleGenAIModelAdapter(ModelAdapter):
                 if parts:
                     contents.append({"role": "model", "parts": parts})
             elif role == "tool":
-                # Tool response in Google format
+                # Tool response in Google format.
+                # Google requires all tool responses for a single model turn
+                # to be in one contents entry, so merge consecutive tool messages.
                 tool_call_id = msg.get("tool_call_id", "")
-                contents.append(
-                    {
-                        "role": "function",
-                        "parts": [
-                            {
-                                "function_response": {
-                                    "name": msg.get("name", tool_call_id),
-                                    "response": {"result": content},
-                                }
-                            }
-                        ],
+                part = {
+                    "function_response": {
+                        "name": msg.get("name", tool_call_id),
+                        "response": {"result": content},
                     }
-                )
+                }
+                if contents and contents[-1].get("role") == "function":
+                    contents[-1]["parts"].append(part)
+                else:
+                    contents.append({"role": "function", "parts": [part]})
             else:
                 # User message
                 contents.append({"role": "user", "parts": [{"text": content}]})

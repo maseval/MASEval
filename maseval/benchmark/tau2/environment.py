@@ -468,7 +468,7 @@ class Tau2Environment(Environment):
             resp = self.make_tool_call(tool_name, requestor=requestor, **kwargs)
             self.sync_tools()
         except Exception as e:
-            resp = f"Error: {e}"
+            resp = f"Error executing tool '{tool_name}': {e}"
             error = True
         return {
             "id": tool_call_id,

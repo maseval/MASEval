@@ -281,7 +281,7 @@ class Tau2Evaluator(Evaluator):
         initial_state = env_data.get("initial_state") or {}
         initialization_data = initial_state.get("initialization_data")
         initialization_actions = initial_state.get("initialization_actions")
-        message_history = initial_state.get("message_history", [])
+        message_history = initial_state.get("message_history") or []
 
         env_constructor = get_environment_constructor(self.task.environment_data)
 

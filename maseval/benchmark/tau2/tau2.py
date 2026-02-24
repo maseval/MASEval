@@ -766,6 +766,62 @@ _SYSTEM_PROMPT_TEMPLATE = """
 """.strip()
 
 
+def _flatten_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten a JSON schema by inlining ``$ref`` references and removing unsupported keys.
+
+    Pydantic v2's ``model_json_schema()`` emits ``$ref`` / ``$defs`` for nested
+    models and ``anyOf`` for ``Optional`` fields.  Google GenAI rejects all of
+    these.  This helper recursively resolves them so the resulting schema is
+    self-contained and compatible with every provider.
+
+    Args:
+        schema: A JSON schema dict (typically from ``Model.model_json_schema()``).
+
+    Returns:
+        A flattened copy with ``$ref``, ``$defs``, ``anyOf``, ``title``,
+        ``default``, and ``additionalProperties`` removed / inlined.
+    """
+    _STRIP_KEYS = {"$defs", "additionalProperties", "title", "default"}
+
+    def _resolve(node: Any, defs: Dict[str, Any]) -> Any:
+        if not isinstance(node, dict):
+            return node
+
+        # Inline $ref
+        if "$ref" in node:
+            ref_name = node["$ref"].rsplit("/", 1)[-1]
+            if ref_name in defs:
+                return _resolve(dict(defs[ref_name]), defs)
+            return node
+
+        # Simplify anyOf (Optional[X] → X with nullable)
+        if "anyOf" in node:
+            variants = node["anyOf"]
+            non_null = [v for v in variants if not (isinstance(v, dict) and v.get("type") == "null")]
+            if len(non_null) == 1:
+                resolved = _resolve(non_null[0], defs)
+                resolved["nullable"] = True
+                if "description" in node and "description" not in resolved:
+                    resolved["description"] = node["description"]
+                return resolved
+            if non_null:
+                return _resolve(non_null[0], defs)
+
+        out: Dict[str, Any] = {}
+        for key, value in node.items():
+            if key in _STRIP_KEYS or key == "anyOf":
+                continue
+            if isinstance(value, dict):
+                out[key] = _resolve(value, defs)
+            elif isinstance(value, list):
+                out[key] = [_resolve(v, defs) if isinstance(v, dict) else v for v in value]
+            else:
+                out[key] = value
+        return out
+
+    return _resolve(schema, schema.get("$defs", {}))
+
+
 def _build_tool_definitions(tools: Dict[str, Callable]) -> List[Dict[str, Any]]:
     """Build OpenAI-format tool definitions from a dict of callables.
 
@@ -826,7 +882,7 @@ def _build_tool_definitions(tools: Dict[str, Callable]) -> List[Dict[str, Any]]:
                 "function": {
                     "name": name,
                     "description": description,
-                    "parameters": params_model.model_json_schema(),
+                    "parameters": _flatten_schema(params_model.model_json_schema()),
                 },
             }
         )
@@ -1160,7 +1216,7 @@ class DefaultTau2Agent:
                     "function": {
                         "name": name,
                         "description": description,
-                        "parameters": params_model.model_json_schema(),
+                        "parameters": _flatten_schema(params_model.model_json_schema()),
                     },
                 }
             )
