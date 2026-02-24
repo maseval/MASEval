@@ -592,8 +592,18 @@ class Tau2Environment(Environment):
     # =========================================================================
 
     def get_db_hash(self) -> str:
-        """Get hash of current agent database state."""
-        return self.db.get_hash()
+        """Get hash of current agent database state.
+
+        For telecom domain, excludes the embedded ``user_db`` field so the
+        agent-side hash only reflects agent DB state.  This matches the
+        original tau2-bench where ``TelecomDB`` and ``TelecomUserDB`` are
+        separate objects with independent hashes.
+        """
+        from maseval.benchmark.tau2.utils import get_dict_hash
+
+        data = self.db.model_dump()
+        data.pop("user_db", None)
+        return get_dict_hash(data)
 
     def get_user_db_hash(self) -> Optional[str]:
         """Get hash of current user database state.

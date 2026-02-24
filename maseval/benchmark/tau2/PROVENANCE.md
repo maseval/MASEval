@@ -183,6 +183,50 @@ agent and user see filtered views of this shared trajectory.
 
 **MASEval:** Agent and user maintain separate `MessageHistory` instances.
 
+### User Tool Execution Routing
+
+**Original:** User tool calls are routed through the orchestrator to the environment,
+each consuming a step.  The environment's `make_tool_call()` dispatches based on the
+`requestor` field, `sync_tools()` runs after every step, and tool call/result messages
+appear in the global trajectory.
+
+**MASEval:** User tools are executed inline within `Tau2User._generate_response()`.
+The user LLM generates a tool call, the wrapped callable is invoked directly, the
+result is appended to the user's internal messages, and the loop continues until a
+text response is produced.  Tool calls still trigger `sync_tools()` via the wrapper,
+and internal step counting (`_last_respond_steps`) tracks the correct number of
+messages produced.
+
+**Impact on evaluation:** None for current task data.  The evaluator reconstructs DB
+state by replaying tool calls from the trajectory (including user tool calls with
+their `requestor` field).  Communication evaluation only examines assistant messages.
+Action evaluation extracts both assistant and user tool calls, but no task pairs user
+golden actions with `ACTION` in its `reward_basis`.
+
+### Content-as-List Handling
+
+**Original:** Uses typed Pydantic `AssistantMessage` where `content: Optional[str]`
+is always a string.  Content-as-list never occurs.
+
+**MASEval:** Uses plain dictionaries for messages to support multiple LLM providers.
+Some providers (e.g., Anthropic) return `content` as a list of blocks
+(`[{"type": "text", "text": "..."}]`) instead of a plain string.  The communication
+evaluator (`_evaluate_communication`) joins list blocks into a single string before
+performing substring matching.  Without this, evaluation would crash with
+`AttributeError` for list-typed content.
+
+### TelecomDB Structure
+
+**Original:** `TelecomDB` and `TelecomUserDB` are separate objects.  `TelecomTools`
+receives `TelecomDB`, `TelecomUserTools` receives `TelecomUserDB`.  Hashes are
+computed independently.
+
+**MASEval:** `TelecomUserDB` is embedded as a `user_db` field inside `TelecomDB`.
+Both toolkits share the same `TelecomDB` instance.  `TelecomUserTools` accesses user
+state via `self.db.user_db`.  The `get_db_hash()` method on `Tau2Environment`
+explicitly excludes `user_db` from the agent-side hash to match the original's
+independent hashing.
+
 ## Validation Strategy
 
 1. **Deterministic evaluators** (env, action): Exact DB state hash match with upstream v0.2.0

@@ -133,6 +133,59 @@ def is_tool(tool_type: ToolType = ToolType.READ) -> Callable[[Callable], Callabl
 
 
 # =============================================================================
+# JSON Schema Helpers (for get_tool_metadata)
+# =============================================================================
+
+
+def _resolve_node(node: Any, defs: Dict[str, Any]) -> Any:
+    """Resolve a JSON schema node, inlining ``$ref`` references and simplifying ``anyOf``."""
+    if not isinstance(node, dict):
+        return node
+
+    if "$ref" in node:
+        ref_name = node["$ref"].rsplit("/", 1)[-1]
+        if ref_name in defs:
+            return _resolve_node(dict(defs[ref_name]), defs)
+        return node
+
+    # Simplify anyOf (typically Optional[X] -> X with nullable flag)
+    if "anyOf" in node:
+        variants = node["anyOf"]
+        non_null = [v for v in variants if not (isinstance(v, dict) and v.get("type") == "null")]
+        if len(non_null) == 1:
+            resolved = _resolve_node(non_null[0], defs)
+            resolved["nullable"] = True
+            if "description" in node and "description" not in resolved:
+                resolved["description"] = node["description"]
+            return resolved
+        if non_null:
+            return _resolve_node(non_null[0], defs)
+
+    out: Dict[str, Any] = {}
+    for key, value in node.items():
+        if key in ("$defs", "title", "default"):
+            continue
+        if isinstance(value, dict):
+            out[key] = _resolve_node(value, defs)
+        elif isinstance(value, list):
+            out[key] = [_resolve_node(v, defs) if isinstance(v, dict) else v for v in value]
+        else:
+            out[key] = value
+    return out
+
+
+def _resolve_schema_properties(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract resolved per-parameter schemas from a JSON Schema ``properties`` block."""
+    defs = schema.get("$defs", {})
+    properties = schema.get("properties", {})
+
+    resolved: Dict[str, Any] = {}
+    for name, prop in properties.items():
+        resolved[name] = _resolve_node(prop, defs)
+    return resolved
+
+
+# =============================================================================
 # ToolKit Base Class
 # =============================================================================
 
@@ -304,51 +357,69 @@ class ToolKitBase(Generic[T], metaclass=ToolKitMeta):
     def get_tool_metadata(self, tool_name: str) -> Dict[str, Any]:
         """Get metadata for a tool including description and input schema.
 
+        Uses ``pydantic.create_model`` + ``model_json_schema`` for correct
+        handling of complex types (``List[str]``, ``Optional[int]``, enums,
+        nested Pydantic models).  Matches the schema generation approach from
+        the original tau2-bench ``Tool.openai_schema``
+        (``src/tau2/environment/tool.py``).
+
         Args:
             tool_name: Name of the tool
 
         Returns:
             Dictionary with tool metadata:
                 - description: Tool docstring
-                - inputs: Dictionary of input parameters
+                - inputs: Dictionary of input parameters with JSON Schema types
                 - tool_type: ToolType enum value
 
         Raises:
             ValueError: If tool not found
         """
+        from typing import Any as TypingAny
+
+        from docstring_parser import parse as parse_docstring
+        from pydantic import Field as PydanticField
+        from pydantic import create_model
+
         if tool_name not in self.tools:
             raise ValueError(f"Tool '{tool_name}' not found.")
 
         tool = self.tools[tool_name]
-        doc = tool.__doc__ or f"Execute {tool_name}"
+        doc = parse_docstring(tool.__doc__ or "")
 
-        # Extract input parameters from function signature
+        description = doc.short_description or f"Execute {tool_name}"
+        if doc.long_description:
+            description += "\n\n" + doc.long_description
+
+        # Build pydantic model from signature + docstring params
+        # Matches original tau2-bench as_tool() in src/tau2/environment/tool.py
         sig = inspect.signature(tool)
-        inputs = {}
+        doc_params = {p.arg_name: p for p in doc.params}
+        model_fields: Dict[str, Any] = {}
+
         for param_name, param in sig.parameters.items():
             if param_name == "self":
                 continue
-            param_type = "string"  # Default to string
-            if param.annotation is not inspect.Parameter.empty:
-                if param.annotation is str:
-                    param_type = "string"
-                elif param.annotation is int:
-                    param_type = "integer"
-                elif param.annotation is float:
-                    param_type = "number"
-                elif param.annotation is bool:
-                    param_type = "boolean"
-                elif param.annotation is list:
-                    param_type = "array"
-                elif param.annotation is dict:
-                    param_type = "object"
-            inputs[param_name] = {
-                "type": param_type,
-                "description": f"Parameter {param_name}",
-            }
+            anno = param.annotation
+            default = param.default
+            if default is param.empty:
+                default = ...
+            if param_name in doc_params:
+                default = PydanticField(default, description=doc_params[param_name].description)
+                if (anno is param.empty) and (doc_params[param_name].type_name is not None):
+                    anno = doc_params[param_name].type_name
+            if anno is param.empty:
+                anno = TypingAny
+            model_fields[param_name] = (anno, default)
+
+        params_model = create_model("parameters", **model_fields)
+        schema = params_model.model_json_schema()
+
+        # Resolve $ref/$defs and extract per-parameter schemas
+        inputs = _resolve_schema_properties(schema)
 
         return {
-            "description": doc.strip(),
+            "description": description,
             "inputs": inputs,
             "tool_type": self.tool_type(tool_name),
         }
