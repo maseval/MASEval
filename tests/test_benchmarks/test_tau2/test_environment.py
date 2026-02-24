@@ -919,11 +919,11 @@ class TestGetResponse:
         assert isinstance(parsed, dict)
 
     def test_tool_call_error(self, retail_environment):
-        """Failed tool call returns 'Error: ...' with error=True."""
+        """Failed tool call returns 'Error executing tool ...' with error=True."""
         result = retail_environment.get_response(tool_name="get_user_details", requestor="assistant", user_id="nonexistent_user_999")
 
         assert result["error"] is True
-        assert "Error:" in result["content"]
+        assert "Error executing tool 'get_user_details':" in result["content"]
 
     def test_tool_call_id_preserved(self, retail_environment):
         """tool_call_id and requestor are preserved in response."""
