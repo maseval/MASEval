@@ -138,7 +138,14 @@ class MACSGenericTool(TraceableMixin, ConfigurableMixin):
 
     @staticmethod
     def _schema_to_inputs(schema: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert JSON schema to inputs format."""
+        """Convert JSON schema to inputs format.
+
+        Preserves ``items`` for array-type properties so that downstream
+        consumers (smolagents, LangGraph, LlamaIndex) emit a valid JSON
+        Schema.  Gemini and OpenAI reject ``{"type": "array"}`` without
+        an ``items`` field; see
+        https://ai.google.dev/gemini-api/docs/function-calling
+        """
         inputs = {}
         for k, prop in schema.get("properties", {}).items():
             dtype = prop.get("data_type") or prop.get("type", "string")
@@ -146,6 +153,25 @@ class MACSGenericTool(TraceableMixin, ConfigurableMixin):
                 "type": dtype if isinstance(dtype, str) else "string",
                 "description": prop.get("description", ""),
             }
+            # Preserve items schema for array types.
+            # The original MACS data uses "data_type" inside items; convert
+            # to standard JSON Schema "type" so LLM providers accept it.
+            if dtype == "array":
+                if "items" not in prop:
+                    raise ValueError(
+                        f"Array property '{k}' is missing 'items' in its schema. "
+                        f"Gemini and OpenAI require items for array types. "
+                        f"Full property spec: {prop}"
+                    )
+                items_spec = prop["items"]
+                item_type = items_spec.get("data_type") or items_spec.get("type")
+                if not item_type:
+                    raise ValueError(
+                        f"Array property '{k}' has 'items' but no 'data_type' or 'type' key. "
+                        f"Cannot determine element type. "
+                        f"Full items spec: {items_spec}"
+                    )
+                inputs[k]["items"] = {"type": item_type}
         return inputs
 
     def __call__(self, **kwargs: Any) -> str:
