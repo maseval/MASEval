@@ -578,41 +578,24 @@ class MACSUser(LLMUser):
             self._turn_count = 0
 
     @staticmethod
-    def _extract_user_profile(scenario: str) -> Dict[str, Any]:
+    def _extract_user_profile(scenario: str) -> Dict[str, Any]:  # noqa: ARG004
         """Extract user profile from scenario text.
 
-        The MACS scenarios contain user background info after "Background:" marker.
+        The MACS scenario string already contains both Goals and Background
+        sections with clear labels. It is passed as the ``scenario`` argument
+        to UserLLMSimulator, which renders it in the prompt under
+        "### SCENARIO & GOALS". Rather than attempting to parse individual
+        fields (which is brittle — the data uses at least three different
+        formatting styles), we point the "### USER PROFILE" template section
+        at the scenario to avoid duplication and information loss.
 
         Args:
             scenario: Full scenario text with goals and background
 
         Returns:
-            Dict with user profile fields
+            Dict with a note referencing the scenario section.
         """
-        profile: Dict[str, Any] = {}
-
-        # Find the Background section
-        if "Background:" in scenario:
-            background_section = scenario.split("Background:")[-1].strip()
-
-            # Parse bullet points (* User's name is ...)
-            for line in background_section.split("\n"):
-                line = line.strip().lstrip("*").strip()
-                if line.lower().startswith("user"):
-                    # Try to extract key-value pairs
-                    if " is " in line.lower():
-                        key_part, value_part = line.split(" is ", 1)
-                        key = key_part.lower().replace("user's ", "").replace("user ", "").strip()
-                        profile[key] = value_part.strip().rstrip(".")
-                    elif " has " in line.lower():
-                        key_part, value_part = line.split(" has ", 1)
-                        key = key_part.lower().replace("user's ", "").replace("user ", "").strip()
-                        profile[key] = value_part.strip().rstrip(".")
-
-        # Include full scenario as fallback context
-        profile["full_scenario"] = scenario
-
-        return profile
+        return {"note": "See SCENARIO & GOALS section below for full user profile and goals."}
 
     def gather_traces(self) -> Dict[str, Any]:
         """Gather traces with MACS-specific information."""

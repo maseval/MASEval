@@ -10,6 +10,23 @@ import uuid
 from enum import Enum
 
 
+def _extract_json_object(output: str) -> str:
+    """Extract a JSON object from LLM output that may contain surrounding noise.
+
+    LLMs may wrap valid JSON in markdown fences, prepend reasoning/thinking
+    tokens, or append stop/EOS tokens. This function extracts the substring
+    from the first '{' to the last '}' so that json.loads can parse it.
+
+    Falls back to the stripped output if no braces are found, letting
+    json.loads raise a clear error on truly invalid output.
+    """
+    json_start = output.find("{")
+    json_end = output.rfind("}")
+    if json_start != -1 and json_end != -1 and json_end > json_start:
+        return output[json_start : json_end + 1]
+    return output.strip()
+
+
 class SimulatorError(Exception):
     """Base exception for simulator failures.
 
@@ -389,13 +406,10 @@ class ToolLLMSimulator(LLMSimulator):
         return super().__call__(generation_params=generation_params, **actual_inputs)
 
     def _parse_output(self, output: str) -> tuple[str, Dict[str, Any]]:  # type: ignore[override]
-        text_stripped = output.strip()
-        # if starts and stop with ```json ... ``` or ``` ... ```, strip those
-        if text_stripped.strip().startswith("```") and text_stripped.strip().endswith("```"):
-            text_stripped = text_stripped.strip()[3:-3].strip()
-            if text_stripped.startswith("json"):
-                text_stripped = text_stripped[4:].strip()
-        # The model is expected to return a single JSON object string.
+        # LLMs may wrap valid JSON in markdown fences, prepend reasoning/thinking
+        # tokens, or append stop tokens. Extract the outermost { ... } span to
+        # robustly parse the expected JSON object.
+        text_stripped = _extract_json_object(output)
         output_data = json.loads(text_stripped)
         return output_data.get("text", ""), output_data.get("details", {})
 
@@ -515,14 +529,28 @@ class UserLLMSimulator(LLMSimulator):
         """
         Parses the raw JSON output from the model.
         """
-        text_stripped = output.strip()
-        if text_stripped.strip().startswith("```") and text_stripped.strip().endswith("```"):
-            text_stripped = text_stripped.strip()[3:-3].strip()
-            if text_stripped.startswith("json"):
-                text_stripped = text_stripped[4:].strip()
+        # LLMs may wrap valid JSON in markdown fences, prepend reasoning/thinking
+        # tokens, or append stop tokens. Extract the outermost { ... } span.
+        text_stripped = _extract_json_object(output)
+        try:
+            output_data = json.loads(text_stripped)
+        except json.JSONDecodeError as e:
+            raise json.JSONDecodeError(
+                f"UserLLMSimulator failed to decode JSON from model output. "
+                f"Extracted: {text_stripped[:200]!r}",
+                e.doc,
+                e.pos,
+            ) from e
+        text = output_data.get("text", "")
 
-        output_data = json.loads(text_stripped)
-        return output_data.get("text", "")
+        # Stop tokens may appear outside the JSON object (e.g. "} </stop>").
+        # The upstream User._check_stop_token checks the parsed text string,
+        # so we need to preserve the stop token if it was in the raw output
+        # but ended up outside the extracted JSON.
+        if self.stop_token and self.stop_token in output and self.stop_token not in text:
+            text = text + " " + self.stop_token
+
+        return text
 
     def _fill_prompt_template(self, **kwargs) -> str:
         """
@@ -628,20 +656,27 @@ class AgenticUserLLMSimulator(LLMSimulator):
 
     def _parse_output(self, output: str) -> Tuple[str, List[Dict[str, Any]]]:  # type: ignore[override]
         """Parse the raw JSON output from the model."""
-        text_stripped = output.strip()
-        if text_stripped.strip().startswith("```") and text_stripped.strip().endswith("```"):
-            text_stripped = text_stripped.strip()[3:-3].strip()
-            if text_stripped.startswith("json"):
-                text_stripped = text_stripped[4:].strip()
-
+        # LLMs may wrap valid JSON in markdown fences, prepend reasoning/thinking
+        # tokens, or append stop tokens. Extract the outermost { ... } span.
+        text_stripped = _extract_json_object(output)
         try:
             output_data = json.loads(text_stripped)
-        except json.JSONDecodeError:
-            # For agentic user, we expect JSON
-            raise
+        except json.JSONDecodeError as e:
+            raise json.JSONDecodeError(
+                f"AgenticUserLLMSimulator failed to decode JSON from model output. "
+                f"Extracted: {text_stripped[:200]!r}",
+                e.doc,
+                e.pos,
+            ) from e
 
         text = output_data.get("text", "")
         tool_calls = output_data.get("tool_calls", [])
+
+        # Preserve stop token if it appeared outside the JSON object
+        # (see UserLLMSimulator._parse_output for rationale).
+        if self.stop_token and self.stop_token in output and self.stop_token not in text:
+            text = text + " " + self.stop_token
+
         return text, tool_calls
 
     def _fill_prompt_template(self, **kwargs) -> str:

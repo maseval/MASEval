@@ -99,52 +99,26 @@ class TestMACSUserInit:
 
 @pytest.mark.benchmark
 class TestUserProfileExtraction:
-    """Tests for _extract_user_profile static method."""
+    """Tests for _extract_user_profile static method.
 
-    def test_extract_profile_with_background(self, sample_scenario):
-        """Parses Background: section."""
+    _extract_user_profile now returns a reference note instead of parsing
+    individual fields, because the full scenario (Goals + Background) is
+    already rendered in its own prompt section. This avoids duplication and
+    the lossy parsing that missed many formatting variants in the data.
+    """
+
+    def test_extract_profile_returns_note(self, sample_scenario):
+        """Returns a dict with a note pointing to the scenario section."""
         profile = MACSUser._extract_user_profile(sample_scenario)
 
-        assert "full_scenario" in profile
-        assert profile["full_scenario"] == sample_scenario
-
-    def test_extract_profile_is_statements(self):
-        """Parses 'User's X is Y' statements."""
-        scenario = """Background:
-* User's name is Alice
-* User's age is 30
-* User's company is TechCorp"""
-
-        profile = MACSUser._extract_user_profile(scenario)
-
-        assert profile.get("name") == "Alice"
-        assert profile.get("age") == "30"
-        assert profile.get("company") == "TechCorp"
-
-    def test_extract_profile_has_statements(self):
-        """Parses 'User has X' statements."""
-        scenario = """Background:
-* User has a pet dog
-* User has premium membership"""
-
-        profile = MACSUser._extract_user_profile(scenario)
-
-        # These should be captured with some key
-        assert "full_scenario" in profile  # At minimum, full scenario is always there
+        assert "note" in profile
+        assert "SCENARIO" in profile["note"]
 
     def test_extract_profile_no_background(self, minimal_scenario):
-        """Handles missing Background section."""
+        """Handles missing Background section (same result)."""
         profile = MACSUser._extract_user_profile(minimal_scenario)
 
-        # Should still have full_scenario
-        assert profile["full_scenario"] == minimal_scenario
-
-    def test_extract_profile_includes_full_scenario(self, sample_scenario):
-        """Full scenario is always in profile."""
-        profile = MACSUser._extract_user_profile(sample_scenario)
-
-        assert "full_scenario" in profile
-        assert sample_scenario in profile["full_scenario"]
+        assert "note" in profile
 
 
 # =============================================================================
