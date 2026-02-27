@@ -319,11 +319,12 @@ class Tau2User(User):
             name = tool_call.get("name", "")
             arguments = tool_call.get("arguments", {})
 
+        # As in environment.py:get_response, tool errors return "Error: ..." strings (not exceptions)
         if isinstance(arguments, str):
             try:
                 arguments = json.loads(arguments)
             except json.JSONDecodeError:
-                arguments = {}
+                return f"Error: Invalid or missing arguments for tool '{name}'"
 
         if name not in self.tools:
             return f"Error: Tool '{name}' not found"
@@ -1133,14 +1134,14 @@ class DefaultTau2Agent:
             name = tool_call.get("name", "")
             arguments = tool_call.get("arguments", {})
 
-        # Handle string arguments (JSON encoded)
+        # As in environment.py:get_response, tool errors return "Error: ..." strings (not exceptions)
         if isinstance(arguments, str):
             import json
 
             try:
                 arguments = json.loads(arguments)
             except json.JSONDecodeError:
-                arguments = {}
+                return f"Error: Invalid or missing arguments for tool '{name}'"
 
         if name not in self.tools:
             self._log(1, f"[Agent] Tool not found: {name}")

@@ -706,11 +706,9 @@ class MarbleMultiAgentBenchBenchmark(MultiAgentBenchBenchmark):
         self._planning_method = engine_planner_config.get("planning_method", "naive")
         self._domain = task.environment_data.get("scenario", "")
 
-        # Per-task iteration limit matching marble/engine/engine.py:97
-        # MARBLE reads config.environment["max_iterations"] with default 10.
-        # task.environment_data["environment"] is always populated by data_loader.
-        env_config = task.environment_data["environment"]
-        self._marble_max_iterations: int = env_config.get("max_iterations", 10)
+        # Per-task iteration limit matching marble/engine/engine.py:97.
+        # Converted from domain-specific MARBLE YAML configs by data_loader.
+        self._marble_max_iterations: int = task.environment_data["max_iterations"]
 
         # Store task data for domain evaluation (DB needs labels, root_causes;
         # Coding needs workspace_dir). Matches engine.py:83 (self.config.task).
