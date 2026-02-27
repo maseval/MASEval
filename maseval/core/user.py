@@ -246,7 +246,7 @@ class LLMUser(User):
             if self.exhausted_response is not None:
                 return self.exhausted_response
             raise UserExhaustedError(
-                f"User '{self.name}' has no more turns (max_turns={self.max_turns}, turn_count={self._turn_count}, stopped={self._stopped})",
+                f"Maximum number of possible turns reached for the user (max_turns={self.max_turns}, turn_count={self._turn_count}, stopped={self._stopped})",
                 component="user",
             )
 
@@ -559,7 +559,7 @@ class AgenticLLMUser(LLMUser):
             if self.exhausted_response is not None:
                 return self.exhausted_response
             raise UserExhaustedError(
-                f"User '{self.name}' has no more turns (max_turns={self.max_turns}, turn_count={self._turn_count}, stopped={self._stopped})",
+                f"Maximum number of possible turns reached for the user (max_turns={self.max_turns}, turn_count={self._turn_count}, stopped={self._stopped})",
                 component="user",
             )
 
