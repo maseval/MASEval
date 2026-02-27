@@ -133,15 +133,31 @@ class TestUserMultiTurn:
         user.respond("Question 2")
         assert user._turn_count == initial_count + 2
 
-    def test_respond_returns_empty_when_done(self, dummy_model):
-        """Returns empty string when is_done() is True."""
+    def test_respond_raises_when_done(self, dummy_model):
+        """Raises UserExhaustedError when is_done() is True and no exhausted_response set."""
         from conftest import DummyUser
+        from maseval.core.exceptions import UserExhaustedError
 
         user = DummyUser(name="test", model=dummy_model, max_turns=1)
         user._turn_count = 1  # Already at max
 
+        with pytest.raises(UserExhaustedError):
+            user.respond("More questions?")
+
+    def test_respond_returns_exhausted_response_when_done(self, dummy_model):
+        """Returns exhausted_response string when is_done() is True and exhausted_response is set."""
+        from conftest import DummyUser
+
+        user = DummyUser(
+            name="test",
+            model=dummy_model,
+            max_turns=1,
+            exhausted_response="The user is no longer available.",
+        )
+        user._turn_count = 1  # Already at max
+
         response = user.respond("More questions?")
-        assert response == ""
+        assert response == "The user is no longer available."
 
     def test_turn_count_starts_at_zero_without_initial_query(self, dummy_model):
         """Turn count starts at 0 when no initial_query provided."""
@@ -566,3 +582,24 @@ class TestUserConfig:
 
         assert "stop_tokens" in config
         assert config["stop_tokens"] == []
+
+    def test_config_includes_exhausted_response(self, dummy_model):
+        """gather_config() includes exhausted_response."""
+        from conftest import DummyUser
+
+        user = DummyUser(name="test", model=dummy_model, exhausted_response="No more turns.")
+
+        config = user.gather_config()
+
+        assert config["exhausted_response"] == "No more turns."
+
+    def test_config_includes_exhausted_response_none(self, dummy_model):
+        """gather_config() includes exhausted_response even when None."""
+        from conftest import DummyUser
+
+        user = DummyUser(name="test", model=dummy_model)
+
+        config = user.gather_config()
+
+        assert "exhausted_response" in config
+        assert config["exhausted_response"] is None

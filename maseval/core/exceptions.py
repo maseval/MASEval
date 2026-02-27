@@ -216,6 +216,29 @@ class UserError(MASEvalError):
     pass
 
 
+class UserExhaustedError(MASEvalError):
+    """User has no more turns available.
+
+    Raised when ``respond()`` is called on a user whose interaction has
+    already ended (max_turns reached or stop token detected). This is
+    expected flow control, not an infrastructure failure.
+
+    To return a message string instead of raising, set the
+    ``exhausted_response`` parameter on the user instance.
+
+    Examples:
+        ```python
+        # Catch in orchestration loop
+        try:
+            response = user.respond(agent_message)
+        except UserExhaustedError:
+            break  # user is done, stop the loop
+        ```
+    """
+
+    pass
+
+
 class TaskTimeoutError(MASEvalError):
     """Task execution exceeded configured timeout.
 

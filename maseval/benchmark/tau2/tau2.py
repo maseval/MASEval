@@ -69,6 +69,7 @@ from pydantic import BaseModel, Field, create_model
 
 from maseval import AgentAdapter, Benchmark, Evaluator, ModelAdapter, Task, User
 from maseval.core.callback import BenchmarkCallback
+from maseval.core.exceptions import UserExhaustedError
 from maseval.core.seeding import DefaultSeedGenerator, SeedGenerator
 
 from maseval.benchmark.tau2.environment import Tau2Environment
@@ -122,6 +123,7 @@ class Tau2User(User):
         tool_definitions: Optional[List[Dict[str, Any]]] = None,
         llm_args: Optional[Dict[str, Any]] = None,
         max_turns: int = 50,
+        exhausted_response: Optional[str] = None,
     ):
         """Initialize Tau2 user simulator.
 
@@ -133,6 +135,9 @@ class Tau2User(User):
             tool_definitions: Optional OpenAI-format tool definitions for LLM
             llm_args: Optional additional args for model.chat() (e.g. temperature)
             max_turns: Maximum conversation turns
+            exhausted_response: Message to return when ``respond()`` is called
+                after the user is done. If ``None`` (default), raises
+                ``UserExhaustedError`` instead.
         """
         self.model = model
         self.scenario = scenario
@@ -141,6 +146,7 @@ class Tau2User(User):
         self.tool_definitions = tool_definitions
         self.llm_args = llm_args or {}
         self.max_turns = max_turns
+        self.exhausted_response = exhausted_response
 
         # Load guidelines matching original tau2-bench
         use_tools = bool(self.tools)
@@ -185,7 +191,12 @@ class Tau2User(User):
         if self._stopped or self._turn_count > self.max_turns:
             self._stopped = True
             self._last_respond_steps = 0
-            return ""
+            if self.exhausted_response is not None:
+                return self.exhausted_response
+            raise UserExhaustedError(
+                f"Tau2User has no more turns (max_turns={self.max_turns}, turn_count={self._turn_count}, stopped={self._stopped})",
+                component="user",
+            )
 
         # Add agent's message as assistant message
         self._messages.append({"role": "assistant", "content": message})

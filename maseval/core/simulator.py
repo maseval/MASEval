@@ -536,8 +536,7 @@ class UserLLMSimulator(LLMSimulator):
             output_data = json.loads(text_stripped)
         except json.JSONDecodeError as e:
             raise json.JSONDecodeError(
-                f"UserLLMSimulator failed to decode JSON from model output. "
-                f"Extracted: {text_stripped[:200]!r}",
+                f"UserLLMSimulator failed to decode JSON from model output. Extracted: {text_stripped[:200]!r}",
                 e.doc,
                 e.pos,
             ) from e
@@ -663,8 +662,7 @@ class AgenticUserLLMSimulator(LLMSimulator):
             output_data = json.loads(text_stripped)
         except json.JSONDecodeError as e:
             raise json.JSONDecodeError(
-                f"AgenticUserLLMSimulator failed to decode JSON from model output. "
-                f"Extracted: {text_stripped[:200]!r}",
+                f"AgenticUserLLMSimulator failed to decode JSON from model output. Extracted: {text_stripped[:200]!r}",
                 e.doc,
                 e.pos,
             ) from e

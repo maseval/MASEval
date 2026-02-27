@@ -188,21 +188,38 @@ class TestTau2UserScenarios:
 class TestTau2UserRespondEarlyExit:
     """Tests for Tau2User.respond() early exit conditions."""
 
-    def test_respond_after_stopped(self, mock_model):
-        """respond() returns empty string when already stopped."""
+    def test_respond_after_stopped_raises(self, mock_model):
+        """respond() raises UserExhaustedError when already stopped."""
+        from maseval.core.exceptions import UserExhaustedError
+
         user = Tau2User(model=mock_model, scenario="test", initial_query="hi")
         user._stopped = True
-        result = user.respond("anything")
-        assert result == ""
+        with pytest.raises(UserExhaustedError):
+            user.respond("anything")
         assert user._last_respond_steps == 0
 
-    def test_respond_over_max_turns(self, mock_model):
-        """respond() returns empty string when max_turns exceeded."""
+    def test_respond_over_max_turns_raises(self, mock_model):
+        """respond() raises UserExhaustedError when max_turns exceeded."""
+        from maseval.core.exceptions import UserExhaustedError
+
         user = Tau2User(model=mock_model, scenario="test", initial_query="hi", max_turns=1)
         user._turn_count = 2
-        result = user.respond("anything")
-        assert result == ""
+        with pytest.raises(UserExhaustedError):
+            user.respond("anything")
         assert user._stopped is True
+
+    def test_respond_after_stopped_returns_exhausted_response(self, mock_model):
+        """respond() returns exhausted_response when stopped and configured."""
+        user = Tau2User(
+            model=mock_model,
+            scenario="test",
+            initial_query="hi",
+            exhausted_response="User done.",
+        )
+        user._stopped = True
+        result = user.respond("anything")
+        assert result == "User done."
+        assert user._last_respond_steps == 0
 
 
 # =============================================================================

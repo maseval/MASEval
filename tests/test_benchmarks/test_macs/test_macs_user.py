@@ -294,8 +294,10 @@ class TestResponseSimulation:
         assert "</stop>" not in response
         assert "Perfect, thanks!" in response
 
-    def test_respond_returns_empty_when_done(self, sample_scenario, initial_query):
-        """Returns empty string when is_done is True."""
+    def test_respond_raises_when_done(self, sample_scenario, initial_query):
+        """Raises UserExhaustedError when is_done is True."""
+        from maseval.core.exceptions import UserExhaustedError
+
         model = DummyModelAdapter(responses=['{"text": "Default response", "details": {}}'])
         user = MACSUser(
             model=model,
@@ -304,12 +306,13 @@ class TestResponseSimulation:
         )
         user._stopped = True  # Already done
 
-        response = user.respond("Any follow-up?")
+        with pytest.raises(UserExhaustedError):
+            user.respond("Any follow-up?")
 
-        assert response == ""
+    def test_respond_raises_at_max_turns(self, sample_scenario, initial_query):
+        """Raises UserExhaustedError when max turns reached."""
+        from maseval.core.exceptions import UserExhaustedError
 
-    def test_respond_returns_empty_at_max_turns(self, sample_scenario, initial_query):
-        """Returns empty string when max turns reached."""
         model = DummyModelAdapter(responses=['{"text": "Default response", "details": {}}'])
         user = MACSUser(
             model=model,
@@ -319,9 +322,22 @@ class TestResponseSimulation:
         )
         user._turn_count = 3  # At max
 
-        response = user.respond("One more question?")
+        with pytest.raises(UserExhaustedError):
+            user.respond("One more question?")
 
-        assert response == ""
+    def test_respond_returns_exhausted_response_when_done(self, sample_scenario, initial_query):
+        """Returns exhausted_response when is_done and exhausted_response is set."""
+        model = DummyModelAdapter(responses=['{"text": "Default response", "details": {}}'])
+        user = MACSUser(
+            model=model,
+            scenario=sample_scenario,
+            initial_query=initial_query,
+            exhausted_response="User is done.",
+        )
+        user._stopped = True  # Already done
+
+        response = user.respond("Any follow-up?")
+        assert response == "User is done."
 
     def test_respond_fallback_message(self, sample_scenario, initial_query):
         """Provides fallback when response is only stop token."""
@@ -457,6 +473,8 @@ class TestMACSUserIntegration:
 
     def test_max_turns_enforcement(self, sample_scenario, initial_query):
         """Test that max turns is enforced."""
+        from maseval.core.exceptions import UserExhaustedError
+
         model = DummyModelAdapter(responses=["Response"] * 10)
         user = MACSUser(
             model=model,
@@ -468,17 +486,17 @@ class TestMACSUserIntegration:
         # Replace the simulator with a mock that returns a controlled response
         user.simulator = MagicMock(return_value="Response")
 
-        # Simulate 3 turns
-        for i in range(3):
+        # initial_query counts as turn 1, so 2 more respond() calls reach max_turns=3
+        for i in range(2):
             user.respond(f"Question {i}")
 
-        # Should be done after 3 turns
+        # Should be done after 3 turns (1 initial + 2 responds)
         assert user.is_done()
         assert user._turn_count == 3
 
-        # Additional calls should return empty
-        response = user.respond("One more?")
-        assert response == ""
+        # Additional calls should raise UserExhaustedError
+        with pytest.raises(UserExhaustedError):
+            user.respond("One more?")
 
     def test_reset_allows_new_conversation(self, sample_scenario, initial_query):
         """Test that reset allows starting new conversation."""

@@ -492,6 +492,7 @@ class DummyUser(LLMUser):
             max_turns=kwargs.get("max_turns", 1),
             stop_tokens=kwargs.get("stop_tokens"),
             early_stopping_condition=kwargs.get("early_stopping_condition"),
+            exhausted_response=kwargs.get("exhausted_response"),
         )
         # Replace simulator with a mock to avoid LLM calls
         # Tests can set simulator.return_value or side_effect as needed

@@ -2,6 +2,7 @@ from .model import ModelAdapter
 from .simulator import UserLLMSimulator, AgenticUserLLMSimulator
 from .tracing import TraceableMixin
 from .config import ConfigurableMixin
+from .exceptions import UserExhaustedError
 from typing import Any, Dict, Optional, List, Callable
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -62,6 +63,10 @@ class User(ABC, TraceableMixin, ConfigurableMixin):
 
         Returns:
             The user's response.
+
+        Raises:
+            UserExhaustedError: If the user has no more turns available and
+                no ``exhausted_response`` is configured.
         """
         ...
 
@@ -131,6 +136,7 @@ class LLMUser(User):
         max_turns: int = 1,
         stop_tokens: Optional[List[str]] = None,
         early_stopping_condition: Optional[str] = None,
+        exhausted_response: Optional[str] = None,
     ):
         """Initialize the LLMUser.
 
@@ -161,6 +167,12 @@ class LLMUser(User):
                 the conversation (e.g., "all goals have been accomplished").
                 Used with stop_tokens to instruct the LLM when to emit a stop token.
                 Must be provided if stop_tokens is set. Defaults to None.
+            exhausted_response: Message to return when ``respond()`` is called
+                after the user is done. If ``None`` (default), raises
+                ``UserExhaustedError`` instead. Set this to a descriptive string
+                (e.g., ``"The user is no longer available. Proceed with the
+                information you have."``) for tool-based integrations where the
+                agent controls when to call the user.
 
         Raises:
             ValueError: If stop_tokens is set but early_stopping_condition is not provided.
@@ -208,6 +220,7 @@ class LLMUser(User):
         self._turn_count = self._initial_turn_count
         self._stopped = False
         self._stop_reason: Optional[str] = None  # Which token triggered the stop
+        self.exhausted_response = exhausted_response
 
     def respond(self, message: str) -> str:
         """Respond to a message from the agent using LLM simulation.
@@ -216,19 +229,26 @@ class LLMUser(User):
         generates a response using the LLM simulator, appends the response
         to the history, and returns it.
 
-        If the user is already done (max_turns reached or stop_token detected),
-        returns an empty string without making an LLM call. If a stop_token is
-        detected in the response, triggers early stopping.
+        If a stop_token is detected in the response, triggers early stopping.
 
         Args:
             message: The message from the agent to which the user should respond.
 
         Returns:
-            The user's response, or empty string if done.
+            The user's response, or ``exhausted_response`` if done and configured.
+
+        Raises:
+            UserExhaustedError: If the user is already done and no
+                ``exhausted_response`` is configured.
         """
         # Check if already done - saves LLM call
         if self.is_done():
-            return ""
+            if self.exhausted_response is not None:
+                return self.exhausted_response
+            raise UserExhaustedError(
+                f"User '{self.name}' has no more turns (max_turns={self.max_turns}, turn_count={self._turn_count}, stopped={self._stopped})",
+                component="user",
+            )
 
         # Record the assistant prompt and ask simulator. MessageHistory is iterable
         # and can be converted to a list for the simulator.
@@ -425,6 +445,7 @@ class LLMUser(User):
         - `scenario` - Task scenario description
         - `max_turns` - Maximum interaction turns
         - `stop_tokens` - Early stopping tokens (empty list if disabled)
+        - `exhausted_response` - Message returned when user is done, or None
 
         Returns:
             Dictionary containing user configuration.
@@ -436,6 +457,7 @@ class LLMUser(User):
             "scenario": self.scenario,
             "max_turns": self.max_turns,
             "stop_tokens": self.stop_tokens,
+            "exhausted_response": self.exhausted_response,
         }
 
 
@@ -526,10 +548,20 @@ class AgenticLLMUser(LLMUser):
             message: The message from the agent to respond to.
 
         Returns:
-            The user's final response after any tool execution.
+            The user's final response after any tool execution, or
+            ``exhausted_response`` if done and configured.
+
+        Raises:
+            UserExhaustedError: If the user is already done and no
+                ``exhausted_response`` is configured.
         """
         if self.is_done():
-            return ""
+            if self.exhausted_response is not None:
+                return self.exhausted_response
+            raise UserExhaustedError(
+                f"User '{self.name}' has no more turns (max_turns={self.max_turns}, turn_count={self._turn_count}, stopped={self._stopped})",
+                component="user",
+            )
 
         # Start with the current shared history
         self.messages.add_message("assistant", message)

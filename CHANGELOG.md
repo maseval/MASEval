@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Simplified seeding API: `seed_generator` parameter in setup methods is now always non-None (`SeedGenerator` instead of `Optional[SeedGenerator]`). When seeding is disabled (`seed=None`), `derive_seed()` returns `None` instead of raising an error. This eliminates all `if seed_generator is not None:` conditional checks - the same code path works whether seeding is enabled or disabled. (PR: #27)
 - Clarified benchmark/evaluator component guidance in docstrings and docs, including recommended evaluator exception behavior with `fail_on_evaluation_error`. (PR: #28)
+- `User.respond()` now raises `UserExhaustedError` instead of returning an empty string when the user has no more turns. Set the new `exhausted_response` parameter to return a configurable message instead (e.g. for tool-based integrations where agents call `ask_user`). Affects `LLMUser`, `AgenticLLMUser`, `Tau2User`, and `MACSUser`. (PR: #PR_NUMBER_PLACEHOLDER)
 
 **Benchmarks**
 

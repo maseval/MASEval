@@ -266,6 +266,49 @@ def test_agentic_user_gather_traces(mock_tool):
 
 
 @pytest.mark.core
+def test_agentic_user_raises_when_done():
+    """AgenticLLMUser raises UserExhaustedError when is_done() is True."""
+    from maseval.core.exceptions import UserExhaustedError
+
+    response = json.dumps({"text": "Hello!", "tool_calls": []})
+    model = MockModelAdapter([response])
+
+    user = DummyAgenticLLMUser(
+        name="ExhaustedUser",
+        model=model,
+        user_profile={},
+        scenario="Test exhaustion",
+        tools={},
+        max_turns=1,
+    )
+    user._turn_count = 1  # Already at max
+
+    with pytest.raises(UserExhaustedError):
+        user.respond("Any more questions?")
+
+
+@pytest.mark.core
+def test_agentic_user_returns_exhausted_response_when_done():
+    """AgenticLLMUser returns exhausted_response when is_done() and exhausted_response is set."""
+    response = json.dumps({"text": "Hello!", "tool_calls": []})
+    model = MockModelAdapter([response])
+
+    user = DummyAgenticLLMUser(
+        name="ExhaustedUser",
+        model=model,
+        user_profile={},
+        scenario="Test exhaustion",
+        tools={},
+        max_turns=1,
+        exhausted_response="User unavailable.",
+    )
+    user._turn_count = 1  # Already at max
+
+    result = user.respond("Any more questions?")
+    assert result == "User unavailable."
+
+
+@pytest.mark.core
 class TestGenerateToolDefinitions:
     """Tests for tool definition generation."""
 

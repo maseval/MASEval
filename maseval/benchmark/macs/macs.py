@@ -515,6 +515,7 @@ class MACSUser(LLMUser):
         max_turns: int = DEFAULT_MAX_TURNS,
         stop_tokens: Optional[List[str]] = None,
         early_stopping_condition: str = DEFAULT_EARLY_STOPPING_CONDITION,
+        exhausted_response: Optional[str] = None,
     ):
         """Initialize MACS user simulator.
 
@@ -528,6 +529,9 @@ class MACSUser(LLMUser):
             stop_tokens: Tokens indicating user satisfaction (default: ["</stop>"])
             early_stopping_condition: Description of when to emit stop token
                 (default: "ALL goals have been satisfactorily addressed by the assistant")
+            exhausted_response: Message to return when ``respond()`` is called
+                after the user is done. If ``None`` (default), raises
+                ``UserExhaustedError`` instead.
         """
         # Extract user profile from scenario text
         user_profile = self._extract_user_profile(scenario)
@@ -546,6 +550,7 @@ class MACSUser(LLMUser):
             max_turns=max_turns,
             stop_tokens=stop_tokens,
             early_stopping_condition=early_stopping_condition,
+            exhausted_response=exhausted_response,
         )
 
     def get_tool(self) -> Any:
