@@ -111,17 +111,30 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         llama-index-core to be installed: `pip install maseval[llamaindex]`
     """
 
-    def __init__(self, agent_instance: Any, name: str, callbacks: Optional[List[Any]] = None):
+    def __init__(
+        self,
+        agent_instance: Any,
+        name: str,
+        callbacks: Optional[List[Any]] = None,
+        max_iterations: Optional[int] = None,
+    ):
         """Initialize the LlamaIndex adapter.
 
         Args:
             agent_instance: LlamaIndex AgentWorkflow or BaseWorkflowAgent instance
             name: Agent name
             callbacks: Optional list of callbacks
+            max_iterations: Maximum number of agent iterations for AgentWorkflow.run().
+                If None, LlamaIndex's DEFAULT_MAX_ITERATIONS (20) is used.
+                Bug fix: FunctionAgent does NOT have a max_steps constructor parameter —
+                passing max_steps to it is silently swallowed by **kwargs. The actual
+                iteration limit must be passed here so the adapter forwards it to
+                AgentWorkflow.run(max_iterations=...).
         """
         super().__init__(agent_instance, name, callbacks)
         self._last_result = None
         self._message_cache: List[Dict[str, Any]] = []
+        self._max_iterations = max_iterations
 
     def get_messages(self) -> MessageHistory:
         """Get message history from LlamaIndex.
@@ -304,8 +317,12 @@ class LlamaIndexAgentAdapter(AgentAdapter):
 
         # LlamaIndex .run() returns a WorkflowHandler that must be awaited (AgentWorkflow)
         # We need to run this in an async context
+        run_kwargs: Dict[str, Any] = {"user_msg": query}
+        if self._max_iterations is not None:
+            run_kwargs["max_iterations"] = self._max_iterations
+
         async def run_async():
-            handler = self.agent.run(user_msg=query)
+            handler = self.agent.run(**run_kwargs)
             result = await handler
             return result
 
