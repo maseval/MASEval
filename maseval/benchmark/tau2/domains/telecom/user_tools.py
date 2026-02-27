@@ -58,11 +58,13 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
     @property
     def device(self) -> MockPhoneAttributes:
         """Returns the full current state of the device attributes."""
+        assert self.db is not None and self.db.user_db is not None
         return self.db.user_db.device
 
     @property
     def surroundings(self) -> UserSurroundings:
         """Returns the full current state of the surroundings attributes."""
+        assert self.db is not None and self.db.user_db is not None
         return self.db.user_db.surroundings
 
     # --- User Info ---
@@ -70,6 +72,7 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
         """
         Sets the user's name and phone number.
         """
+        assert self.db is not None and self.db.user_db is not None
         self.db.user_db.surroundings.name = name
         self.db.user_db.surroundings.phone_number = phone_number
 
@@ -77,6 +80,7 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
         """
         Sets the user's location to abroad or not.
         """
+        assert self.db is not None and self.db.user_db is not None
         self.db.user_db.surroundings.is_abroad = abroad
 
     # --- Status Bar ---
@@ -1041,14 +1045,14 @@ class TelecomUserTools(ToolKitBase[TelecomDB]):
         if expected_desc is None:
             return speed >= expected_speed
         else:
-            return speed >= expected_speed and desc.lower() == expected_desc.lower()
+            return speed >= expected_speed and desc is not None and desc.lower() == expected_desc.lower()
 
     def assert_internet_not_excellent(self) -> bool:
         """
         Assert that the internet speed is not excellent.
         """
         speed, desc = self._run_speed_test()
-        return desc.lower() != "excellent"
+        return desc is None or desc.lower() != "excellent"
 
     def assert_can_send_mms(self, expected_status: bool) -> bool:
         """

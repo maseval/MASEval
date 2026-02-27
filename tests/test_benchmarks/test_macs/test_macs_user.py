@@ -31,7 +31,7 @@ class TestMACSUserInit:
         assert user.max_turns == 5
         assert user._turn_count == 1  # Initial query counts as first turn
         assert not user._stopped
-        assert "full_scenario" in user.user_profile
+        assert "note" in user.user_profile
 
     def test_macs_default_max_turns_is_five(self, macs_model, sample_scenario, initial_query):
         """MACS benchmark defaults to max_turns=5 per MACS paper.

@@ -1206,6 +1206,7 @@ class TestSetState:
         )
         # update_db reassigns toolkit.db to a new model instance;
         # env.db (via state["db"]) retains the old reference — this is existing behavior.
+        assert env2.toolkit.db is not None
         assert env2.toolkit.db.users[user_id].email == "modified_via_set_state@test.com"
 
     def test_set_state_non_json_response(self, retail_environment):

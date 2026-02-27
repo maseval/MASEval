@@ -234,7 +234,7 @@ def complex_tool_spec():
                 "city": {"type": "string", "description": "City name"},
                 "check_in": {"data_type": "date", "description": "Check-in date"},
                 "guests": {"type": "integer", "description": "Number of guests"},
-                "amenities": {"type": "array", "description": "Requested amenities"},
+                "amenities": {"type": "array", "description": "Requested amenities", "items": {"type": "string"}},
             }
         },
     }

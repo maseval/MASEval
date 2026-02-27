@@ -148,6 +148,7 @@ class AirlineTools(ToolKitBase[AirlineDB]):
             )
             if check:
                 flight_date_data = flight.dates[date]
+                assert isinstance(flight_date_data, FlightDateStatusAvailable)
                 results.append(
                     DirectFlight(
                         flight_number=flight.flight_number,
