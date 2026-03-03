@@ -2,7 +2,7 @@
 
 import pytest
 
-from conftest import DummyModelAdapter
+from conftest import CountingFakeModelAdapter, DummyModelAdapter
 from maseval.benchmark.multiagentbench.evaluator import (
     DEFAULT_RESULT_TRUNCATION_LENGTH,
     MultiAgentBenchEvaluator,
@@ -56,14 +56,6 @@ class TestMultiAgentBenchEvaluator:
         """Create a research domain evaluator."""
         return MultiAgentBenchEvaluator(
             domain="research",
-            model_adapter=mock_model_adapter,
-        )
-
-    @pytest.fixture
-    def bargaining_evaluator(self, mock_model_adapter):
-        """Create a bargaining domain evaluator."""
-        return MultiAgentBenchEvaluator(
-            domain="bargaining",
             model_adapter=mock_model_adapter,
         )
 
@@ -237,12 +229,15 @@ class TestBargainingEvaluation:
 
     @pytest.fixture
     def bargaining_evaluator(self):
-        """Create evaluator with bargaining-specific responses."""
+        """Create evaluator with role-wrapped bargaining responses.
+
+        Response order matches _evaluate_bargaining call order: seller first, buyer second.
+        """
         adapter = DummyModelAdapter(
             model_id="test",
             responses=[
-                '{"effectiveness_of_strategies": 4, "progress_and_outcome": 3, "interaction_dynamics": 5}',
-                '{"effectiveness_of_strategies": 3, "progress_and_outcome": 4, "interaction_dynamics": 4}',
+                '{"seller": {"effectiveness_of_strategies": 4, "progress_and_outcome": 3, "interaction_dynamics": 5}}',
+                '{"buyer": {"effectiveness_of_strategies": 3, "progress_and_outcome": 4, "interaction_dynamics": 4}}',
             ],
         )
         return MultiAgentBenchEvaluator(
@@ -251,15 +246,37 @@ class TestBargainingEvaluation:
         )
 
     def test_evaluate_bargaining_returns_buyer_seller(self, bargaining_evaluator):
-        """_evaluate_bargaining should return buyer and seller ratings."""
+        """_evaluate_bargaining should return both buyer and seller ratings from separate LLM calls."""
         ratings = bargaining_evaluator._evaluate_bargaining("Task", "Result")
 
-        assert "buyer" in ratings
-        assert "seller" in ratings
-        assert "effectiveness_of_strategies" in ratings["buyer"]
+        assert ratings["seller"] == {"effectiveness_of_strategies": 4, "progress_and_outcome": 3, "interaction_dynamics": 5}
+        assert ratings["buyer"] == {"effectiveness_of_strategies": 3, "progress_and_outcome": 4, "interaction_dynamics": 4}
+
+    def test_evaluate_bargaining_computes_scores(self, bargaining_evaluator):
+        """_evaluate_bargaining should compute buyer_score, seller_score, and mean_score (0-100)."""
+        ratings = bargaining_evaluator._evaluate_bargaining("Task", "Result")
+
+        # seller: (4+3+5)/3 * 20 = 80.0
+        assert ratings["seller_score"] == pytest.approx(80.0)
+        # buyer: (3+4+4)/3 * 20 ≈ 73.333
+        assert ratings["buyer_score"] == pytest.approx(73.333, rel=1e-2)
+        # mean: (80 + 73.333) / 2 ≈ 76.667
+        assert ratings["mean_score"] == pytest.approx(76.667, rel=1e-2)
+
+    def test_evaluate_bargaining_makes_two_llm_calls(self):
+        """_evaluate_bargaining should make exactly 2 LLM calls (seller + buyer)."""
+        adapter = CountingFakeModelAdapter(
+            responses=[
+                '{"seller": {"effectiveness_of_strategies": 4, "progress_and_outcome": 3, "interaction_dynamics": 5}}',
+                '{"buyer": {"effectiveness_of_strategies": 3, "progress_and_outcome": 4, "interaction_dynamics": 4}}',
+            ],
+        )
+        evaluator = MultiAgentBenchEvaluator(domain="bargaining", model_adapter=adapter)
+        evaluator._evaluate_bargaining("Task", "Result")
+        assert adapter.call_count == 2
 
     def test_determine_completion_bargaining_positive(self, bargaining_evaluator):
-        """_determine_completion should work for bargaining domain."""
+        """_determine_completion should return True when both buyer and seller scores are positive."""
         metrics = MultiAgentBenchMetrics(
             task_evaluation={
                 "buyer": {
@@ -272,9 +289,35 @@ class TestBargainingEvaluation:
                     "progress_and_outcome": 4,
                     "interaction_dynamics": 4,
                 },
+                "buyer_score": 80.0,
+                "seller_score": 73.333,
+                "mean_score": 76.667,
             }
         )
         assert bargaining_evaluator._determine_completion(metrics) is True
+
+    def test_call_bargaining_end_to_end(self):
+        """__call__ for bargaining domain should populate both scores and pass completion."""
+        adapter = DummyModelAdapter(
+            model_id="test",
+            responses=[
+                '{"seller": {"effectiveness_of_strategies": 4, "progress_and_outcome": 3, "interaction_dynamics": 5}}',
+                '{"buyer": {"effectiveness_of_strategies": 3, "progress_and_outcome": 4, "interaction_dynamics": 4}}',
+            ],
+        )
+        evaluator = MultiAgentBenchEvaluator(domain="bargaining", model_adapter=adapter)
+
+        traces = {"agents": {}, "environment": {}}
+        result = evaluator(traces, "Negotiation result")
+
+        assert result["passed"] is True
+        assert result["domain"] == "bargaining"
+        task_eval = result["metrics"]["task_evaluation"]
+        assert task_eval["buyer"]["effectiveness_of_strategies"] == 3
+        assert task_eval["seller"]["effectiveness_of_strategies"] == 4
+        assert "buyer_score" in task_eval
+        assert "seller_score" in task_eval
+        assert "mean_score" in task_eval
 
 
 class TestCodingEvaluation:
@@ -707,16 +750,34 @@ class TestParsingEdgeCases:
         score = evaluator._parse_score(response)
         assert score == 5.0
 
-    def test_parse_bargaining_ratings_missing_keys(self, evaluator):
-        """_parse_bargaining_ratings should raise when required keys are missing."""
-        response = '{"effectiveness_of_strategies": 4}'  # Missing other fields
-        with pytest.raises(KeyError):
-            evaluator._parse_bargaining_ratings(response)
+    def test_parse_role_ratings_wrapped(self, evaluator):
+        """_parse_role_ratings should parse role-wrapped JSON response."""
+        response = '{"seller": {"effectiveness_of_strategies": 4, "progress_and_outcome": 3, "interaction_dynamics": 5}}'
+        ratings = evaluator._parse_role_ratings(response, "seller")
+        assert ratings == {"effectiveness_of_strategies": 4, "progress_and_outcome": 3, "interaction_dynamics": 5}
 
-    def test_parse_bargaining_ratings_invalid(self, evaluator):
-        """_parse_bargaining_ratings should raise for invalid response."""
+    def test_parse_role_ratings_flat(self, evaluator):
+        """_parse_role_ratings should accept flat metrics without role wrapper."""
+        response = '{"effectiveness_of_strategies": 4, "progress_and_outcome": 3, "interaction_dynamics": 5}'
+        ratings = evaluator._parse_role_ratings(response, "seller")
+        assert ratings == {"effectiveness_of_strategies": 4, "progress_and_outcome": 3, "interaction_dynamics": 5}
+
+    def test_parse_role_ratings_missing_role_key(self, evaluator):
+        """_parse_role_ratings should raise when role key is missing and no metric keys found."""
+        response = '{"unknown": {"effectiveness_of_strategies": 4}}'
+        with pytest.raises(ValueError, match="Expected 'seller' key"):
+            evaluator._parse_role_ratings(response, "seller")
+
+    def test_parse_role_ratings_missing_metric_key(self, evaluator):
+        """_parse_role_ratings should raise when a required metric key is missing."""
+        response = '{"seller": {"effectiveness_of_strategies": 4}}'
+        with pytest.raises(KeyError):
+            evaluator._parse_role_ratings(response, "seller")
+
+    def test_parse_role_ratings_invalid_json(self, evaluator):
+        """_parse_role_ratings should raise for non-JSON response."""
         with pytest.raises(ValueError, match="No JSON object found"):
-            evaluator._parse_bargaining_ratings("Invalid")
+            evaluator._parse_role_ratings("Invalid", "buyer")
 
 
 class TestFormatFinalAnswerEdgeCases:

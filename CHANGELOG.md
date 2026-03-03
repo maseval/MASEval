@@ -96,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MultiAgentBench: Fixed bargaining evaluation to use both buyer and seller LLM evaluation prompts, matching the MARBLE paper's methodology. Previously only the seller prompt was used (mirroring a regression in the MARBLE codebase), causing buyer scores to always default to -1 and completion checks to always fail. Now reports `buyer_score`, `seller_score`, and `mean_score` scaled to 0-100. (PR: #PR_NUMBER_PLACEHOLDER)
 - GAIA2: Various fixes for faithful reproduction of ARE reference results — scenario lifecycle, data loading, evaluation flow, multi-turn notification handling, tool filtering, default agent fidelity, and simulation time management (PR: #30)
 - MultiAgentBench: Corrected domain mappings, added missing werewolf/minecraft support, fixed environment constructors, added result summarization matching MARBLE's evaluation pipeline (PR: #30)
 - MultiAgentBench: `MarbleMultiAgentBenchBenchmark` now implements MARBLE's multi-iteration coordination loop with all 4 modes (graph, star, chain, tree) instead of executing agents only once. Fixed default `coordinate_mode` from `"star"` to `"graph"` matching 1215/1226 MARBLE configs. Uses per-task `max_iterations` from task config (matching `engine.py:97`), respects per-agent LLM overrides, and initializes memory type from task config. (PR: #PR_NUMBER_PLACEHOLDER)

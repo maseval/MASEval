@@ -4,7 +4,6 @@ This module provides evaluation metrics matching MARBLE's evaluation methodology
 """
 
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -210,9 +209,12 @@ class MultiAgentBenchEvaluator(Evaluator):
             },
             "bargaining": {
                 "task_evaluation": {
-                    # MARBLE evaluator.py:211: only uses seller_prompt, which
-                    # includes evaluation of BOTH buyer and seller in one call
+                    # MARBLE evaluator.py:210 has buyer_prompt commented out (code
+                    # regression). The paper requires both prompts to compute
+                    # TS = (buyer_avg + seller_avg) / 2 * 20. Each prompt evaluates
+                    # a single role and returns {"role": {metrics}}.
                     "seller_prompt": marble_prompts["world"]["task_evaluation"]["seller_prompt"],
+                    "buyer_prompt": marble_prompts["world"]["task_evaluation"]["buyer_prompt"],
                 }
             },
             "coding": {
@@ -512,25 +514,87 @@ class MultiAgentBenchEvaluator(Evaluator):
         return self._parse_research_ratings(response)
 
     def _evaluate_bargaining(self, task: str, result: str) -> Dict[str, Any]:
-        """Evaluate bargaining/world simulation task output.
+        """Evaluate bargaining task output using separate buyer and seller prompts.
 
-        MARBLE evaluator.py:211 uses ONLY the seller_prompt, which instructs
-        the LLM to evaluate both buyer and seller in a single call. The
-        response is parsed with ``parse_task_world_evaluation()`` to extract
-        both buyer and seller ratings.
+        The MARBLE paper computes Task Score from both buyer and seller evaluations:
+        ``TS = (buyer_avg + seller_avg) / 2 * 20``. Each prompt evaluates a single
+        role and returns ``{"role": {"metric": score}}``.
+
+        MARBLE evaluator.py:210 has the buyer_prompt commented out (code regression).
+        This restores both calls to match the paper's published methodology.
 
         Generation params match evaluator.py:214-220: temperature=0.0,
         max_token_num=512.
         """
-        seller_prompt = self._evaluation_prompts["bargaining"]["task_evaluation"]["seller_prompt"]
-        prompt = seller_prompt.format(task=task, result=result)
+        gen_params = {"temperature": 0.0, "max_tokens": 512}
 
-        # Single LLM call matching evaluator.py:214-222
-        response = self.model_adapter.generate(
-            prompt,
-            generation_params={"temperature": 0.0, "max_tokens": 512},
+        seller_prompt = self._evaluation_prompts["bargaining"]["task_evaluation"]["seller_prompt"]
+        seller_response = self.model_adapter.generate(
+            seller_prompt.format(task=task, result=result),
+            generation_params=gen_params,
         )
-        return self._parse_task_world_evaluation(response)
+        seller_ratings = self._parse_role_ratings(seller_response, "seller")
+
+        buyer_prompt = self._evaluation_prompts["bargaining"]["task_evaluation"]["buyer_prompt"]
+        buyer_response = self.model_adapter.generate(
+            buyer_prompt.format(task=task, result=result),
+            generation_params=gen_params,
+        )
+        buyer_ratings = self._parse_role_ratings(buyer_response, "buyer")
+
+        # Compute scores matching MARBLE paper methodology:
+        # Per-role score = mean of 3 metrics (1-5 scale) * 20 -> 0-100
+        buyer_score = sum(buyer_ratings.values()) / len(buyer_ratings) * 20
+        seller_score = sum(seller_ratings.values()) / len(seller_ratings) * 20
+
+        return {
+            "buyer": buyer_ratings,
+            "seller": seller_ratings,
+            "buyer_score": buyer_score,
+            "seller_score": seller_score,
+            "mean_score": (buyer_score + seller_score) / 2,
+        }
+
+    def _parse_role_ratings(self, response: str, role: str) -> Dict[str, int]:
+        """Parse bargaining ratings for a single role from LLM response.
+
+        Each bargaining prompt (buyer or seller) returns a JSON object with
+        a single role key containing three metric scores on a 1-5 scale.
+
+        Args:
+            response: LLM response containing JSON like ``{"role": {"metric": score}}``.
+            role: Expected role key (``"buyer"`` or ``"seller"``).
+
+        Returns:
+            Dict with ``effectiveness_of_strategies``, ``progress_and_outcome``,
+            ``interaction_dynamics`` as int scores.
+
+        Raises:
+            ValueError: If the response cannot be parsed or the role key is missing.
+        """
+        content = response.strip()
+        json_start = content.find("{")
+        json_end = content.rfind("}") + 1
+
+        if json_start < 0 or json_end <= json_start:
+            raise ValueError(f"No JSON object found in evaluator response: {response!r}")
+
+        json_str = content[json_start:json_end]
+        ratings = json.loads(json_str)
+
+        # The response may be {"role": {metrics}} or just {metrics}
+        if role in ratings:
+            role_data = ratings[role]
+        elif "effectiveness_of_strategies" in ratings:
+            role_data = ratings
+        else:
+            raise ValueError(f"Expected '{role}' key or metric keys in response, got: {ratings!r}")
+
+        return {
+            "effectiveness_of_strategies": int(role_data["effectiveness_of_strategies"]),
+            "progress_and_outcome": int(role_data["progress_and_outcome"]),
+            "interaction_dynamics": int(role_data["interaction_dynamics"]),
+        }
 
     def _evaluate_coding(self, task: str, result: str) -> Dict[str, Any]:
         """Evaluate coding task output.
@@ -601,67 +665,6 @@ class MultiAgentBenchEvaluator(Evaluator):
         )
         return self._parse_minecraft_ratings(response)
 
-    def _parse_task_world_evaluation(self, response: str) -> Dict[str, Any]:
-        """Parse buyer and seller ratings from a single LLM response.
-
-        Copied from MARBLE evaluator.py:230-282. The seller_prompt instructs
-        the LLM to evaluate both buyer and seller; this method extracts both
-        rating blocks from the single response.
-
-        Args:
-            response: LLM response containing JSON with buyer and seller ratings
-
-        Returns:
-            Dict with ``buyer`` and ``seller`` keys, each containing
-            ``effectiveness_of_strategies``, ``progress_and_outcome``,
-            ``interaction_dynamics`` scores.
-        """
-        default_ratings: Dict[str, Any] = {
-            "buyer": {
-                "effectiveness_of_strategies": -1,
-                "progress_and_outcome": -1,
-                "interaction_dynamics": -1,
-            },
-            "seller": {
-                "effectiveness_of_strategies": -1,
-                "progress_and_outcome": -1,
-                "interaction_dynamics": -1,
-            },
-        }
-
-        try:
-            match = re.search(r"\{[\s\S]*\}", response)
-            if not match:
-                return default_ratings
-
-            json_str = match.group(0)
-            ratings = json.loads(json_str)
-
-            if "buyer" not in ratings and "seller" not in ratings:
-                return default_ratings
-
-            parsed_ratings: Dict[str, Any] = {
-                "buyer": {
-                    "effectiveness_of_strategies": int(ratings["buyer"].get("effectiveness_of_strategies", -1)),
-                    "progress_and_outcome": int(ratings["buyer"].get("progress_and_outcome", -1)),
-                    "interaction_dynamics": int(ratings["buyer"].get("interaction_dynamics", -1)),
-                }
-                if "buyer" in ratings
-                else default_ratings["buyer"],
-                "seller": {
-                    "effectiveness_of_strategies": int(ratings["seller"].get("effectiveness_of_strategies", -1)),
-                    "progress_and_outcome": int(ratings["seller"].get("progress_and_outcome", -1)),
-                    "interaction_dynamics": int(ratings["seller"].get("interaction_dynamics", -1)),
-                }
-                if "seller" in ratings
-                else default_ratings["seller"],
-            }
-
-            return parsed_ratings
-
-        except (json.JSONDecodeError, KeyError, ValueError):
-            return default_ratings
-
     def _parse_score(self, response: str) -> float:
         """Parse a single score from LLM response.
 
@@ -717,27 +720,6 @@ class MultiAgentBenchEvaluator(Evaluator):
         json_str = content[json_start:json_end]
         ratings = json.loads(json_str)
         return {k: int(v) for k, v in ratings.items()}
-
-    def _parse_bargaining_ratings(self, response: str) -> Dict[str, int]:
-        """Parse bargaining evaluation ratings.
-
-        Raises:
-            ValueError: If the response cannot be parsed into valid ratings
-        """
-        content = response.strip()
-        json_start = content.find("{")
-        json_end = content.rfind("}") + 1
-
-        if json_start < 0 or json_end <= json_start:
-            raise ValueError(f"No JSON object found in evaluator response: {response!r}")
-
-        json_str = content[json_start:json_end]
-        ratings = json.loads(json_str)
-        return {
-            "effectiveness_of_strategies": int(ratings["effectiveness_of_strategies"]),
-            "progress_and_outcome": int(ratings["progress_and_outcome"]),
-            "interaction_dynamics": int(ratings["interaction_dynamics"]),
-        }
 
     def _parse_coding_ratings(self, response: str) -> Dict[str, int]:
         """Parse coding evaluation ratings.
