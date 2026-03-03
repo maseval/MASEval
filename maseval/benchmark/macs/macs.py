@@ -991,7 +991,14 @@ class MACSBenchmark(Benchmark):
         # Compute overall metrics per AWS paper
         overall_gsr = 1.0 if (user_result.get("gsr", 0.0) == 1.0 and system_result.get("gsr", 0.0) == 1.0) else 0.0
 
-        # Supervisor GSR: success if overall passes OR user-side passes
+        # Supervisor GSR: the MACS paper (arXiv:2412.05449) defines this as "goal success
+        # rate of supervisor agent WITHOUT dependence on sub-agent/tool behavior", with the
+        # scoring rule: supervisor_gsr=1 if overall_gsr=1 OR "supervisor is reliable".
+        # However, the paper provides no explicit formula for "supervisor is reliable" —
+        # it is left ambiguous. As a deliberate simplification, we use user_gsr as a proxy:
+        # the supervisor is considered reliable when user-facing goals are met, independent
+        # of whether system-side goals also passed. This is mathematically equivalent to
+        # supervisor_gsr = user_gsr (since overall_gsr=1 implies user_gsr=1).
         supervisor_gsr = 1.0 if (overall_gsr == 1.0 or user_result.get("gsr", 0.0) == 1.0) else 0.0
 
         # Overall partial GSR
