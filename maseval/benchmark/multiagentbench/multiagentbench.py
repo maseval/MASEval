@@ -132,6 +132,16 @@ class MultiAgentBenchBenchmark(Benchmark):
     - LLM-based evaluation matching MARBLE's metrics
     - Comprehensive tracing of agent interactions
 
+    Warning:
+        ``communication_score`` is only computed when agents use
+        ``MarbleAgentAdapter``, which populates the ``communication_log`` trace
+        key from ``BaseAgent.act()``. Custom ``setup_agents()`` implementations
+        using framework adapters (smolagents, LangGraph, LlamaIndex) must
+        explicitly populate ``communication_log`` in each adapter's
+        ``gather_traces()`` output for communication evaluation to work.
+        See ``MultiAgentBenchEvaluator._extract_communications()`` for the
+        expected format.
+
     Example:
         ```python
         class MyMultiAgentBenchmark(MultiAgentBenchBenchmark):

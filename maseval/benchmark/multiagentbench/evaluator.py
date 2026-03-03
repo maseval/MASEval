@@ -250,6 +250,24 @@ class MultiAgentBenchEvaluator(Evaluator):
     def _extract_communications(self, traces: Dict[str, Any]) -> str:
         """Extract communication logs from traces.
 
+        Reads the ``communication_log`` key from each agent's trace dict.
+        This key is populated by ``MarbleAgentAdapter`` (which captures it
+        from ``BaseAgent.act()``'s return value) but is **not** populated by
+        the framework adapters (``SmolAgentAdapter``, ``LangGraphAgentAdapter``,
+        ``LlamaIndexAgentAdapter``). When using a custom ``setup_agents()``
+        implementation with those adapters, ``communication_score`` will always
+        be ``None`` and this method will return ``"No communications recorded."``.
+
+        Warning:
+            Communication evaluation is not supported for custom agent
+            implementations that use framework adapters (smolagents, LangGraph,
+            LlamaIndex). Only ``MarbleAgentAdapter``-based agents populate the
+            ``communication_log`` key that this method reads. To enable
+            communication evaluation with custom agents, the ``setup_agents()``
+            subclass must ensure each adapter's ``gather_traces()`` returns a
+            ``"communication_log"`` key with entries of the form
+            ``{"communication": str}``.
+
         Args:
             traces: Execution traces
 
