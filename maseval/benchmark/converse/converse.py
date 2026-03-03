@@ -73,7 +73,9 @@ class ConverseBenchmark(Benchmark):
 
         Args:
             agent_data: Must contain ``attacker_model_id`` (or ``attacker_model``)
-                for the attacker LLM.  Falls back to ``"gpt-4o"`` if absent.
+                for the attacker LLM. Raises ``ValueError`` if absent — no silent
+                default is provided because a wrong attacker model would fundamentally
+                change the nature of the attacks.
                 Optional ``max_turns`` controls dialogue length (default 10).
             environment: The task environment (unused).
             task: Current task with ``user_data`` (persona, attack goal/strategy).
@@ -81,9 +83,18 @@ class ConverseBenchmark(Benchmark):
 
         Returns:
             A :class:`ConverseExternalAgent` configured for the task.
+
+        Raises:
+            ValueError: If ``attacker_model_id`` (or ``attacker_model``) is not in ``agent_data``.
         """
         _ = environment
-        attacker_model_id = agent_data.get("attacker_model_id") or agent_data.get("attacker_model") or "gpt-4o"
+        attacker_model_id = agent_data.get("attacker_model_id") or agent_data.get("attacker_model")
+        if not attacker_model_id:
+            raise ValueError(
+                "agent_data must contain 'attacker_model_id' (the LLM used as the adversarial "
+                "external agent). No fallback is provided — a silent default would silently "
+                "change benchmark behavior."
+            )
 
         # Use flat hierarchical paths to stay compatible with the SeedGenerator ABC.
         user_seed = seed_generator.derive_seed("simulators/converse_external_agent")
