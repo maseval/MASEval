@@ -95,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `ResultLogger._filter_report()` now includes `status` and `error` fields in persisted results, so saved logs can distinguish successful runs from infrastructure failures. Report schema is now consistent across success and failure paths (`error` is always present, `None` on success). (PR: #PR_NUMBER_PLACEHOLDER)
+- `ResultLogger._filter_report()` now includes `status` and `error` fields in persisted results, so saved logs can distinguish successful runs from infrastructure failures. Report schema is now consistent across success and failure paths (`error` is always present, `None` on success). (PR: #38)
 - GAIA2: Various fixes for faithful reproduction of ARE reference results — scenario lifecycle, data loading, evaluation flow, multi-turn notification handling, tool filtering, default agent fidelity, and simulation time management (PR: #30)
 - MultiAgentBench: Corrected domain mappings, added missing werewolf/minecraft support, fixed environment constructors, added result summarization matching MARBLE's evaluation pipeline (PR: #30)
 - Tau2: Fixed telecom domain schema to match tau2-bench, added agent/user state synchronization and deterministic network simulation, fixed initialization flow and tool result serialization (PR: #30)
