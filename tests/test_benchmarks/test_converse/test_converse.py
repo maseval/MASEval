@@ -664,7 +664,7 @@ def test_benchmark_setup_and_default_run_agents() -> None:
     seed_generator = DefaultSeedGenerator(global_seed=123).for_task("task-1").for_repetition(0)
 
     env = benchmark.setup_environment({}, task, seed_generator=seed_generator)
-    user = benchmark.setup_user({}, env, task, seed_generator=seed_generator)
+    user = benchmark.setup_user({"attacker_model_id": "fake-attacker"}, env, task, seed_generator=seed_generator)
     evaluators = benchmark.setup_evaluators(env, task, [], user, seed_generator=seed_generator)
 
     assert isinstance(env, ConverseEnvironment)
