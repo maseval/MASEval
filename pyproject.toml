@@ -163,8 +163,12 @@ override-dependencies = [
     "termcolor>=2.5.0",
 ]
 
-[tool.setuptools]
-packages = ["maseval"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["maseval*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.jsonl", "*.toml", "*.yaml", "*.yml", "*.txt", "*.md", "*.sql"]
 
 [tool.ruff]
 line-length = 144
