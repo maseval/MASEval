@@ -390,6 +390,74 @@ def test_smolagents_adapter_logs_with_errors():
     assert logs[0]["error"] == "Tool execution failed: Connection timeout"
 
 
+def test_smolagents_adapter_step_status_error_on_crashed_step():
+    """Test that steps with no output fields are marked as 'error'.
+
+    When smolagents raises AgentGenerationError, the step is added to memory
+    via the finally block but step.error is never set. The step has
+    model_input_messages but no model_output_message, tool_calls, observations,
+    action_output, or is_final_answer=True. MASEval should detect this and
+    report status='error' rather than 'success'.
+    """
+    from maseval.interface.agents.smolagents import SmolAgentAdapter
+    from smolagents.memory import ActionStep, AgentMemory
+    from smolagents.monitoring import Timing
+    from smolagents.models import ChatMessage, MessageRole
+    from unittest.mock import Mock
+    import time
+
+    mock_agent = Mock()
+    mock_agent.memory = AgentMemory(system_prompt="Test system prompt")
+
+    start_time = time.time()
+
+    # Step 1: Normal successful step (has observations and action_output)
+    step1 = ActionStep(
+        step_number=1,
+        timing=Timing(start_time=start_time, end_time=start_time + 0.5),
+        observations_images=[],
+    )
+    step1.observations = "Tool returned data"
+    step1.action_output = "Result"
+    mock_agent.memory.steps.append(step1)
+
+    # Step 2: Incomplete step — simulates AgentGenerationError scenario
+    # Has model_input_messages but no output fields, error is None
+    step2 = ActionStep(
+        step_number=2,
+        timing=Timing(start_time=start_time + 0.5, end_time=start_time + 0.6),
+        observations_images=[],
+    )
+    step2.model_input_messages = [
+        ChatMessage(role=MessageRole.USER, content="Do something"),
+    ]
+    # Crucially: no model_output_message, no tool_calls, no observations,
+    # no action_output, is_final_answer=False (default), error=None (default)
+    mock_agent.memory.steps.append(step2)
+
+    # Step 3: Error step (has step.error set)
+    step3 = ActionStep(
+        step_number=3,
+        timing=Timing(start_time=start_time + 0.6, end_time=start_time + 0.7),
+        observations_images=[],
+    )
+    mock_logger = Mock()
+    from smolagents import AgentError
+
+    step3.error = AgentError("Something failed", logger=mock_logger)
+    mock_agent.memory.steps.append(step3)
+
+    mock_agent.write_memory_to_messages = Mock(return_value=[])
+    adapter = SmolAgentAdapter(agent_instance=mock_agent, name="test_agent")
+
+    logs = adapter.logs
+
+    assert len(logs) == 3
+    assert logs[0]["status"] == "success"
+    assert logs[1]["status"] == "error"
+    assert logs[2]["status"] == "error"
+
+
 def test_smolagents_adapter_logs_empty_when_no_steps():
     """Test that adapter.logs returns empty list when no execution has occurred."""
     from maseval.interface.agents.smolagents import SmolAgentAdapter

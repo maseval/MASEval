@@ -132,7 +132,7 @@ class SmolAgentAdapter(AgentAdapter):
                 log_entry: Dict[str, Any] = {
                     "step_type": "ActionStep",
                     "step_number": step.step_number,
-                    "status": "error" if step.error else "success",
+                    "status": self._determine_step_status(step),
                 }
 
                 # Timing information
@@ -408,6 +408,37 @@ class SmolAgentAdapter(AgentAdapter):
 
         # Return the final answer (traces are captured via get_messages() and gather_traces())
         return final_answer
+
+    @staticmethod
+    def _determine_step_status(step) -> str:
+        """Determine the status of an ActionStep.
+
+        Detects crashed steps where smolagents raised ``AgentGenerationError``
+        before setting ``step.error``. That is the only ``AgentError`` subclass
+        that is re-raised instead of being recorded on the step, so a step with
+        no output fields (``model_output_message``, ``tool_calls``,
+        ``observations``, ``action_output``) and ``is_final_answer=False``
+        is always an error — not a success.
+
+        Returns:
+            ``"error"`` if ``step.error`` is set or the step has no output fields,
+            ``"success"`` otherwise.
+        """
+        if step.error:
+            return "error"
+
+        has_output = (
+            (hasattr(step, "model_output_message") and step.model_output_message is not None)
+            or (hasattr(step, "tool_calls") and step.tool_calls)
+            or (hasattr(step, "observations") and step.observations)
+            or (hasattr(step, "action_output") and step.action_output is not None)
+            or (hasattr(step, "is_final_answer") and step.is_final_answer)
+        )
+
+        if not has_output:
+            return "error"
+
+        return "success"
 
     def _convert_smolagents_messages(self, smol_messages: list) -> MessageHistory:
         """Convert smolagents message format to MASEval MessageHistory.
