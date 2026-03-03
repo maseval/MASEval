@@ -134,6 +134,46 @@ class TestResultLogger:
         assert "config" in filtered
         assert "eval" in filtered
 
+    def test_filter_report_preserves_status_and_error(self):
+        """Test that status and error fields are always included in filtered reports.
+
+        These are core metadata fields (like task_id and repeat_idx) that must
+        always be present so persisted results can distinguish successes from failures.
+        """
+        logger = MockResultLogger(include_traces=False, include_config=False, include_eval=False)
+
+        report = {
+            "task_id": "task_0",
+            "repeat_idx": 0,
+            "status": "agent_error",
+            "error": {"type": "AgentError", "message": "Tool call failed"},
+            "traces": {"agent": "trace_data"},
+            "config": {"model": "gpt-4"},
+            "eval": {"score": 0.0},
+        }
+
+        filtered = logger._filter_report(report)
+
+        assert filtered["status"] == "agent_error"
+        assert filtered["error"] == {"type": "AgentError", "message": "Tool call failed"}
+        assert "traces" not in filtered
+        assert "config" not in filtered
+        assert "eval" not in filtered
+
+    def test_filter_report_status_and_error_absent(self):
+        """Test that missing status/error fields result in None values."""
+        logger = MockResultLogger()
+
+        report = {
+            "task_id": "task_0",
+            "repeat_idx": 0,
+        }
+
+        filtered = logger._filter_report(report)
+
+        assert filtered["status"] is None
+        assert filtered["error"] is None
+
     def test_filter_report_partial_included(self):
         """Test report filtering with only some fields included."""
         logger = MockResultLogger(include_traces=False, include_config=True, include_eval=False)

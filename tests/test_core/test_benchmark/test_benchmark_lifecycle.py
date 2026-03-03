@@ -562,7 +562,7 @@ class TestFailureSafeExecution:
 
         assert len(reports) == 1
         assert reports[0]["status"] == TaskExecutionStatus.SUCCESS.value
-        assert "error" not in reports[0]
+        assert reports[0]["error"] is None
         assert reports[0]["eval"] is not None
 
     def test_default_failure_flags(self):
