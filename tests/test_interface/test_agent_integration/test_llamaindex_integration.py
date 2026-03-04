@@ -393,3 +393,196 @@ def test_llamaindex_adapter_error_logging():
     assert log_entry["error"] == "Test error"
     assert log_entry["error_type"] == "ValueError"
     assert "duration_seconds" in log_entry
+
+
+# =============================================================================
+# get_messages() from Agent Memory
+# =============================================================================
+
+
+def test_llamaindex_get_messages_from_agent_memory():
+    """Test get_messages() fetches from agent.memory.get_all() when available."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from llama_index.core.base.llms.types import ChatMessage, MessageRole
+    from unittest.mock import Mock
+
+    mock_agent = Mock()
+    mock_memory = Mock()
+    mock_memory.get_all.return_value = [
+        ChatMessage(role=MessageRole.USER, content="What is AI?"),
+        ChatMessage(role=MessageRole.ASSISTANT, content="AI is artificial intelligence."),
+    ]
+    mock_agent.memory = mock_memory
+
+    adapter = LlamaIndexAgentAdapter(mock_agent, "memory_agent")
+    messages = adapter.get_messages()
+
+    assert len(messages) == 2
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "What is AI?"
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == "AI is artificial intelligence."
+    mock_memory.get_all.assert_called_once()
+
+
+# =============================================================================
+# Token Usage Extraction
+# =============================================================================
+
+
+def test_llamaindex_run_token_usage_extraction():
+    """Test _run_agent() extracts token usage from result.raw.usage."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from llama_index.core.base.llms.types import ChatMessage, MessageRole
+    from unittest.mock import Mock
+
+    mock_agent = Mock()
+    mock_result = Mock()
+    mock_result.response = ChatMessage(role=MessageRole.ASSISTANT, content="Answer")
+    mock_result.raw = Mock()
+    mock_result.raw.usage = Mock()
+    mock_result.raw.usage.total_tokens = 150
+    mock_result.raw.usage.prompt_tokens = 100
+    mock_result.raw.usage.completion_tokens = 50
+    mock_agent.run_sync = Mock(return_value=mock_result)
+
+    adapter = LlamaIndexAgentAdapter(mock_agent, "token_agent")
+    adapter.run("test query")
+
+    assert len(adapter.logs) == 1
+    log_entry = adapter.logs[0]
+    assert log_entry["total_tokens"] == 150
+    assert log_entry["input_tokens"] == 100
+    assert log_entry["output_tokens"] == 50
+
+
+# =============================================================================
+# gather_config() with workflow_config
+# =============================================================================
+
+
+def test_llamaindex_gather_config_workflow_config():
+    """Test gather_config() includes workflow_config from agent.get_config()."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from unittest.mock import Mock
+
+    mock_agent = Mock(spec=["name", "get_config"])
+    mock_agent.name = "workflow_agent"
+    mock_agent.get_config = Mock(return_value={"timeout": 30, "max_retries": 3})
+
+    adapter = LlamaIndexAgentAdapter(mock_agent, "config_agent")
+    config = adapter.gather_config()
+
+    assert "llamaindex_config" in config
+    assert config["llamaindex_config"]["workflow_config"] == {"timeout": 30, "max_retries": 3}
+
+
+# =============================================================================
+# _convert_single_message() Tool Message Fields
+# =============================================================================
+
+
+def test_llamaindex_convert_tool_message_with_tool_call_id_and_name():
+    """Test _convert_single_message() extracts tool_call_id and name from additional_kwargs."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from llama_index.core.base.llms.types import ChatMessage, MessageRole
+    from unittest.mock import Mock
+
+    mock_agent = Mock()
+    adapter = LlamaIndexAgentAdapter(mock_agent, "tool_msg_agent")
+
+    msg = ChatMessage(
+        role=MessageRole.TOOL,
+        content="42",
+        additional_kwargs={"tool_call_id": "call_abc", "name": "calculator"},
+    )
+
+    converted = adapter._convert_single_message(msg)
+
+    assert converted["role"] == "tool"
+    assert converted["content"] == "42"
+    assert converted["tool_call_id"] == "call_abc"
+    assert converted["name"] == "calculator"
+
+
+# =============================================================================
+# Phase 2 Hook: _MASEvalSpanHandler Tests
+# =============================================================================
+
+
+def test_llamaindex_span_handler_enter_exit_lifecycle():
+    """Test span handler enter/exit lifecycle records to trace buffer and completed_spans."""
+    from maseval.interface.agents.llamaindex import _MASEvalSpanHandler
+
+    handler = _MASEvalSpanHandler()
+    handler._active = True
+
+    # Enter a span
+    handler.span_enter(id_="span_1", bound_args={}, parent_id=None)
+
+    assert "span_1" in handler.open_spans
+
+    # Exit the span
+    handler.span_exit(id_="span_1", bound_args={})
+
+    assert "span_1" not in handler.open_spans
+    assert len(handler.completed_spans) == 1
+    assert len(handler._trace_buffer) == 1
+
+    entry = handler._trace_buffer[0]
+    assert entry["source"] == "llamaindex_span"
+    assert entry["event"] == "span_exit"
+    assert entry["span_id"] == "span_1"
+    assert isinstance(entry["duration"], float)
+
+
+def test_llamaindex_span_handler_drop_lifecycle():
+    """Test span handler drop records error info and moves to dropped_spans."""
+    from maseval.interface.agents.llamaindex import _MASEvalSpanHandler
+
+    handler = _MASEvalSpanHandler()
+    handler._active = True
+
+    # Open then drop a span
+    handler.span_enter(id_="span_2", bound_args={})
+    handler.span_drop(id_="span_2", bound_args={}, err=ValueError("timeout"))
+
+    assert "span_2" not in handler.open_spans
+    assert len(handler.dropped_spans) == 1
+    assert len(handler._trace_buffer) == 1
+
+    entry = handler._trace_buffer[0]
+    assert entry["event"] == "span_drop"
+    assert entry["span_id"] == "span_2"
+    assert entry["error"] == "timeout"
+
+
+def test_llamaindex_span_handler_inactive_skips():
+    """Test span handler skips span creation when _active is False."""
+    from maseval.interface.agents.llamaindex import _MASEvalSpanHandler
+
+    handler = _MASEvalSpanHandler()
+    # Default: _active is False
+
+    handler.span_enter(id_="span_3", bound_args={})
+
+    assert handler.open_spans == {}
+    assert handler._trace_buffer == []
+
+
+def test_llamaindex_span_handler_exit_unknown_span():
+    """Test span handler gracefully handles exit/drop for unknown span ids."""
+    from maseval.interface.agents.llamaindex import _MASEvalSpanHandler
+
+    handler = _MASEvalSpanHandler()
+    handler._active = True
+
+    # Exit an unknown span - should not crash
+    handler.span_exit(id_="nonexistent", bound_args={})
+
+    # Drop an unknown span - should not crash
+    handler.span_drop(id_="nonexistent", bound_args={}, err=RuntimeError("x"))
+
+    assert handler.completed_spans == []
+    assert handler.dropped_spans == []
+    assert handler._trace_buffer == []

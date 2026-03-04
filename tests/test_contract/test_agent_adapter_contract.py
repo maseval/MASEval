@@ -313,8 +313,9 @@ class TestAgentAdapterContract:
     def test_adapter_traces_same_structure(self, framework):
         """Test gather_traces returns consistent structure across frameworks.
 
-        Contract: All adapters must provide message history in traces, enabling
-        uniform access to execution data regardless of underlying framework.
+        Contract: All adapters must provide these keys in traces:
+        name, agent_type, message_count, messages, callbacks, logs,
+        invocation_traces, trace_buffer.
         """
         mock_llm = MockLLM(responses=["Response"])
         agent = create_agent_for_framework(framework, mock_llm)
@@ -323,20 +324,21 @@ class TestAgentAdapterContract:
         adapter.run("Test query")
         traces = adapter.gather_traces()
 
-        # All should include message history; different adapters name this key
-        if "message_history" in traces:
-            messages = traces["message_history"]
-        else:
-            messages = traces.get("messages", [])
+        # Required keys from base AgentAdapter.gather_traces()
+        for key in ["name", "agent_type", "message_count", "messages", "callbacks", "logs", "invocation_traces", "trace_buffer"]:
+            assert key in traces, f"gather_traces() missing required key: {key}"
 
-        assert isinstance(messages, list)
-        assert len(messages) > 0
+        assert isinstance(traces["messages"], list)
+        assert len(traces["messages"]) > 0
+        assert isinstance(traces["logs"], list)
+        assert isinstance(traces["invocation_traces"], list)
+        assert isinstance(traces["trace_buffer"], list)
 
     def test_adapter_config_same_structure(self, framework):
         """Test gather_config returns consistent structure across frameworks.
 
-        Contract: All adapters must provide agent name in config, enabling
-        identification and reproducibility tracking.
+        Contract: All adapters must provide these keys in config:
+        name, agent_type, adapter_type, callbacks.
         """
         mock_llm = MockLLM(responses=["Response"])
         agent = create_agent_for_framework(framework, mock_llm)
@@ -344,10 +346,12 @@ class TestAgentAdapterContract:
 
         config = adapter.gather_config()
 
-        # All should include agent name
-        assert "agent_name" in config or "name" in config
-        # All should include some identifying information
-        assert len(config) > 0
+        # Required keys from base AgentAdapter.gather_config()
+        for key in ["name", "agent_type", "adapter_type", "callbacks"]:
+            assert key in config, f"gather_config() missing required key: {key}"
+
+        assert config["name"] == "test_agent"
+        assert isinstance(config["callbacks"], list)
 
     def test_adapter_get_messages_after_multiple_runs(self, framework):
         """Test message history accumulation across multiple agent runs.
@@ -431,21 +435,18 @@ class TestAgentAdapterContract:
     def test_adapter_callback_lifecycle_order(self, framework):
         """Test callbacks fire in correct lifecycle order with proper state.
 
-        Contract: on_run_start fires before execution with initial state,
-        on_run_end fires after execution with final state and result.
-
-        Note: smolagents always has a system message in memory at start.
+        Contract: on_run_start fires before execution, on_run_end fires after
+        execution with the result. After run, message count must be greater
+        than before run.
         """
         lifecycle_events = []
 
         class LifecycleTracker(AgentCallback):
             def on_run_start(self, agent):
-                # Capture state at start
                 msg_count_at_start = len(agent.get_messages())
                 lifecycle_events.append(("start", msg_count_at_start))
 
             def on_run_end(self, agent, result):
-                # Capture state at end
                 msg_count_at_end = len(agent.get_messages())
                 lifecycle_events.append(("end", msg_count_at_end, result))
 
@@ -460,13 +461,8 @@ class TestAgentAdapterContract:
         assert lifecycle_events[0][0] == "start"
         assert lifecycle_events[1][0] == "end"
 
-        # Verify on_run_start fires before user messages are added
-        # smolagents has 1 message (system), others have 0
-        expected_start_count = 1 if framework == "smolagents" else 0
-        assert lifecycle_events[0][1] == expected_start_count
-
-        # Verify on_run_end fires after message history is populated
-        assert lifecycle_events[1][1] > expected_start_count  # Has more messages at end
+        # Verify on_run_end has more messages than on_run_start (execution happened)
+        assert lifecycle_events[1][1] > lifecycle_events[0][1]
 
         # Verify result is passed to on_run_end
         assert lifecycle_events[1][2] == result
@@ -581,11 +577,10 @@ class TestAgentAdapterContract:
             assert len(log_entry) > 0
 
     def test_adapter_logs_accumulate_across_runs(self, framework):
-        """Test that logs accumulate or reset consistently across multiple run
-        calls to the agent.
+        """Test that logs accumulate across multiple run calls.
 
-        Contract: Adapter logs should maintain a consistent lifecycle behavior
-        across runs.
+        Contract: Logs from run 1 must still be present after run 2.
+        All adapters must accumulate logs, not reset them.
         """
         mock_llm = MockLLM(responses=["First response", "Second response"])
         agent = create_agent_for_framework(framework, mock_llm)
@@ -600,6 +595,52 @@ class TestAgentAdapterContract:
         adapter.run("Second query")
         logs_count_after_second = len(adapter.logs)
 
-        # Logs should either accumulate or stay consistent
-        # (we accept both behaviors as long as logs are populated)
-        assert logs_count_after_second > 0
+        # Logs MUST accumulate (not reset)
+        assert logs_count_after_second > logs_count_after_first
+
+    def test_adapter_invocation_traces_structure(self, framework):
+        """Test that gather_traces() invocation_traces has correct structure.
+
+        Contract: Each invocation trace must contain invocation number, query,
+        status, timestamps, and message snapshot — all accessed through
+        the public gather_traces() API.
+        """
+        mock_llm = MockLLM(responses=["Test response to query"])
+        agent = create_agent_for_framework(framework, mock_llm)
+        adapter = create_adapter_for_framework(framework, agent)
+
+        adapter.run("Test query")
+        traces = adapter.gather_traces()
+
+        invocation_traces = traces["invocation_traces"]
+        assert len(invocation_traces) == 1
+
+        trace = invocation_traces[0]
+        assert trace["invocation"] == 0
+        assert trace["query"] == "Test query"
+        assert trace["status"] == "success"
+        assert "started_at" in trace
+        assert "completed_at" in trace
+        assert isinstance(trace["messages"], list)
+        assert len(trace["messages"]) > 0  # Should have at least user + assistant
+
+    def test_adapter_invocation_traces_accumulate(self, framework):
+        """Test that invocation traces accumulate across multiple runs.
+
+        Contract: Each run() call appends a new invocation trace with
+        sequential invocation numbers, visible through gather_traces().
+        """
+        mock_llm = MockLLM(responses=["First response", "Second response"])
+        agent = create_agent_for_framework(framework, mock_llm)
+        adapter = create_adapter_for_framework(framework, agent)
+
+        adapter.run("First query")
+        adapter.run("Second query")
+        traces = adapter.gather_traces()
+
+        invocation_traces = traces["invocation_traces"]
+        assert len(invocation_traces) == 2
+        assert invocation_traces[0]["query"] == "First query"
+        assert invocation_traces[1]["query"] == "Second query"
+        assert invocation_traces[0]["invocation"] == 0
+        assert invocation_traces[1]["invocation"] == 1
