@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `seed` parameter to `ModelAdapter.__init__` for deterministic model inference (PR: #24)
 - Added `SeedingError` exception for providers that don't support seeding (Anthropic models raise this if seed is provided) (PR: #24)
 - Added seed support to interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFaceModelAdapter` pass seeds to underlying APIs (PR: #24)
+- Added `UserExhaustedError` exception in `maseval.core.exceptions` for flow control when a user's turns are exhausted (PR: #39)
 
 **Interface**
 
@@ -69,7 +70,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Simplified seeding API: `seed_generator` parameter in setup methods is now always non-None (`SeedGenerator` instead of `Optional[SeedGenerator]`). When seeding is disabled (`seed=None`), `derive_seed()` returns `None` instead of raising an error. This eliminates all `if seed_generator is not None:` conditional checks - the same code path works whether seeding is enabled or disabled. (PR: #27)
 - Clarified benchmark/evaluator component guidance in docstrings and docs, including recommended evaluator exception behavior with `fail_on_evaluation_error`. (PR: #28)
-- `User.respond()` now raises `UserExhaustedError` instead of returning an empty string when the user has no more turns. Set the new `exhausted_response` parameter to return a configurable message instead (e.g. for tool-based integrations where agents call `ask_user`). Affects `LLMUser`, `AgenticLLMUser`, `Tau2User`, and `MACSUser`. (PR: #PR_NUMBER_PLACEHOLDER)
+- `User.respond()` now raises `UserExhaustedError` instead of returning an empty string when the user has no more turns. Set the new `exhausted_response` parameter to return a configurable message instead (e.g. for tool-based integrations where agents call `ask_user`). Affects `LLMUser`, `AgenticLLMUser`, `Tau2User`, and `MACSUser`. (PR: #39)
+- `_extract_json_object()` helper in `maseval.core.simulator` replaces brittle markdown-fence stripping with robust outermost-brace extraction for all LLM simulator JSON parsing (`ToolLLMSimulator`, `UserLLMSimulator`, `AgenticUserLLMSimulator`). (PR: #39)
+- `UserLLMSimulator` and `AgenticUserLLMSimulator` now preserve stop tokens that appear outside the JSON object in raw LLM output, so `User._check_stop_token` can detect them. (PR: #39)
+
+**Interface**
+
+- `LlamaIndexAgentAdapter`: Added `max_iterations` constructor parameter, forwarded to `AgentWorkflow.run()`. Fixes silent swallowing of `max_steps` by `FunctionAgent.__init__`. (PR: #39)
+- `SmolAgentAdapter`: New `_determine_step_status()` detects crashed steps where `AgentGenerationError` was raised before `step.error` was set, preventing false "success" status on empty steps. (PR: #39)
+- `GoogleGenAIModelAdapter`: Consecutive tool-response messages are now merged into a single `contents` entry, fixing Google API errors when multiple tool results are returned in one turn. (PR: #39)
 
 **Benchmarks**
 
@@ -90,21 +99,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `LangGraphUser` → `LangGraphLLMUser`
   - `LlamaIndexUser` → `LlamaIndexLLMUser`
 
+**Documentation**
+
+- All benchmarks except MACS are now labeled as **Beta** in docs, BENCHMARKS.md, and benchmark index, with a warning that results have not yet been validated against original implementations. (PR: #39)
+
 **Testing**
 
 - Coverage script (`scripts/coverage_by_feature.py`) now accepts `--exclude` flag to skip additional markers; always excludes `credentialed` and `smoke` by default (PR: #29)
 
 ### Fixed
 
-- MultiAgentBench: Fixed bargaining evaluation to use both buyer and seller LLM evaluation prompts, matching the MARBLE paper's methodology. Previously only the seller prompt was used (mirroring a regression in the MARBLE codebase), causing buyer scores to always default to -1 and completion checks to always fail. Now reports `buyer_score`, `seller_score`, and `mean_score` scaled to 0-100. (PR: #PR_NUMBER_PLACEHOLDER)
+- MultiAgentBench: Fixed bargaining evaluation to use both buyer and seller LLM evaluation prompts, matching the MARBLE paper's methodology. Previously only the seller prompt was used (mirroring a regression in the MARBLE codebase), causing buyer scores to always default to -1 and completion checks to always fail. Now reports `buyer_score`, `seller_score`, and `mean_score` scaled to 0-100. (PR: #39)
 - GAIA2: Various fixes for faithful reproduction of ARE reference results — scenario lifecycle, data loading, evaluation flow, multi-turn notification handling, tool filtering, default agent fidelity, and simulation time management (PR: #30)
 - MultiAgentBench: Corrected domain mappings, added missing werewolf/minecraft support, fixed environment constructors, added result summarization matching MARBLE's evaluation pipeline (PR: #30)
-- MultiAgentBench: `MarbleMultiAgentBenchBenchmark` now implements MARBLE's multi-iteration coordination loop with all 4 modes (graph, star, chain, tree) instead of executing agents only once. Fixed default `coordinate_mode` from `"star"` to `"graph"` matching 1215/1226 MARBLE configs. Uses per-task `max_iterations` from task config (matching `engine.py:97`), respects per-agent LLM overrides, and initializes memory type from task config. (PR: #PR_NUMBER_PLACEHOLDER)
-- MultiAgentBench: Faithfulness audit fixes for reproduction mode — fixed wrong import path (`marble.utils.utils` → `marble.llms.model_prompting`), added Minecraft agent registration, per-domain defaults for `max_iterations`/`coordinate_mode`/`environment.type`/`memory.type` from MARBLE YAML configs, resolved hardcoded relative paths for `score.json` and `workspace/solution.py` via `_MARBLE_ROOT`, unified `coordinate_mode` defaults, corrected evaluator and agent model defaults to match MARBLE, replaced auto-generated agent IDs with strict validation. (PR: #PR_NUMBER_PLACEHOLDER)
+- MultiAgentBench: `MarbleMultiAgentBenchBenchmark` now implements MARBLE's multi-iteration coordination loop with all 4 modes (graph, star, chain, tree) instead of executing agents only once. Fixed default `coordinate_mode` from `"star"` to `"graph"` matching 1215/1226 MARBLE configs. Uses per-task `max_iterations` from task config (matching `engine.py:97`), respects per-agent LLM overrides, and initializes memory type from task config. (PR: #39)
+- MultiAgentBench: Faithfulness audit fixes for reproduction mode — fixed wrong import path (`marble.utils.utils` → `marble.llms.model_prompting`), added Minecraft agent registration, per-domain defaults for `max_iterations`/`coordinate_mode`/`environment.type`/`memory.type` from MARBLE YAML configs, resolved hardcoded relative paths for `score.json` and `workspace/solution.py` via `_MARBLE_ROOT`, unified `coordinate_mode` defaults, corrected evaluator and agent model defaults to match MARBLE, replaced auto-generated agent IDs with strict validation. (PR: #39)
 - Tau2: Fixed telecom domain schema to match tau2-bench, added agent/user state synchronization and deterministic network simulation, fixed initialization flow and tool result serialization (PR: #30)
 - Fixed incorrect return type annotations on `DB.load()` and `DB.copy_deep()` in Tau2 benchmark — now use `Self` instead of `"DB"`, so subclass methods return the correct type (PR: #29)
 - ConVerse: Various fixes for faithful reproduction of original. (PR: #32)
-- Tau2: Added initial agent greeting ("Hi! How can I help you today?") to user simulator's message history, matching the original tau2-bench orchestrator. Fixed tool call counter accumulating across agent turns instead of resetting per turn. Corrected `max_steps` comments (original default is 100, not 200). Documented all known architectural divergences from original tau2-bench in PROVENANCE.md. (PR: #PR_NUMBER_PLACEHOLDER)
+- Tau2: Added initial agent greeting ("Hi! How can I help you today?") to user simulator's message history, matching the original tau2-bench orchestrator. Fixed tool call counter accumulating across agent turns instead of resetting per turn. Corrected `max_steps` comments (original default is 100, not 200). Documented all known architectural divergences from original tau2-bench in PROVENANCE.md. (PR: #39)
+- Tau2: Various bugfixes including user tool routing, environment state synchronization, tool result serialization, telecom domain user models/tools, evaluator assertion logic, and `addict` dependency for nested dict access. (PR: #39)
+- MultiAgentBench: Fixed bargaining evaluation crash from `.format()` on single-brace JSON in evaluator prompts. Documented chain communication assertion bug in MARBLE's `engine.py`. (PR: #39)
+- MACS: `MACSGenericTool._schema_to_inputs()` now preserves `items` sub-schema for array-type properties, fixing tool registration with Gemini and OpenAI providers. (PR: #39)
+- MACS: Simplified `MACSUser._extract_user_profile()` — no longer attempts brittle parsing of scenario text; points profile section at the scenario to avoid duplication. (PR: #39)
+- Converse: Removed silent `"gpt-4o"` default for `attacker_model_id`; now raises `ValueError` if not provided, preventing accidental benchmark misconfiguration. (PR: #39)
+- Packaging: Fixed `setuptools` configuration — `packages` now uses `find` with `include = ["maseval*"]` so subpackages and package data (`.json`, `.jsonl`, `.md`, etc.) are included in PyPI installs. (PR: #39)
 
 ### Removed
 
