@@ -98,8 +98,10 @@ class MultiAgentBenchEnvironment(Environment):
             "env_config": env_config,
             "task_config": task_config,
             "marble_env_type": type(self._marble_env).__name__,
+            # Prefer top-level max_iterations (int-converted by data_loader)
+            # over env_config value which may be a raw string from JSONL.
             # Default 10 from engine.py:97: config.environment.get("max_iterations", 10)
-            "max_iterations": env_config.get("max_iterations", 10),
+            "max_iterations": task_data["max_iterations"] if "max_iterations" in task_data else int(env_config.get("max_iterations", 10)),
         }
 
     def _check_infrastructure(self, domain: str) -> bool:
