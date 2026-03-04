@@ -3,6 +3,14 @@
 This module provides benchmark classes for the MARBLE MultiAgentBench suite:
 - MultiAgentBenchBenchmark: Abstract base for framework-agnostic evaluation
 - MarbleMultiAgentBenchBenchmark: Exact MARBLE reproduction mode
+
+Original Repository: https://github.com/ulab-uiuc/MARBLE
+Fork Used: https://github.com/cemde/MARBLE (contains bug fixes for MASEval integration)
+Code License: MIT
+
+Citation:
+    Zhu, et al. (2025). MultiAgentBench: Evaluating the Collaboration and Competition
+    of LLM agents. arXiv:2503.01935.
 """
 
 import json

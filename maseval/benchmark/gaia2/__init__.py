@@ -4,8 +4,14 @@ Framework-agnostic implementation of the Gaia2 benchmark for evaluating
 LLM-based agents on dynamic, multi-step scenarios using Meta's ARE
 (Agent Research Environments) platform.
 
-Reference Paper: "GAIA-2: A Controllable Multi-Turn Conversational Benchmark for Agents"
+Original Repository: https://github.com/facebookresearch/meta-agents-research-environments
+Code License: MIT
 Data: https://huggingface.co/datasets/meta-agents-research-environments/gaia2
+
+Citation:
+    Froger, R., Benhalloum, A., Rusakov, A., et al. (2026). Gaia2: Benchmarking LLM
+    Agents on Dynamic and Asynchronous Environments. ICLR 2026.
+    https://openreview.net/forum?id=9gw03JpKK4
 
 Capabilities:
     - execution: Basic task execution

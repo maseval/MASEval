@@ -2,6 +2,14 @@
 
 This module provides an adapter that wraps MARBLE's BaseAgent for use with
 MASEval's tracing and evaluation infrastructure.
+
+Original Repository: https://github.com/ulab-uiuc/MARBLE
+Fork Used: https://github.com/cemde/MARBLE (contains bug fixes for MASEval integration)
+Code License: MIT
+
+Citation:
+    Zhu, et al. (2025). MultiAgentBench: Evaluating the Collaboration and Competition
+    of LLM agents. arXiv:2503.01935.
 """
 
 from typing import Any, Dict, List, Sequence, Tuple

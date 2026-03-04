@@ -1,4 +1,7 @@
-# Tau2: Tool-Agent-User Interaction Benchmark
+# Tau2: Tool-Agent-User Interaction Benchmark (Beta)
+
+!!! warning "Beta"
+    This benchmark has been implemented carefully, but it is highly complex and we have not yet validated the results against the original implementation. Use with caution when comparing with existing results or the original paper's numbers. Contributions and compute donations welcome!
 
 The **Tau2 Benchmark** evaluates LLM-based agents on customer service tasks across multiple real-world domains, testing their ability to use tools, follow policies, and interact with users.
 

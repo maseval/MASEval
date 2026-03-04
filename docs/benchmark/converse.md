@@ -1,4 +1,7 @@
-# CONVERSE Benchmark
+# CONVERSE Benchmark (Beta)
+
+!!! warning "Beta"
+    This benchmark has been implemented carefully, but it is highly complex and we have not yet validated the results against the original implementation. Use with caution when comparing with existing results or the original paper's numbers. Contributions and compute donations welcome!
 
 CONVERSE evaluates privacy and security robustness in agent-to-agent conversations where the external counterpart is adversarial.
 

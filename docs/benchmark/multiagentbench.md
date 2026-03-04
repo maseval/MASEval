@@ -1,4 +1,7 @@
-# MultiAgentBench: Multi-Agent Collaboration Benchmark
+# MultiAgentBench: Multi-Agent Collaboration Benchmark (Beta)
+
+!!! warning "Beta"
+    This benchmark has been implemented carefully, but it is highly complex and we have not yet validated the results against the original implementation. Use with caution when comparing with existing results or the original paper's numbers. Contributions and compute donations welcome!
 
 The **MultiAgentBench** benchmark evaluates multi-agent collaboration and competition in LLM-based systems across diverse scenarios including research, negotiation, coding, and more.
 

@@ -1,4 +1,7 @@
-# Gaia2: Dynamic Multi-Step Scenario Benchmark
+# Gaia2: Dynamic Multi-Step Scenario Benchmark (Beta)
+
+!!! warning "Beta"
+    This benchmark has been implemented carefully, but it is highly complex and we have not yet validated the results against the original implementation. Use with caution when comparing with existing results or the original paper's numbers. Contributions and compute donations welcome!
 
 The **Gaia2 Benchmark** evaluates LLM-based agents on dynamic, multi-step scenarios using Meta's ARE (Agent Research Environments) platform. It tests agents across multiple capability dimensions in a simulated mobile environment.
 
