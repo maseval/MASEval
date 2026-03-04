@@ -1,6 +1,6 @@
 """Gaia2 Benchmark - Tool Wrapper.
 
-Framework-agnostic wrapper for ARE AppTool instances, following MACSGenericTool pattern.
+Framework-agnostic wrapper for ARE AppTool instances.
 Provides clean API with built-in tracing for MASEval compatibility.
 
 Original Repository: https://github.com/facebookresearch/meta-agents-research-environments
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 class Gaia2GenericTool(TraceableMixin, ConfigurableMixin):
     """Framework-agnostic wrapper for ARE tools.
 
-    Similar to MACSGenericTool - provides clean API with built-in tracing.
+    Provides clean API with built-in tracing for MASEval compatibility.
     Developers wrap this for their framework using composition.
 
     Example for smolagents:

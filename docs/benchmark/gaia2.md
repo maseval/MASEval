@@ -1,13 +1,13 @@
-# Gaia2: Dynamic Multi-Step Scenario Benchmark (Beta)
+# GAIA2: Dynamic Multi-Step Scenario Benchmark (Beta)
 
 !!! warning "Beta"
-    This benchmark has been implemented carefully, but it is highly complex and we have not yet validated the results against the original implementation. Use with caution when comparing with existing results or the original paper's numbers. Contributions and compute donations welcome!
+This benchmark has been implemented carefully, but it is highly complex and we have not yet validated the results against the original implementation. Use with caution when comparing with existing results or the original paper's numbers. Contributions and compute donations welcome!
 
-The **Gaia2 Benchmark** evaluates LLM-based agents on dynamic, multi-step scenarios using Meta's ARE (Agent Research Environments) platform. It tests agents across multiple capability dimensions in a simulated mobile environment.
+The **GAIA2 Benchmark** evaluates LLM-based agents on dynamic, multi-step scenarios using Meta's ARE (Agent Research Environments) platform. It tests agents across multiple capability dimensions in a simulated mobile environment.
 
 ## Overview
 
-[Gaia2](https://huggingface.co/datasets/meta-agents-research-environments/gaia2) is designed to evaluate agents in realistic, time-sensitive scenarios. The benchmark features:
+[GAIA2](https://huggingface.co/datasets/meta-agents-research-environments/gaia2) is designed to evaluate agents in realistic, time-sensitive scenarios. The benchmark features:
 
 - **ARE simulation environment** with real-time dynamics and event scheduling
 - **Tool-based time control** via `wait_for_notification()` for temporal reasoning
@@ -21,7 +21,7 @@ Check out the [BENCHMARKS.md](https://github.com/parameterlab/MASEval/blob/main/
 
 ## Installation
 
-Gaia2 requires additional dependencies:
+GAIA2 requires additional dependencies:
 
 ```bash
 pip install maseval[gaia2]
@@ -91,15 +91,15 @@ results = benchmark.run(tasks)
 
 ## Capabilities
 
-Gaia2 tasks are organized by capability dimension:
+GAIA2 tasks are organized by capability dimension:
 
-| Capability     | Description                                      |
-| -------------- | ------------------------------------------------ |
-| `execution`    | Basic task execution                             |
-| `search`       | Information retrieval tasks                      |
-| `adaptability` | Adapting to changing requirements                |
-| `time`         | Temporal reasoning tasks                         |
-| `ambiguity`    | Handling ambiguous instructions                  |
+| Capability     | Description                       |
+| -------------- | --------------------------------- |
+| `execution`    | Basic task execution              |
+| `search`       | Information retrieval tasks       |
+| `adaptability` | Adapting to changing requirements |
+| `time`         | Temporal reasoning tasks          |
+| `ambiguity`    | Handling ambiguous instructions   |
 
 Load specific capabilities:
 
@@ -113,7 +113,7 @@ tasks = load_tasks(limit=50)
 
 ## Multi-Turn Notification Loop
 
-GAIA2 uses an **event-driven** multi-turn architecture, not user-turn interaction. Unlike Tau2 (where a user simulator drives multi-turn), GAIA2 scenarios have scheduled events (e.g., "calendar events added at t=240s", "friend replies at t=300s") that the agent must wait for and react to.
+GAIA2 uses an **event-driven** multi-turn architecture. Scenarios have scheduled events (e.g., "calendar events added at t=240s", "friend replies at t=300s") that the agent must wait for and react to.
 
 The benchmark invokes the agent **once**. The agent handles multi-turn internally via the notification loop:
 
@@ -149,16 +149,6 @@ if has_stop:
 ```
 
 See `DefaultGaia2Agent` source for the canonical single-loop implementation.
-
-## Key Differences from Tau2
-
-| Aspect           | Gaia2                                    | Tau2                              |
-| ---------------- | ---------------------------------------- | --------------------------------- |
-| Interaction      | Event-driven simulation                  | Turn-based user simulation        |
-| Time Control     | Agent calls `wait_for_notification()`    | Fixed turns                       |
-| Tools            | ARE app tools (12 apps)                  | Domain-specific tools (3 domains) |
-| Evaluation       | Event DAG comparison                     | Database state comparison         |
-| User Simulator   | None (events are scheduled)              | LLM-based customer simulator      |
 
 ## API Reference
 

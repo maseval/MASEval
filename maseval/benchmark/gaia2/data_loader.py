@@ -298,8 +298,8 @@ def configure_model_ids(
     ARE's built-in defaults (``meta-llama/Meta-Llama-3.3-70B-Instruct`` via
     HuggingFace). Pass ``judge_engine_config`` to override the model/provider.
 
-    Note: Unlike Tau2, Gaia2 doesn't have a user simulator (interactions
-    happen through scheduled events), so there's no user_model_id.
+    Note: Gaia2 doesn't have a user simulator (interactions happen through
+    scheduled events), so there's no user_model_id.
 
     Args:
         tasks: TaskQueue or list of Tasks to configure.
