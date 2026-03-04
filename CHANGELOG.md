@@ -109,22 +109,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- MultiAgentBench: Fixed bargaining evaluation to use both buyer and seller LLM evaluation prompts, matching the MARBLE paper's methodology. Previously only the seller prompt was used (mirroring a regression in the MARBLE codebase), causing buyer scores to always default to -1 and completion checks to always fail. Now reports `buyer_score`, `seller_score`, and `mean_score` scaled to 0-100. (PR: #39)
+**Core**
+
 - `ResultLogger._filter_report()` now includes `status` and `error` fields in persisted results, so saved logs can distinguish successful runs from infrastructure failures. Report schema is now consistent across success and failure paths (`error` is always present, `None` on success). (PR: #38)
-- GAIA2: Various fixes for faithful reproduction of ARE reference results — scenario lifecycle, data loading, evaluation flow, multi-turn notification handling, tool filtering, default agent fidelity, and simulation time management (PR: #30)
+- Packaging: Fixed `setuptools` configuration — `packages` now uses `find` with `include = ["maseval*"]` so subpackages and package data (`.json`, `.jsonl`, `.md`, etc.) are included in PyPI installs. (PR: #39)
+
+**Benchmarks**
+
+- Tau2: Fixed telecom domain schema to match tau2-bench, added agent/user state synchronization and deterministic network simulation, fixed initialization flow and tool result serialization (PR: #30)
+- Tau2: Added initial agent greeting ("Hi! How can I help you today?") to user simulator's message history, matching the original tau2-bench orchestrator. Fixed tool call counter accumulating across agent turns instead of resetting per turn. Corrected `max_steps` comments (original default is 100, not 200). Documented all known architectural divergences from original tau2-bench in PROVENANCE.md. (PR: #39)
+- Tau2: Various bugfixes including user tool routing, environment state synchronization, tool result serialization, telecom domain user models/tools, evaluator assertion logic, and `addict` dependency for nested dict access. (PR: #39)
+- Tau2: Fixed incorrect return type annotations on `DB.load()` and `DB.copy_deep()` — now use `Self` instead of `"DB"`, so subclass methods return the correct type (PR: #29)
+- MultiAgentBench: Fixed bargaining evaluation to use both buyer and seller LLM evaluation prompts, matching the MARBLE paper's methodology. Previously only the seller prompt was used (mirroring a regression in the MARBLE codebase), causing buyer scores to always default to -1 and completion checks to always fail. Now reports `buyer_score`, `seller_score`, and `mean_score` scaled to 0-100. (PR: #39)
 - MultiAgentBench: Corrected domain mappings, added missing werewolf/minecraft support, fixed environment constructors, added result summarization matching MARBLE's evaluation pipeline (PR: #30)
 - MultiAgentBench: `MarbleMultiAgentBenchBenchmark` now implements MARBLE's multi-iteration coordination loop with all 4 modes (graph, star, chain, tree) instead of executing agents only once. Fixed default `coordinate_mode` from `"star"` to `"graph"` matching 1215/1226 MARBLE configs. Uses per-task `max_iterations` from task config (matching `engine.py:97`), respects per-agent LLM overrides, and initializes memory type from task config. (PR: #39)
 - MultiAgentBench: Faithfulness audit fixes for reproduction mode — fixed wrong import path (`marble.utils.utils` → `marble.llms.model_prompting`), added Minecraft agent registration, per-domain defaults for `max_iterations`/`coordinate_mode`/`environment.type`/`memory.type` from MARBLE YAML configs, resolved hardcoded relative paths for `score.json` and `workspace/solution.py` via `_MARBLE_ROOT`, unified `coordinate_mode` defaults, corrected evaluator and agent model defaults to match MARBLE, replaced auto-generated agent IDs with strict validation. (PR: #39)
-- Tau2: Fixed telecom domain schema to match tau2-bench, added agent/user state synchronization and deterministic network simulation, fixed initialization flow and tool result serialization (PR: #30)
-- Fixed incorrect return type annotations on `DB.load()` and `DB.copy_deep()` in Tau2 benchmark — now use `Self` instead of `"DB"`, so subclass methods return the correct type (PR: #29)
-- ConVerse: Various fixes for faithful reproduction of original. (PR: #32)
-- Tau2: Added initial agent greeting ("Hi! How can I help you today?") to user simulator's message history, matching the original tau2-bench orchestrator. Fixed tool call counter accumulating across agent turns instead of resetting per turn. Corrected `max_steps` comments (original default is 100, not 200). Documented all known architectural divergences from original tau2-bench in PROVENANCE.md. (PR: #39)
-- Tau2: Various bugfixes including user tool routing, environment state synchronization, tool result serialization, telecom domain user models/tools, evaluator assertion logic, and `addict` dependency for nested dict access. (PR: #39)
 - MultiAgentBench: Fixed bargaining evaluation crash from `.format()` on single-brace JSON in evaluator prompts. Documented chain communication assertion bug in MARBLE's `engine.py`. (PR: #39)
+- GAIA2: Various fixes for faithful reproduction of ARE reference results — scenario lifecycle, data loading, evaluation flow, multi-turn notification handling, tool filtering, default agent fidelity, and simulation time management (PR: #30)
 - MACS: `MACSGenericTool._schema_to_inputs()` now preserves `items` sub-schema for array-type properties, fixing tool registration with Gemini and OpenAI providers. (PR: #39)
 - MACS: Simplified `MACSUser._extract_user_profile()` — no longer attempts brittle parsing of scenario text; points profile section at the scenario to avoid duplication. (PR: #39)
 - Converse: Removed silent `"gpt-4o"` default for `attacker_model_id`; now raises `ValueError` if not provided, preventing accidental benchmark misconfiguration. (PR: #39)
-- Packaging: Fixed `setuptools` configuration — `packages` now uses `find` with `include = ["maseval*"]` so subpackages and package data (`.json`, `.jsonl`, `.md`, etc.) are included in PyPI installs. (PR: #39)
+- ConVerse: Various fixes for faithful reproduction of original. (PR: #32)
 
 ### Removed
 
