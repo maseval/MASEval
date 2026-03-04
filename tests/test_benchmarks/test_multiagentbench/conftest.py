@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 from conftest import DummyModelAdapter
 from maseval import AgentAdapter, Task, MessageHistory
 from maseval.benchmark.multiagentbench.environment import MultiAgentBenchEnvironment
+from maseval.benchmark.multiagentbench.evaluator import MultiAgentBenchEvaluator
 
 
 # =============================================================================
@@ -43,6 +44,32 @@ def ensure_marble_data():
     from maseval.benchmark.multiagentbench.data_loader import ensure_marble_exists
 
     return ensure_marble_exists(auto_download=True)
+
+
+@pytest.fixture(autouse=True)
+def _mock_evaluation_prompts():
+    """Mock MARBLE evaluation prompt loading for all Tier 1 (offline) tests.
+
+    MultiAgentBenchEvaluator.__init__() calls _load_evaluation_prompts() which
+    reads evaluator_prompts.json from the vendored marble/ directory — not
+    available in CI. This fixture returns stub prompts so unit tests can
+    exercise evaluation logic without the vendored data.
+    """
+    stub_prompts = {
+        "communication": {"prompt": "Rate communication on a scale of 1-5. {task} {communications}"},
+        "research": {"task_evaluation": {"prompt": "Evaluate research output. Task: {task} Result: {result}"}},
+        "bargaining": {
+            "task_evaluation": {
+                "seller_prompt": "Evaluate seller. Task: {task} Result: {result}",
+                "buyer_prompt": "Evaluate buyer. Task: {task} Result: {result}",
+            }
+        },
+        "coding": {"task_evaluation": {"prompt": "Evaluate code. Task: {task_description} Requirements: {requirements} Solution: {solution}"}},
+        "werewolf": {"task_evaluation": {"prompt": "Evaluate werewolf. Task: {task} Result: {result}"}},
+        "minecraft": {"task_evaluation": {"prompt": "Evaluate minecraft. Task: {task} Result: {result}"}},
+    }
+    with patch.object(MultiAgentBenchEvaluator, "_load_evaluation_prompts", return_value=stub_prompts):
+        yield
 
 
 @pytest.fixture(autouse=True)
