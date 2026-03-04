@@ -144,11 +144,10 @@ class MultiAgentBenchBenchmark(Benchmark):
         ``communication_score`` is only computed when agents use
         ``MarbleAgentAdapter``, which populates the ``communication_log`` trace
         key from ``BaseAgent.act()``. Custom ``setup_agents()`` implementations
-        using framework adapters (smolagents, LangGraph, LlamaIndex) must
-        explicitly populate ``communication_log`` in each adapter's
-        ``gather_traces()`` output for communication evaluation to work.
-        See ``MultiAgentBenchEvaluator._extract_communications()`` for the
-        expected format.
+        using other adapters must explicitly populate ``communication_log`` in
+        each adapter's ``gather_traces()`` output for communication evaluation
+        to work. See ``MultiAgentBenchEvaluator._extract_communications()`` for
+        the expected format.
 
     Example:
         ```python

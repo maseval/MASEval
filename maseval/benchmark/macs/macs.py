@@ -138,13 +138,23 @@ class MACSGenericTool(TraceableMixin, ConfigurableMixin):
 
     @staticmethod
     def _schema_to_inputs(schema: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert JSON schema to inputs format.
+        """Convert JSON Schema properties to a flat inputs dictionary.
 
-        Preserves ``items`` for array-type properties so that downstream
-        consumers (smolagents, LangGraph, LlamaIndex) emit a valid JSON
-        Schema.  Gemini and OpenAI reject ``{"type": "array"}`` without
-        an ``items`` field; see
-        https://ai.google.dev/gemini-api/docs/function-calling
+        Translates each property from the JSON Schema ``properties`` block
+        into a ``{type, description}`` dict. For array-type properties, the
+        ``items`` sub-schema is included so that downstream tool
+        registrations produce valid JSON Schema. The MACS-specific
+        ``data_type`` key is normalised to standard ``type``.
+
+        Args:
+            schema: JSON Schema object with a ``properties`` key.
+
+        Returns:
+            Dictionary mapping property names to ``{type, description}`` dicts.
+
+        Raises:
+            ValueError: If an array property is missing ``items`` or the items
+                spec has no ``type`` / ``data_type`` key.
         """
         inputs = {}
         for k, prop in schema.get("properties", {}).items():
@@ -554,16 +564,16 @@ class MACSUser(LLMUser):
         )
 
     def get_tool(self) -> Any:
-        """Return a tool for agent interaction.
+        """Return a tool that agents can invoke to interact with this user.
 
-        This base implementation raises NotImplementedError.
-        Framework-specific subclasses should override this method.
+        Subclasses must override this to wrap the user interaction logic in a
+        tool object compatible with their agentic framework.
 
-        For smolagents, use SmolAgentMACSUser which provides a smolagents-compatible tool.
-        For langgraph, use LangGraphMACSUser which provides a langchain-compatible tool.
+        Returns:
+            A tool instance for agent-user interaction.
 
         Raises:
-            NotImplementedError: Always, as this must be implemented by subclass.
+            NotImplementedError: Always; must be implemented by subclass.
         """
         raise NotImplementedError(
             "MACSUser.get_tool() must be overridden by framework-specific subclass. "
