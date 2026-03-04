@@ -160,6 +160,8 @@ class ResultLogger(BenchmarkCallback, ABC):
         filtered = {
             "task_id": report.get("task_id"),
             "repeat_idx": report.get("repeat_idx"),
+            "status": report.get("status"),
+            "error": report.get("error"),
         }
 
         if self.include_traces and "traces" in report:

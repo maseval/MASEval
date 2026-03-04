@@ -1226,19 +1226,16 @@ class Benchmark(ABC):
             # Task execution failed, so skip evaluation
             eval_results = None
 
-        # 5. Build report
+        # 5. Build report — all keys always present for consistent schema
         report: Dict[str, Any] = {
             "task_id": str(task.id),
             "repeat_idx": repeat_idx,
             "status": execution_status.value,
+            "error": error_info,
             "traces": execution_traces,
             "config": execution_configs,
             "eval": eval_results,
         }
-
-        # Add error info if present
-        if error_info is not None:
-            report["error"] = error_info
 
         # Clear registry after task repetition completes
         self.clear_registry()
