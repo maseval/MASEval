@@ -80,6 +80,12 @@ class Task:
     mutation during a benchmark run. Use ``freeze()`` to make all dictionary
     fields read-only, and ``unfreeze()`` to restore mutability.
 
+    Note:
+        It is strongly recommended to call ``freeze()`` once all task data has
+        been assembled (e.g. after ``load_tasks()`` or inside ``setup_environment``).
+        This guards against subtle bugs where benchmark components accidentally
+        overwrite task data during execution.
+
     Attributes:
         query: The main input query or prompt for the task.
         id: A unique identifier for the task. Benchmarks can provide human-readable IDs
