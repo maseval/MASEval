@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Core**
+
+- `Task.freeze()` and `Task.unfreeze()` methods to make task data read-only during benchmark runs, preventing accidental mutation of `environment_data`, `user_data`, `evaluation_data`, and `metadata` (including nested dicts). Attribute reassignment is also blocked while frozen. Check state with `Task.is_frozen`. (PR: #PR_NUMBER_PLACEHOLDER)
+- `TaskFrozenError` exception in `maseval.core.exceptions`, raised when attempting to modify a frozen task. (PR: #PR_NUMBER_PLACEHOLDER)
+
 **Benchmarks**
 
 - MMLU Benchmark with DISCO support: Integration for evaluating language models on MMLU (Massive Multitask Language Understanding) multiple-choice questions, compatible with DISCO anchor-point methodology. Includes `MMLUBenchmark`, `HuggingFaceMMLUBenchmark`, `MMLUEnvironment`, `MMLUEvaluator`, `MMLUModelAgent`, `MMLUAgentAdapter`, `AnchorPointsTaskQueue`, `load_tasks()`, and `compute_benchmark_metrics()`. Optional extras: `lm-eval` (for `HuggingFaceMMLUBenchmark.precompute_all_logprobs_lmeval`), `disco` (for DISCO prediction in the example). (PR: #34)

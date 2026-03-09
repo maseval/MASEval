@@ -239,6 +239,29 @@ class UserExhaustedError(MASEvalError):
     pass
 
 
+class TaskFrozenError(MASEvalError):
+    """Attempted to modify a frozen Task.
+
+    Raised when code tries to mutate a ``Task`` whose data dictionaries have
+    been frozen via ``Task.freeze()``. Call ``Task.unfreeze()`` to restore
+    mutability before modifying the task.
+
+    Examples:
+        ```python
+        task = Task(query="test", environment_data={"key": "value"})
+        task.freeze()
+
+        task.environment_data["key"] = "new"   # raises TaskFrozenError
+        task.query = "changed"                  # raises TaskFrozenError
+
+        task.unfreeze()
+        task.environment_data["key"] = "new"   # works
+        ```
+    """
+
+    pass
+
+
 class TaskTimeoutError(MASEvalError):
     """Task execution exceeded configured timeout.
 
