@@ -5,11 +5,9 @@ dictionary fields during a benchmark run, and that unfreezing restores
 full mutability.
 """
 
-from types import MappingProxyType
-
 import pytest
 from maseval import Task, TaskFrozenError
-from maseval.core.task import TaskProtocol
+from maseval.core.task import FrozenDict, TaskProtocol
 
 
 @pytest.mark.core
@@ -30,19 +28,19 @@ class TestTaskFreeze:
         assert task.is_frozen
 
     def test_freeze_blocks_dict_mutation(self):
-        """Frozen dict fields should reject item assignment."""
+        """Frozen dict fields should reject item assignment with TaskFrozenError."""
         task = Task(query="test", environment_data={"key": "value"})
         task.freeze()
 
-        with pytest.raises(TypeError):
+        with pytest.raises(TaskFrozenError):
             task.environment_data["key"] = "new"
 
     def test_freeze_blocks_dict_item_deletion(self):
-        """Frozen dict fields should reject item deletion."""
+        """Frozen dict fields should reject item deletion with TaskFrozenError."""
         task = Task(query="test", environment_data={"key": "value"})
         task.freeze()
 
-        with pytest.raises(TypeError):
+        with pytest.raises(TaskFrozenError):
             del task.environment_data["key"]
 
     def test_freeze_blocks_all_dict_fields(self):
@@ -57,7 +55,7 @@ class TestTaskFreeze:
         task.freeze()
 
         for field_name in ("environment_data", "user_data", "evaluation_data", "metadata"):
-            with pytest.raises(TypeError, match="does not support item assignment"):
+            with pytest.raises(TaskFrozenError):
                 getattr(task, field_name)["new_key"] = "value"
 
     def test_freeze_blocks_attribute_reassignment(self):
@@ -82,10 +80,10 @@ class TestTaskFreeze:
         )
         task.freeze()
 
-        with pytest.raises(TypeError):
+        with pytest.raises(TaskFrozenError):
             task.environment_data["outer"]["inner"]["deep"] = "changed"
 
-        with pytest.raises(TypeError):
+        with pytest.raises(TaskFrozenError):
             task.environment_data["outer"]["new_key"] = "value"
 
     def test_freeze_preserves_data_access(self):
@@ -98,12 +96,12 @@ class TestTaskFreeze:
         assert task.environment_data["nested"]["a"] == 1
         assert task.query == "test"
 
-    def test_freeze_converts_to_mapping_proxy(self):
-        """Frozen dict fields should be MappingProxyType instances."""
+    def test_freeze_converts_to_frozen_dict(self):
+        """Frozen dict fields should be FrozenDict instances."""
         task = Task(query="test", environment_data={"key": "value"})
         task.freeze()
 
-        assert isinstance(task.environment_data, MappingProxyType)
+        assert isinstance(task.environment_data, FrozenDict)
 
     def test_freeze_already_frozen_raises(self):
         """Calling freeze() on an already frozen task should raise."""
@@ -119,6 +117,30 @@ class TestTaskFreeze:
         task.freeze()
         assert task.is_frozen
         assert task.environment_data == {}
+
+    def test_freeze_blocks_dict_clear(self):
+        """Frozen dict fields should reject clear()."""
+        task = Task(query="test", environment_data={"key": "value"})
+        task.freeze()
+
+        with pytest.raises(TaskFrozenError):
+            task.environment_data.clear()
+
+    def test_freeze_blocks_dict_pop(self):
+        """Frozen dict fields should reject pop()."""
+        task = Task(query="test", environment_data={"key": "value"})
+        task.freeze()
+
+        with pytest.raises(TaskFrozenError):
+            task.environment_data.pop("key")
+
+    def test_freeze_blocks_dict_update(self):
+        """Frozen dict fields should reject update()."""
+        task = Task(query="test", environment_data={"key": "value"})
+        task.freeze()
+
+        with pytest.raises(TaskFrozenError):
+            task.environment_data.update({"new": "value"})
 
 
 @pytest.mark.core
@@ -168,8 +190,8 @@ class TestTaskUnfreeze:
 
         task.environment_data["outer"]["inner"] = "changed"
         assert task.environment_data["outer"]["inner"] == "changed"
-        assert isinstance(task.environment_data, dict)
-        assert isinstance(task.environment_data["outer"], dict)
+        assert type(task.environment_data) is dict
+        assert type(task.environment_data["outer"]) is dict
 
     def test_unfreeze_preserves_data(self):
         """Data should be identical after a freeze/unfreeze cycle."""

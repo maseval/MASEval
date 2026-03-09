@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import Any, Dict, Tuple, overload, TYPE_CHECKING
 from uuid import uuid4
 from collections.abc import Sequence
@@ -54,16 +53,41 @@ class TaskProtocol:
     tags: Dict[str, Any] = field(default_factory=dict)
 
 
+class FrozenDict(dict):
+    """A dict subclass that raises ``TaskFrozenError`` on any mutation attempt.
+
+    Behaves like a regular dict for all read operations (iteration, lookup,
+    ``len``, ``in``, etc.) but blocks writes so that frozen task data cannot
+    be modified accidentally.
+    """
+
+    _FROZEN_MSG = "Cannot modify a frozen Task's data. Call task.unfreeze() first."
+
+    def _raise(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise TaskFrozenError(self._FROZEN_MSG, component="Task")
+
+    __setitem__ = _raise
+    __delitem__ = _raise
+    clear = _raise
+    pop = _raise  # type: ignore[assignment]
+    popitem = _raise
+    setdefault = _raise  # type: ignore[assignment]
+    update = _raise  # type: ignore[override]
+
+    def __repr__(self) -> str:
+        return f"FrozenDict({dict.__repr__(self)})"
+
+
 def _freeze_value(value: Any) -> Any:
-    """Recursively convert dicts to ``MappingProxyType`` for read-only access."""
-    if isinstance(value, dict):
-        return MappingProxyType({k: _freeze_value(v) for k, v in value.items()})
+    """Recursively convert dicts to ``FrozenDict`` for read-only access."""
+    if isinstance(value, dict) and not isinstance(value, FrozenDict):
+        return FrozenDict({k: _freeze_value(v) for k, v in value.items()})
     return value
 
 
 def _unfreeze_value(value: Any) -> Any:
-    """Recursively convert ``MappingProxyType`` back to regular dicts."""
-    if isinstance(value, MappingProxyType):
+    """Recursively convert ``FrozenDict`` back to regular dicts."""
+    if isinstance(value, FrozenDict):
         return {k: _unfreeze_value(v) for k, v in value.items()}
     return value
 
