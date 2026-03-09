@@ -160,9 +160,9 @@ class Task:
         """Make all dictionary fields read-only.
 
         Converts ``environment_data``, ``user_data``, ``evaluation_data``, and
-        ``metadata`` (including nested dicts) to ``MappingProxyType`` wrappers
-        and prevents attribute reassignment on the task. Subsequent attempts to
-        mutate any of these fields raise ``TaskFrozenError``.
+        ``metadata`` (including nested dicts) to read-only wrappers and prevents
+        attribute reassignment on the task. Subsequent attempts to mutate any of
+        these fields raise ``TaskFrozenError``.
 
         Call ``unfreeze()`` to restore mutability.
 
@@ -192,8 +192,8 @@ class Task:
     def unfreeze(self) -> "Task":
         """Restore mutability to all dictionary fields.
 
-        Converts ``MappingProxyType`` wrappers back to regular dicts and
-        re-enables attribute assignment on the task.
+        Converts read-only wrappers back to regular dicts and re-enables
+        attribute assignment on the task.
 
         Returns:
             ``self``, for chaining.
