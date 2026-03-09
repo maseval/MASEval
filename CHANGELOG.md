@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Core**
 
-- `Task.freeze()` and `Task.unfreeze()` methods to make task data read-only during benchmark runs, preventing accidental mutation of `environment_data`, `user_data`, `evaluation_data`, and `metadata` (including nested dicts). Attribute reassignment is also blocked while frozen. Check state with `Task.is_frozen`. (PR: #PR_NUMBER_PLACEHOLDER)
-- `TaskFrozenError` exception in `maseval.core.exceptions`, raised when attempting to modify a frozen task. (PR: #PR_NUMBER_PLACEHOLDER)
+- `Task.freeze()` and `Task.unfreeze()` methods to make task data read-only during benchmark runs, preventing accidental mutation of `environment_data`, `user_data`, `evaluation_data`, and `metadata` (including nested dicts). Attribute reassignment is also blocked while frozen. Check state with `Task.is_frozen`. (PR: #42)
+- `TaskFrozenError` exception in `maseval.core.exceptions`, raised when attempting to modify a frozen task. (PR: #42)
 
 **Benchmarks**
 
