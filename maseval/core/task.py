@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from enum import Enum
 
+from .exceptions import TaskFrozenError
+
 if TYPE_CHECKING:
     from .benchmark import Benchmark
 
@@ -51,9 +53,62 @@ class TaskProtocol:
     tags: Dict[str, Any] = field(default_factory=dict)
 
 
+class FrozenDict(dict):
+    """A dict subclass that raises ``TaskFrozenError`` on any mutation attempt.
+
+    Behaves like a regular dict for all read operations (iteration, lookup,
+    ``len``, ``in``, etc.) but blocks writes so that frozen task data cannot
+    be modified accidentally.
+    """
+
+    _FROZEN_MSG = "Cannot modify a frozen Task's data. Call task.unfreeze() first."
+
+    def _raise(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise TaskFrozenError(self._FROZEN_MSG, component="Task")
+
+    __setitem__ = _raise
+    __delitem__ = _raise
+    clear = _raise
+    pop = _raise  # type: ignore[assignment]
+    popitem = _raise
+    setdefault = _raise  # type: ignore[assignment]
+    update = _raise  # type: ignore[override]
+
+    def __repr__(self) -> str:
+        return f"FrozenDict({dict.__repr__(self)})"
+
+
+def _freeze_value(value: Any) -> Any:
+    """Recursively convert dicts to ``FrozenDict`` for read-only access."""
+    if isinstance(value, dict) and not isinstance(value, FrozenDict):
+        return FrozenDict({k: _freeze_value(v) for k, v in value.items()})
+    return value
+
+
+def _unfreeze_value(value: Any) -> Any:
+    """Recursively convert ``FrozenDict`` back to regular dicts."""
+    if isinstance(value, FrozenDict):
+        return {k: _unfreeze_value(v) for k, v in value.items()}
+    return value
+
+
+# Dict field names on Task that freeze() / unfreeze() operate on.
+_TASK_DICT_FIELDS = ("environment_data", "user_data", "evaluation_data", "metadata")
+
+
 @dataclass
 class Task:
     """A data container for a single benchmark task.
+
+    Task data can optionally be frozen after loading to prevent accidental
+    mutation during a benchmark run. Use ``freeze()`` to make all dictionary
+    fields read-only, and ``unfreeze()`` to restore mutability.
+
+    Note:
+        It is strongly recommended to call ``freeze()`` once all task data has
+        been assembled (e.g. after ``load_tasks()`` or inside ``setup_environment``).
+        This guards against subtle bugs where benchmark components accidentally
+        overwrite task data during execution.
 
     Attributes:
         query: The main input query or prompt for the task.
@@ -76,6 +131,91 @@ class Task:
     evaluation_data: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     protocol: TaskProtocol = field(default_factory=TaskProtocol)
+    _frozen: bool = field(init=False, default=False, repr=False, compare=False)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Block attribute assignment when the task is frozen.
+
+        The ``_frozen`` field itself can always be set (used internally by
+        ``freeze`` / ``unfreeze``).  All other fields raise
+        ``TaskFrozenError`` while the task is frozen.
+        """
+        if name != "_frozen" and getattr(self, "_frozen", False):
+            raise TaskFrozenError(
+                f"Cannot set '{name}' on a frozen Task. Call task.unfreeze() first.",
+                component="Task",
+            )
+        object.__setattr__(self, name, value)
+
+    @property
+    def is_frozen(self) -> bool:
+        """Whether this task's data is currently frozen (read-only).
+
+        Returns:
+            ``True`` if ``freeze()`` has been called and ``unfreeze()`` has not.
+        """
+        return self._frozen
+
+    def freeze(self) -> "Task":
+        """Make all dictionary fields read-only.
+
+        Converts ``environment_data``, ``user_data``, ``evaluation_data``, and
+        ``metadata`` (including nested dicts) to read-only wrappers and prevents
+        attribute reassignment on the task. Subsequent attempts to mutate any of
+        these fields raise ``TaskFrozenError``.
+
+        Call ``unfreeze()`` to restore mutability.
+
+        Returns:
+            ``self``, for chaining (e.g. ``task.freeze().query``).
+
+        Raises:
+            TaskFrozenError: If the task is already frozen.
+
+        Example:
+            ```python
+            task = Task(query="test", environment_data={"key": "value"})
+            task.freeze()
+
+            task.environment_data["key"] = "new"  # raises TaskFrozenError
+            task.query = "changed"                 # raises TaskFrozenError
+            ```
+        """
+        if self._frozen:
+            raise TaskFrozenError("Task is already frozen.", component="Task")
+
+        for field_name in _TASK_DICT_FIELDS:
+            object.__setattr__(self, field_name, _freeze_value(getattr(self, field_name)))
+        object.__setattr__(self, "_frozen", True)
+        return self
+
+    def unfreeze(self) -> "Task":
+        """Restore mutability to all dictionary fields.
+
+        Converts read-only wrappers back to regular dicts and re-enables
+        attribute assignment on the task.
+
+        Returns:
+            ``self``, for chaining.
+
+        Raises:
+            TaskFrozenError: If the task is not currently frozen.
+
+        Example:
+            ```python
+            task.freeze()
+            # ... benchmark run ...
+            task.unfreeze()
+            task.environment_data["key"] = "updated"  # works again
+            ```
+        """
+        if not self._frozen:
+            raise TaskFrozenError("Task is not frozen.", component="Task")
+
+        object.__setattr__(self, "_frozen", False)
+        for field_name in _TASK_DICT_FIELDS:
+            setattr(self, field_name, _unfreeze_value(getattr(self, field_name)))
+        return self
 
 
 # =============================================================================
