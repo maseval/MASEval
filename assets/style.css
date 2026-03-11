@@ -1094,7 +1094,8 @@ footer {
   gap: 16px;
   margin-top: 48px;
   background: linear-gradient(135deg, rgba(255,69,0,0.35), rgba(0,206,209,0.35));
-  border: 1px solid var(--gradient-card-border);
+  background-clip: padding-box;
+  border: 1px solid var(--border);
   border-radius: 16px;
   padding: 6px;
 }
