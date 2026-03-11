@@ -1,0 +1,2051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MASEval — Framework-Agnostic Evaluation for Multi-Agent Systems</title>
+  <meta name="description" content="MASEval is a unified, agent-agnostic evaluation framework and benchmark library for multi-agent systems. Compare frameworks, not just models." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ================================================================
+       RESET & BASE
+       ================================================================ */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #09090b;
+      --bg-elevated: #111114;
+      --bg-card: rgba(255,255,255,0.03);
+      --border: rgba(255,255,255,0.06);
+      --border-hover: rgba(255,255,255,0.12);
+      --text: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --accent-orange: #FF4500;
+      --accent-cyan: #00CED1;
+      --gradient: linear-gradient(135deg, #FF4500, #00CED1);
+      --gradient-subtle: linear-gradient(135deg, rgba(255,69,0,0.15), rgba(0,206,209,0.15));
+      --glass: rgba(255,255,255,0.04);
+      --glass-border: rgba(255,255,255,0.08);
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    html {
+      scroll-behavior: smooth;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    ::selection {
+      background: rgba(255,69,0,0.3);
+      color: #fff;
+    }
+
+    /* ================================================================
+       UTILITY
+       ================================================================ */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    .section {
+      padding: 120px 0;
+      position: relative;
+    }
+
+    .section-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.025em;
+      margin-bottom: 16px;
+    }
+
+    .section-desc {
+      font-size: 17px;
+      color: var(--text-secondary);
+      max-width: 640px;
+      line-height: 1.7;
+    }
+
+    /* Reveal animation */
+    .reveal {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.7s var(--ease), transform 0.7s var(--ease);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ================================================================
+       NAVBAR
+       ================================================================ */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 0 24px;
+      transition: background 0.3s, backdrop-filter 0.3s;
+    }
+    nav.scrolled {
+      background: rgba(9,9,11,0.8);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      font-size: 22px;
+      font-weight: 900;
+    }
+    .nav-logo .mas {
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .nav-logo .eval {
+      font-weight: 200;
+      color: var(--text);
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+    .nav-links a {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-github {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: all 0.2s;
+    }
+    .nav-github:hover {
+      border-color: var(--border-hover);
+      color: var(--text);
+      background: var(--glass);
+    }
+    .nav-github svg { width: 18px; height: 18px; }
+
+    /* Mobile hamburger */
+    .nav-toggle { display: none; background: none; border: none; color: var(--text); cursor: pointer; padding: 8px; }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .nav-toggle { display: block; }
+      .nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: 64px;
+        left: 0;
+        right: 0;
+        background: rgba(9,9,11,0.95);
+        backdrop-filter: blur(20px);
+        padding: 24px;
+        gap: 16px;
+        border-bottom: 1px solid var(--border);
+      }
+    }
+
+    /* ================================================================
+       HERO
+       ================================================================ */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 120px 24px 80px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Background gradient orbs */
+    .hero::before {
+      content: '';
+      position: absolute;
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(255,69,0,0.08) 0%, transparent 60%);
+      top: -200px;
+      left: -200px;
+      pointer-events: none;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(0,206,209,0.06) 0%, transparent 60%);
+      bottom: -300px;
+      right: -200px;
+      pointer-events: none;
+    }
+
+    .hero-content { position: relative; z-index: 1; max-width: 840px; }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+      background: var(--glass);
+      backdrop-filter: blur(10px);
+    }
+    a.hero-badge:hover {
+      border-color: var(--border-hover);
+      background: rgba(255,255,255,0.06);
+    }
+    .hero-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .hero h1 {
+      font-size: clamp(40px, 7vw, 76px);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+      margin-bottom: 24px;
+    }
+    .hero h1 .gradient-text {
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-subtitle {
+      font-size: clamp(17px, 2.2vw, 20px);
+      color: var(--text-secondary);
+      max-width: 640px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 48px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      transition: all 0.25s var(--ease);
+      cursor: pointer;
+      border: none;
+    }
+    .btn-primary {
+      background: var(--gradient);
+      color: #fff;
+      box-shadow: 0 0 30px rgba(255,69,0,0.2);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 40px rgba(255,69,0,0.3);
+    }
+    .btn-secondary {
+      background: var(--glass);
+      color: var(--text);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(10px);
+    }
+    .btn-secondary:hover {
+      border-color: var(--border-hover);
+      background: rgba(255,255,255,0.06);
+      transform: translateY(-2px);
+    }
+    .btn svg { width: 18px; height: 18px; }
+
+    .hero-install {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 24px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-family: var(--font-mono);
+      font-size: 15px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: all;
+    }
+    .hero-install:hover {
+      border-color: var(--border-hover);
+      background: rgba(255,255,255,0.04);
+    }
+    .hero-install .prompt { color: var(--accent-cyan); user-select: none; }
+    .hero-install .cmd { color: var(--text); }
+    .hero-install .copy-icon {
+      color: var(--text-muted);
+      transition: color 0.2s;
+      user-select: none;
+    }
+    .hero-install:hover .copy-icon { color: var(--text-secondary); }
+
+    /* ================================================================
+       FEATURES
+       ================================================================ */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-top: 48px;
+    }
+
+    .feature-card {
+      padding: 36px 32px;
+      background: var(--bg);
+      transition: background 0.3s;
+      position: relative;
+    }
+    .feature-card:hover {
+      background: var(--bg-elevated);
+    }
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      background: var(--gradient-subtle);
+      margin-bottom: 20px;
+      font-size: 20px;
+    }
+    .feature-card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+    .feature-card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+    .feature-card code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 2px 6px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 4px;
+      color: var(--accent-cyan);
+    }
+
+    @media (max-width: 900px) {
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .features-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ================================================================
+       CODE EXAMPLE
+       ================================================================ */
+    .code-section { background: var(--bg-elevated); }
+
+    .code-container {
+      margin-top: 48px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .code-block {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .code-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+    .code-block-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .code-block-title .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .code-block pre {
+      padding: 20px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      tab-size: 4;
+    }
+
+    /* Syntax highlighting */
+    .kw { color: #c084fc; }  /* keywords */
+    .fn { color: #60a5fa; }  /* functions */
+    .st { color: #86efac; }  /* strings */
+    .cm { color: #52525b; }  /* comments */
+    .cl { color: #fbbf24; }  /* class names */
+    .op { color: #71717a; }  /* operators */
+    .ty { color: #f472b6; }  /* types */
+    .dc { color: #a78bfa; }  /* decorators */
+    .nr { color: #fb923c; }  /* numbers */
+    .im { color: #818cf8; }  /* import names */
+
+    /* Code tabs */
+    .code-tabs {
+      display: flex;
+      gap: 0;
+      margin-top: 48px;
+      margin-bottom: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .code-tab {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border: none;
+      background: none;
+      position: relative;
+      transition: color 0.2s;
+    }
+    .code-tab:hover { color: var(--text-secondary); }
+    .code-tab.active {
+      color: var(--text);
+    }
+    .code-tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--gradient);
+    }
+    .code-tab-content {
+      display: none;
+    }
+    .code-tab-content.active {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 24px;
+    }
+
+    @media (max-width: 900px) {
+      .code-container { grid-template-columns: 1fr; }
+      .code-tab-content.active { grid-template-columns: 1fr; }
+    }
+
+    /* ================================================================
+       ARCHITECTURE
+       ================================================================ */
+    .arch-visual {
+      margin-top: 48px;
+      position: relative;
+    }
+
+    .arch-diagram {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .arch-layer {
+      display: flex;
+      align-items: center;
+      border-radius: 12px;
+      padding: 24px 32px;
+      position: relative;
+      transition: transform 0.3s var(--ease);
+    }
+    .arch-layer:hover { transform: scale(1.01); }
+
+    .arch-layer-user {
+      background: rgba(255,255,255,0.02);
+      border: 1px dashed var(--border);
+    }
+    .arch-layer-interface {
+      background: rgba(96,165,250,0.06);
+      border: 1px solid rgba(96,165,250,0.15);
+    }
+    .arch-layer-core {
+      background: rgba(0,206,209,0.08);
+      border: 1px solid rgba(0,206,209,0.2);
+    }
+    .arch-layer-bench {
+      background: rgba(255,69,0,0.06);
+      border: 1px solid rgba(255,69,0,0.15);
+    }
+
+    .arch-label {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      min-width: 140px;
+      flex-shrink: 0;
+    }
+    .arch-chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      flex: 1;
+    }
+    .arch-chip {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: var(--font-mono);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .arch-chip.yours {
+      border-style: dashed;
+      color: var(--text-muted);
+    }
+
+    .arch-connector {
+      display: flex;
+      justify-content: center;
+      padding: 4px 0;
+    }
+    .arch-connector svg { color: var(--text-muted); }
+
+    @media (max-width: 600px) {
+      .arch-layer { flex-direction: column; gap: 12px; padding: 16px 20px; }
+      .arch-label { min-width: auto; }
+    }
+
+    /* ================================================================
+       PIPELINE
+       ================================================================ */
+    .pipeline {
+      margin-top: 56px;
+    }
+    .pipeline-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 28px;
+      text-align: center;
+    }
+    .pipeline-steps {
+      display: flex;
+      gap: 0;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .pipeline-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 20px 16px;
+      position: relative;
+      flex: 1;
+      min-width: 140px;
+      max-width: 200px;
+    }
+    .pipeline-step::after {
+      content: '';
+      position: absolute;
+      top: 36px;
+      right: -1px;
+      width: 16px;
+      height: 2px;
+      background: var(--border);
+    }
+    .pipeline-step:last-child::after { display: none; }
+
+    .pipeline-num {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      border: 2px solid;
+    }
+    .pipeline-step:nth-child(1) .pipeline-num { border-color: #60a5fa; color: #60a5fa; background: rgba(96,165,250,0.1); }
+    .pipeline-step:nth-child(2) .pipeline-num { border-color: #4ade80; color: #4ade80; background: rgba(74,222,128,0.1); }
+    .pipeline-step:nth-child(3) .pipeline-num { border-color: #facc15; color: #facc15; background: rgba(250,204,21,0.1); }
+    .pipeline-step:nth-child(4) .pipeline-num { border-color: #fb923c; color: #fb923c; background: rgba(251,146,60,0.1); }
+    .pipeline-step:nth-child(5) .pipeline-num { border-color: #c084fc; color: #c084fc; background: rgba(192,132,252,0.1); }
+
+    .pipeline-step h4 {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .pipeline-step p {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .pipeline-step code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--accent-cyan);
+    }
+
+    @media (max-width: 700px) {
+      .pipeline-steps { flex-direction: column; align-items: center; }
+      .pipeline-step::after { display: none; }
+      .pipeline-step { max-width: 100%; }
+    }
+
+    /* ================================================================
+       COMPARISON TABLE
+       ================================================================ */
+    .comparison { background: var(--bg-elevated); }
+
+    .table-wrapper {
+      margin-top: 48px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .comparison-table thead {
+      background: rgba(255,255,255,0.03);
+    }
+    .comparison-table th {
+      padding: 14px 16px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .comparison-table th:first-child {
+      text-align: left;
+      position: sticky;
+      left: 0;
+      background: var(--bg-elevated);
+      z-index: 1;
+    }
+    .comparison-table td {
+      padding: 12px 16px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+    .comparison-table td:first-child {
+      text-align: left;
+      font-weight: 600;
+      color: var(--text);
+      position: sticky;
+      left: 0;
+      background: var(--bg);
+      z-index: 1;
+    }
+    .comparison-table tbody tr { background: var(--bg); }
+    .comparison-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+    .comparison-table tbody tr:first-child td {
+      background: rgba(255,69,0,0.04);
+    }
+    .comparison-table tbody tr:first-child td:first-child {
+      background: rgba(255,69,0,0.06);
+    }
+    .comparison-table tbody tr:first-child {
+      background: rgba(255,69,0,0.04);
+    }
+    .comparison-table tbody tr:last-child td { border-bottom: none; }
+
+    .table-legend {
+      margin-top: 16px;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ================================================================
+       GETTING STARTED
+       ================================================================ */
+    .getting-started-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      margin-top: 48px;
+    }
+
+    .gs-card {
+      padding: 32px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg-card);
+      transition: border-color 0.3s;
+    }
+    .gs-card:hover { border-color: var(--border-hover); }
+
+    .gs-step {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .gs-card:nth-child(1) .gs-step { background: rgba(96,165,250,0.15); color: #60a5fa; }
+    .gs-card:nth-child(2) .gs-step { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .gs-card:nth-child(3) .gs-step { background: rgba(250,204,21,0.15); color: #facc15; }
+    .gs-card:nth-child(4) .gs-step { background: rgba(192,132,252,0.15); color: #c084fc; }
+
+    .gs-card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .gs-card pre {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+    }
+
+    @media (max-width: 768px) {
+      .getting-started-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ================================================================
+       AUTHORS & LINKS
+       ================================================================ */
+    .links-section { background: var(--bg-elevated); }
+
+    .links-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-top: 48px;
+    }
+    .link-card {
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg);
+      text-align: center;
+      transition: all 0.3s var(--ease);
+      cursor: pointer;
+    }
+    .link-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }
+    .link-card-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      background: var(--gradient-subtle);
+      font-size: 22px;
+    }
+    .link-card h3 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .link-card p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 768px) {
+      .links-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 480px) {
+      .links-grid { grid-template-columns: 1fr; }
+    }
+
+    .authors-list {
+      margin-top: 48px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+    .author-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: var(--bg);
+      transition: all 0.2s;
+    }
+    .author-chip:hover {
+      border-color: var(--border-hover);
+      color: var(--text);
+      background: var(--glass);
+    }
+    .author-aff {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* ================================================================
+       FOOTER
+       ================================================================ */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 48px 24px;
+    }
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+    .footer-left { color: var(--text-muted); font-size: 13px; }
+    .footer-left a { color: var(--text-secondary); transition: color 0.2s; }
+    .footer-left a:hover { color: var(--text); }
+    .footer-right {
+      display: flex;
+      gap: 24px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .footer-right a { color: var(--text-secondary); transition: color 0.2s; }
+    .footer-right a:hover { color: var(--text); }
+
+    /* ================================================================
+       GRID BACKGROUND
+       ================================================================ */
+    .grid-bg {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 60px 60px;
+      mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+      -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* ================================================================
+       BENCHMARKS BAR
+       ================================================================ */
+    .benchmarks-bar {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    .bench-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .bench-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    /* ================================================================
+       SECTION DIVIDERS
+       ================================================================ */
+    .section-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 0;
+    }
+
+    /* ================================================================
+       COMPARISON TABLE: styled indicators (no emojis)
+       ================================================================ */
+    .s-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .s-yes { background: #4ade80; }
+    .s-partial { background: #facc15; }
+    .s-no { background: #f87171; }
+    /* s-ext and s-unk removed — no longer used in comparison table */
+
+    /* ================================================================
+       GRADIENT LINK CARDS (open source section)
+       ================================================================ */
+    .links-grid-gradient {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-top: 48px;
+      background: linear-gradient(135deg, rgba(255,69,0,0.35), rgba(0,206,209,0.35));
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      padding: 6px;
+    }
+    .links-grid-gradient .link-card {
+      border: none;
+      background: rgba(9,9,11,0.55);
+      backdrop-filter: blur(12px);
+    }
+    .links-grid-gradient .link-card:hover {
+      background: rgba(9,9,11,0.35);
+    }
+    @media (max-width: 768px) {
+      .links-grid-gradient { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 480px) {
+      .links-grid-gradient { grid-template-columns: 1fr; }
+    }
+
+    /* ReadTheDocs button with icon and color */
+    .btn-docs {
+      background: rgba(0,206,209,0.12);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(0,206,209,0.3);
+      backdrop-filter: blur(10px);
+    }
+    .btn-docs:hover {
+      background: rgba(0,206,209,0.2);
+      border-color: rgba(0,206,209,0.5);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0,206,209,0.15);
+    }
+    .btn-docs svg { width: 18px; height: 18px; }
+
+    /* Feature icon SVG styling */
+    .feature-icon svg {
+      width: 22px;
+      height: 22px;
+      stroke: currentColor;
+      color: var(--accent-cyan);
+    }
+
+    /* ================================================================
+       TIMELINE
+       ================================================================ */
+    .timeline-section {
+      background: var(--bg-elevated);
+      padding: 80px 0;
+    }
+    .timeline {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 0;
+      margin-top: 48px;
+      position: relative;
+      max-width: 1000px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      top: 23px;
+      left: 10%;
+      right: 10%;
+      height: 2px;
+      background: var(--border);
+    }
+    .timeline-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      flex: 1;
+      position: relative;
+      padding: 0 8px;
+    }
+    .timeline-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--bg-elevated);
+      margin-bottom: 16px;
+      position: relative;
+      z-index: 1;
+      transition: all 0.3s;
+    }
+    .timeline-item:hover .timeline-dot {
+      border-color: var(--accent-orange);
+      box-shadow: 0 0 12px rgba(255,69,0,0.3);
+    }
+    .timeline-item.active .timeline-dot {
+      width: 20px;
+      height: 20px;
+      background: var(--gradient);
+      border: 3px solid var(--accent-orange);
+      box-shadow: 0 0 20px rgba(255,69,0,0.4);
+    }
+    .timeline-year {
+      font-size: 13px;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      margin-bottom: 6px;
+    }
+    .timeline-item.active .timeline-year {
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-size: 15px;
+    }
+    .timeline-label {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      line-height: 1.3;
+    }
+    .timeline-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      max-width: 160px;
+    }
+    .timeline-item.active .timeline-label {
+      color: var(--text);
+    }
+    .timeline-item:not(.active) .timeline-label {
+      color: var(--text-secondary);
+    }
+
+    @media (max-width: 700px) {
+      .timeline {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 24px;
+        padding-left: 32px;
+      }
+      .timeline::before {
+        top: 0;
+        bottom: 0;
+        left: 6px;
+        right: auto;
+        width: 2px;
+        height: auto;
+      }
+      .timeline-item {
+        flex-direction: row;
+        text-align: left;
+        gap: 16px;
+        padding: 0;
+      }
+      .timeline-dot {
+        margin-bottom: 0;
+        flex-shrink: 0;
+        position: absolute;
+        left: -32px;
+      }
+      .timeline-desc { max-width: none; }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ==================== NAVBAR ==================== -->
+  <nav id="navbar">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <span class="mas">MAS</span><span class="eval">Eval</span>
+      </a>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#timeline">Why Now</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#code">Code</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#comparison">Comparison</a></li>
+        <li><a href="#start">Get Started</a></li>
+        <li>
+          <a href="https://github.com/parameterlab/MASEval" target="_blank" class="nav-github">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.605-.015 2.896-.015 3.286 0 .315.21.694.825.576C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"/></svg>
+            GitHub
+          </a>
+        </li>
+      </ul>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ==================== HERO ==================== -->
+  <section class="hero" id="hero">
+    <div class="grid-bg"></div>
+    <div class="hero-content">
+      <a href="https://pypi.org/project/maseval/" target="_blank" class="hero-badge" id="versionBadge" style="text-decoration:none">
+        <span class="dot"></span>
+        <span id="versionText">v0.3.0</span> &mdash; MIT Licensed
+      </a>
+      <h1>
+        Evaluate <span class="gradient-text">Multi-Agent</span><br/>Systems, Not Just Models
+      </h1>
+      <p class="hero-subtitle">
+        2026 is the year of multi-agent harness design. MASEval is the framework-agnostic evaluation library that treats the entire agent system as the unit of analysis. Compare architectures, tools, and coordination strategies.
+      </p>
+      <div class="hero-actions">
+        <a href="https://github.com/parameterlab/MASEval" target="_blank" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.605-.015 2.896-.015 3.286 0 .315.21.694.825.576C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"/></svg>
+          View on GitHub
+        </a>
+        <a href="https://maseval.readthedocs.io/en/stable/" target="_blank" class="btn btn-docs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+          Read the Docs
+        </a>
+      </div>
+      <div class="hero-install" onclick="navigator.clipboard.writeText('pip install maseval')" title="Click to copy">
+        <span class="prompt">$</span>
+        <span class="cmd">pip install maseval</span>
+        <span class="copy-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ==================== TIMELINE ==================== -->
+  <section class="timeline-section" id="timeline">
+    <div class="container">
+      <div class="reveal" style="text-align:center">
+        <p class="section-label">The Next Frontier</p>
+        <h2 class="section-title">2026 is the year of agent harness evaluation</h2>
+        <p class="section-desc" style="margin:0 auto">
+          We've benchmarked transformers, compared LLMs, and tested single agents. Now the question is: how do agent <em>systems</em> work together? What tools, what topologies, what coordination strategies?
+        </p>
+      </div>
+
+      <div class="timeline reveal">
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <span class="timeline-year">2017</span>
+          <span class="timeline-label">Transformer</span>
+          <span class="timeline-desc">Attention Is All You Need. A new architecture emerges</span>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <span class="timeline-year">2022</span>
+          <span class="timeline-label">ChatGPT</span>
+          <span class="timeline-desc">LLMs go mainstream. MMLU, HellaSwag, and the leaderboard era</span>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <span class="timeline-year">2024</span>
+          <span class="timeline-label">Agentic AI</span>
+          <span class="timeline-desc">Single-agent benchmarks for tool use, planning, and code generation</span>
+        </div>
+        <div class="timeline-item active">
+          <div class="timeline-dot"></div>
+          <span class="timeline-year">2026</span>
+          <span class="timeline-label">Multi-Agent Harness</span>
+          <span class="timeline-desc">Evaluate entire systems: architectures, frameworks, and coordination</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== FEATURES ==================== -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="reveal">
+        <p class="section-label">Core Capabilities</p>
+        <h2 class="section-title">Built for system-level evaluation</h2>
+        <p class="section-desc">
+          MASEval is the only evaluation library with full native support for multi-agent orchestration, system-level comparison, framework-agnostic adapters, trace-first evaluation, and structured error attribution.
+        </p>
+      </div>
+
+      <div class="features-grid reveal">
+        <div class="feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M16 18l2-2-2-2M8 18l-2-2 2-2M3 6h18M3 6v12a2 2 0 002 2h14a2 2 0 002-2V6"/></svg></div>
+          <h3>Flexible: Any Agent Works</h3>
+          <p>Evaluate agents from any framework via thin <code>AgentAdapter</code> wrappers. Works with smolagents, LangGraph, LlamaIndex, CAMEL, or your custom code. Adding a new framework takes two methods: <code>_run_agent()</code> and <code>get_messages()</code>.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="M12 8v3M8.5 16.5L10.5 13M15.5 16.5L13.5 13"/></svg></div>
+          <h3>Multi-Agent Native</h3>
+          <p>Built for multi-agent systems from the ground up. Automatic per-agent message history tracing with independent conversation contexts that respect partial observability. Each agent sees only its own messages.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="3" width="8" height="18" rx="2"/><rect x="14" y="3" width="8" height="18" rx="2"/></svg></div>
+          <h3>Compare Whole Systems</h3>
+          <p>The complete agent system (agents, framework, coordination logic, and tools) is evaluated as a whole. Compare entirely different architectural approaches on the same benchmark, not just swap LLMs.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M2 12h4l3-9 6 18 3-9h4"/></svg></div>
+          <h3>See Every Step</h3>
+          <p>Evaluate intermediate steps and tool usage patterns, not just final outputs. <code>Evaluator</code> uses a two-stage pattern: <code>filter_traces()</code> extracts relevant data, then <code>__call__()</code> computes metrics from structured traces.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4M12 16h.01"/></svg></div>
+          <h3>Know Who Failed</h3>
+          <p>Structured exception hierarchy distinguishes <code>AgentError</code> (counts against score) from <code>EnvironmentError</code> and <code>UserError</code> (excluded from scoring). Fair evaluation requires knowing <em>who</em> failed.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/><circle cx="12" cy="12" r="3"/></svg></div>
+          <h3>Extend Everything</h3>
+          <p>Extensible <code>BenchmarkCallback</code>, <code>EnvironmentCallback</code>, and <code>AgentCallback</code> provide hooks at every phase. Built-in callbacks for progress bars and result logging. Add WandB, Langfuse, or custom metrics without modifying core logic.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== CODE EXAMPLE ==================== -->
+  <section class="section code-section" id="code">
+    <div class="container">
+      <div class="reveal">
+        <p class="section-label">See It In Action</p>
+        <h2 class="section-title">We handle boilerplate, so you do science</h2>
+        <p class="section-desc">
+          Subclass <code>Benchmark</code> to wire your evaluation logic together. Override setup hooks to plug in your agents, environments, and evaluators. MASEval handles orchestration, tracing, and reporting.
+        </p>
+      </div>
+
+      <!-- Tab bar -->
+      <div class="code-tabs reveal">
+        <button class="code-tab active" data-tab="build">Build Your Own</button>
+        <button class="code-tab" data-tab="compare">Run &amp; Compare</button>
+      </div>
+
+      <!-- Tab 1: Build Your Own -->
+      <div class="code-tab-content active reveal" data-tab="build">
+        <div class="code-block">
+          <div class="code-block-header">
+            <span class="code-block-title">
+              <span class="dot" style="background:#4ade80"></span>
+              Define Your Benchmark
+            </span>
+          </div>
+          <pre><span class="kw">from</span> <span class="im">maseval.core</span> <span class="kw">import</span> Benchmark, Task
+<span class="kw">from</span> <span class="im">maseval.core</span> <span class="kw">import</span> AgentAdapter, Environment
+
+<span class="kw">class</span> <span class="cl">MyBenchmark</span>(Benchmark):
+    <span class="kw">def</span> <span class="fn">setup_environment</span>(self, agent_data,
+            task, seed_generator):
+        <span class="kw">return</span> MyEnvironment(task.environment_data)
+
+    <span class="kw">def</span> <span class="fn">setup_agents</span>(self, agent_data, environment,
+            task, user, seed_generator):
+        agent <span class="op">=</span> build_agent(agent_data, environment)
+        adapter <span class="op">=</span> MyAdapter(agent, <span class="st">"agent"</span>)
+        <span class="kw">return</span> [adapter], {<span class="st">"agent"</span>: adapter}
+
+    <span class="kw">def</span> <span class="fn">setup_evaluators</span>(self, environment, task,
+            agents, user, seed_generator):
+        <span class="kw">return</span> [MyEvaluator(task.evaluation_data)]
+
+    <span class="kw">def</span> <span class="fn">run_agents</span>(self, agents, task,
+            environment, query):
+        <span class="kw">return</span> agents[<span class="nr">0</span>].run(query)
+
+    <span class="kw">def</span> <span class="fn">get_model_adapter</span>(self, model_id, **kw):
+        <span class="kw">return</span> OpenAIModelAdapter(client, model_id)</pre>
+        </div>
+
+        <div class="code-block">
+          <div class="code-block-header">
+            <span class="code-block-title">
+              <span class="dot" style="background:#60a5fa"></span>
+              Structured Reports &amp; Traces
+            </span>
+          </div>
+          <pre><span class="cm"># Run it</span>
+results <span class="op">=</span> MyBenchmark(seed<span class="op">=</span><span class="nr">42</span>).run(
+    tasks<span class="op">=</span>tasks, agent_data<span class="op">=</span>{<span class="st">"model_id"</span>: <span class="st">"gpt-4o"</span>},
+)
+
+<span class="cm"># Every result is a structured report</span>
+<span class="kw">for</span> r <span class="kw">in</span> results:
+    r[<span class="st">"status"</span>]      <span class="cm"># "success" | "agent_error"</span>
+    r[<span class="st">"eval"</span>]        <span class="cm"># [{metric: value}, ...]</span>
+    r[<span class="st">"task_id"</span>]     <span class="cm"># deterministic ID</span>
+    r[<span class="st">"repeat_idx"</span>]  <span class="cm"># 0, 1, 2</span>
+
+    <span class="cm"># Full execution traces per component</span>
+    r[<span class="st">"traces"</span>][<span class="st">"agents"</span>]  <span class="cm"># per-agent messages</span>
+    r[<span class="st">"traces"</span>][<span class="st">"tools"</span>]   <span class="cm"># tool call logs</span>
+    r[<span class="st">"traces"</span>][<span class="st">"models"</span>]  <span class="cm"># LLM call counts</span>
+
+    <span class="cm"># Config snapshot for reproducibility</span>
+    r[<span class="st">"config"</span>][<span class="st">"agents"</span>]      <span class="cm"># agent settings</span>
+    r[<span class="st">"config"</span>][<span class="st">"models"</span>]      <span class="cm"># model IDs, seeds</span>
+    r[<span class="st">"config"</span>][<span class="st">"environment"</span>]  <span class="cm"># env snapshot</span>
+
+<span class="cm"># Error attribution: who failed?</span>
+errors <span class="op">=</span> [r <span class="kw">for</span> r <span class="kw">in</span> results
+          <span class="kw">if</span> r[<span class="st">"status"</span>] <span class="op">!=</span> <span class="st">"success"</span>]
+<span class="kw">for</span> e <span class="kw">in</span> errors:
+    <span class="cm"># agent_error vs environment_error</span>
+    <span class="fn">print</span>(e[<span class="st">"status"</span>], e[<span class="st">"error"</span>][<span class="st">"type"</span>])</pre>
+        </div>
+      </div>
+
+      <!-- Tab 2: Run & Compare -->
+      <div class="code-tab-content" data-tab="compare">
+        <div class="code-block">
+          <div class="code-block-header">
+            <span class="code-block-title">
+              <span class="dot" style="background:#fb923c"></span>
+              Single Agent
+            </span>
+          </div>
+          <pre><span class="kw">from</span> <span class="im">maseval.benchmark.tau2</span> <span class="kw">import</span> (
+    Tau2Benchmark, ensure_data_exists,
+    load_tasks, compute_benchmark_metrics,
+)
+
+ensure_data_exists(domain<span class="op">=</span><span class="st">"retail"</span>)
+tasks <span class="op">=</span> load_tasks(domain<span class="op">=</span><span class="st">"retail"</span>, split<span class="op">=</span><span class="st">"base"</span>)
+
+<span class="cm"># One agent handles everything</span>
+<span class="kw">class</span> <span class="cl">SingleAgent</span>(Tau2Benchmark):
+    <span class="kw">def</span> <span class="fn">setup_agents</span>(self, agent_data, env,
+            task, user, seed_gen):
+        agent <span class="op">=</span> ToolCallingAgent(
+            model<span class="op">=</span>model, tools<span class="op">=</span>env.create_tools(),
+        )
+        a <span class="op">=</span> SmolAgentAdapter(agent, <span class="st">"agent"</span>)
+        <span class="kw">return</span> [a], {<span class="st">"agent"</span>: a}
+
+single <span class="op">=</span> SingleAgent(n_task_repeats<span class="op">=</span><span class="nr">3</span>, seed<span class="op">=</span><span class="nr">42</span>)
+results_single <span class="op">=</span> single.run(
+    tasks<span class="op">=</span>tasks,
+    agent_data<span class="op">=</span>{<span class="st">"model_id"</span>: <span class="st">"gpt-4o"</span>},
+)</pre>
+        </div>
+
+        <div class="code-block">
+          <div class="code-block-header">
+            <span class="code-block-title">
+              <span class="dot" style="background:#c084fc"></span>
+              Multi-Agent (same benchmark)
+            </span>
+          </div>
+          <pre><span class="cm"># Orchestrator delegates to specialists</span>
+<span class="kw">class</span> <span class="cl">MultiAgent</span>(Tau2Benchmark):
+    <span class="kw">def</span> <span class="fn">setup_agents</span>(self, agent_data, env,
+            task, user, seed_gen):
+        tools <span class="op">=</span> env.create_tools()
+        specialist <span class="op">=</span> ToolCallingAgent(
+            model<span class="op">=</span>model, tools<span class="op">=</span>tools,
+            name<span class="op">=</span><span class="st">"tool_specialist"</span>,
+        )
+        orchestrator <span class="op">=</span> ToolCallingAgent(
+            model<span class="op">=</span>model,
+            managed_agents<span class="op">=</span>[specialist],
+        )
+        orch <span class="op">=</span> SmolAgentAdapter(orchestrator, <span class="st">"orch"</span>)
+        spec <span class="op">=</span> SmolAgentAdapter(specialist, <span class="st">"spec"</span>)
+        <span class="cm"># Run orchestrator, trace both</span>
+        <span class="kw">return</span> [orch], {<span class="st">"orch"</span>: orch, <span class="st">"spec"</span>: spec}
+
+multi <span class="op">=</span> MultiAgent(n_task_repeats<span class="op">=</span><span class="nr">3</span>, seed<span class="op">=</span><span class="nr">42</span>)
+results_multi <span class="op">=</span> multi.run(
+    tasks<span class="op">=</span>tasks,
+    agent_data<span class="op">=</span>{<span class="st">"model_id"</span>: <span class="st">"gpt-4o"</span>},
+)
+
+<span class="cm"># Compare on the same benchmark</span>
+s <span class="op">=</span> compute_benchmark_metrics(results_single)
+m <span class="op">=</span> compute_benchmark_metrics(results_multi)
+<span class="fn">print</span>(<span class="st">f"Single: </span>{s[<span class="st">'success_rate'</span>]:<span class="st">.0%}</span><span class="st">"</span>)
+<span class="fn">print</span>(<span class="st">f"Multi:  </span>{m[<span class="st">'success_rate'</span>]:<span class="st">.0%}</span><span class="st">"</span>)</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== ARCHITECTURE ==================== -->
+  <section class="section" id="architecture">
+    <div class="container">
+      <div class="reveal">
+        <p class="section-label">Architecture</p>
+        <h2 class="section-title">Bring your own everything</h2>
+        <p class="section-desc">
+          MASEval's three-tier module structure enforces a clean separation between the core runtime, abstract interfaces, and your implementations. The core never imports framework-specific code.
+        </p>
+      </div>
+
+      <div class="arch-visual reveal">
+        <div class="arch-diagram">
+          <div class="arch-layer arch-layer-user">
+            <span class="arch-label" style="color:var(--text-muted)">Your Code</span>
+            <div class="arch-chips">
+              <span class="arch-chip yours">smolagents</span>
+              <span class="arch-chip yours">LangGraph</span>
+              <span class="arch-chip yours">LlamaIndex</span>
+              <span class="arch-chip yours">CAMEL</span>
+              <span class="arch-chip yours">YourAgent</span>
+              <span class="arch-chip yours">OpenAI</span>
+              <span class="arch-chip yours">Anthropic</span>
+              <span class="arch-chip yours">LiteLLM</span>
+              <span class="arch-chip yours">WandB</span>
+              <span class="arch-chip yours">Langfuse</span>
+            </div>
+          </div>
+
+          <div class="arch-connector">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          </div>
+
+          <div class="arch-layer arch-layer-interface">
+            <span class="arch-label" style="color:#60a5fa">Interface</span>
+            <div class="arch-chips">
+              <span class="arch-chip">AgentAdapter</span>
+              <span class="arch-chip">ModelAdapter</span>
+              <span class="arch-chip">Environment</span>
+              <span class="arch-chip">User</span>
+              <span class="arch-chip">Evaluator</span>
+              <span class="arch-chip">BenchmarkCallback</span>
+            </div>
+          </div>
+
+          <div class="arch-connector">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          </div>
+
+          <div class="arch-layer arch-layer-core">
+            <span class="arch-label" style="color:var(--accent-cyan)">Core Runtime</span>
+            <div class="arch-chips">
+              <span class="arch-chip">Orchestration</span>
+              <span class="arch-chip">TraceableMixin</span>
+              <span class="arch-chip">ComponentRegistry</span>
+              <span class="arch-chip">SeedGenerator</span>
+              <span class="arch-chip">Error Attribution</span>
+            </div>
+          </div>
+
+          <div class="arch-connector">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          </div>
+
+          <div class="arch-layer arch-layer-bench">
+            <span class="arch-label" style="color:var(--accent-orange)">Benchmarks</span>
+            <div class="arch-chips">
+              <span class="arch-chip">Tau2Benchmark</span>
+              <span class="arch-chip">GAIA2Benchmark</span>
+              <span class="arch-chip">MultiAgentBenchmark</span>
+              <span class="arch-chip">MACSBenchmark</span>
+              <span class="arch-chip">ConVerseBenchmark</span>
+              <span class="arch-chip">MMLUBenchmark</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lifecycle Pipeline -->
+      <div class="pipeline reveal">
+        <p class="pipeline-title">Benchmark Task Lifecycle</p>
+        <div class="pipeline-steps">
+          <div class="pipeline-step">
+            <div class="pipeline-num">1</div>
+            <h4>Setup</h4>
+            <p>Create environment, user, agents, evaluators via overridable hooks</p>
+          </div>
+          <div class="pipeline-step">
+            <div class="pipeline-num">2</div>
+            <h4>Execute</h4>
+            <p>Run agents with customizable turn orchestration via <code>run_agents()</code></p>
+          </div>
+          <div class="pipeline-step">
+            <div class="pipeline-num">3</div>
+            <h4>Collect</h4>
+            <p>Gather traces from all registered components automatically</p>
+          </div>
+          <div class="pipeline-step">
+            <div class="pipeline-num">4</div>
+            <h4>Evaluate</h4>
+            <p>Compute metrics from traces using composable <code>Evaluator</code> classes</p>
+          </div>
+          <div class="pipeline-step">
+            <div class="pipeline-num">5</div>
+            <h4>Report</h4>
+            <p>Structured report with status, traces, config snapshot, and eval results</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== COMPARISON TABLE ==================== -->
+  <section class="section comparison" id="comparison">
+    <div class="container">
+      <div class="reveal">
+        <p class="section-label">Why MASEval</p>
+        <h2 class="section-title">The complete evaluation stack</h2>
+        <p class="section-desc">
+          MASEval is the only library that achieves full support across all key evaluation dimensions: multi-agent native orchestration, system-level comparison, and framework-agnostic design.
+        </p>
+      </div>
+
+      <div class="table-wrapper reveal">
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th>Library</th>
+              <th title="Native orchestration with per-agent tracing and independent message histories">Multi-Agent</th>
+              <th title="Compare framework implementations, not just LLMs">System Eval</th>
+              <th title="Evaluate any framework via thin adapters without code recreation">Agent-Agnostic</th>
+              <th title="Ships complete, ready-to-run benchmarks">Benchmarks</th>
+              <th title="First-class user simulation with personas and tool access">Flexible Interaction</th>
+              <th title="Bring your own logging, agents, environments, and tools. Open-source, works offline">BYO</th>
+              <th title="Evaluate intermediate steps via first-class traces, not post-hoc fixes">Trace-First</th>
+              <th title="Published on PyPI, CI/CD, good test coverage, active maintenance">Mature</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>MASEval</td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+            </tr>
+            <tr>
+              <td>AnyAgent</td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+            </tr>
+            <tr>
+              <td>MLflow GenAI</td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+            </tr>
+            <tr>
+              <td>HAL Harness</td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+            </tr>
+            <tr>
+              <td>Inspect-AI</td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+            </tr>
+            <tr>
+              <td>OpenCompass</td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+            </tr>
+            <tr>
+              <td>AgentGym</td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+            </tr>
+            <tr>
+              <td>Arize Phoenix</td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+            </tr>
+            <tr>
+              <td>TruLens</td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+            </tr>
+            <tr>
+              <td>MARBLE</td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+            </tr>
+            <tr>
+              <td>DeepEval</td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+            </tr>
+            <tr>
+              <td>MCPEval</td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Full support"><span class="s-dot s-yes"></span></td>
+              <td title="Not supported"><span class="s-dot s-no"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+              <td title="Partial"><span class="s-dot s-partial"></span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-legend reveal">
+        <span><span class="s-dot s-yes" style="vertical-align:middle;margin-right:4px"></span> Full support</span>
+        <span><span class="s-dot s-partial" style="vertical-align:middle;margin-right:4px"></span> Partial / limited</span>
+        <span><span class="s-dot s-no" style="vertical-align:middle;margin-right:4px"></span> Not supported</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== GETTING STARTED ==================== -->
+  <section class="section" id="start">
+    <div class="container">
+      <div class="reveal">
+        <p class="section-label">Get Started</p>
+        <h2 class="section-title">Evaluate an agent on GAIA2 in four steps</h2>
+        <p class="section-desc">
+          A complete, runnable example: load real-world agent tasks from HuggingFace, run the built-in ReAct agent, and drill into per-capability results.
+        </p>
+      </div>
+
+      <div class="getting-started-grid reveal">
+        <div class="gs-card">
+          <div class="gs-step">1</div>
+          <h3>Load Tasks</h3>
+          <pre><span class="kw">from</span> <span class="im">maseval.benchmark.gaia2</span> <span class="kw">import</span> (
+    DefaultAgentGaia2Benchmark,
+    load_tasks, configure_model_ids,
+    compute_gaia2_metrics,
+)
+<span class="kw">from</span> <span class="im">maseval.interface.inference</span> <span class="kw">import</span> (
+    OpenAIModelAdapter,
+)
+<span class="kw">from</span> <span class="im">openai</span> <span class="kw">import</span> OpenAI
+
+<span class="cm"># Load 5 "execution" tasks from HuggingFace</span>
+tasks <span class="op">=</span> load_tasks(
+    capability<span class="op">=</span><span class="st">"execution"</span>, limit<span class="op">=</span><span class="nr">5</span>,
+)</pre>
+        </div>
+
+        <div class="gs-card">
+          <div class="gs-step">2</div>
+          <h3>Wire Up a Model</h3>
+          <pre><span class="cm"># The default agent needs a model adapter —</span>
+<span class="cm"># subclass and tell it how to create one</span>
+<span class="kw">class</span> <span class="cl">MyGaia2</span>(DefaultAgentGaia2Benchmark):
+    <span class="kw">def</span> <span class="fn">get_model_adapter</span>(self, model_id, **kw):
+        adapter <span class="op">=</span> OpenAIModelAdapter(
+            OpenAI(), model_id<span class="op">=</span>model_id,
+        )
+        <span class="cm"># Register so traces capture model usage</span>
+        <span class="kw">if</span> <span class="st">"register_name"</span> <span class="kw">in</span> kw:
+            self.register(
+                <span class="st">"models"</span>, kw[<span class="st">"register_name"</span>],
+                adapter)
+        <span class="kw">return</span> adapter</pre>
+        </div>
+
+        <div class="gs-card">
+          <div class="gs-step">3</div>
+          <h3>Run &amp; Evaluate</h3>
+          <pre><span class="cm"># Agent gets calendar, email, messaging,</span>
+<span class="cm"># browser, shopping &amp; 7 more tool apps</span>
+benchmark <span class="op">=</span> MyGaia2()
+results <span class="op">=</span> benchmark.run(
+    tasks<span class="op">=</span>tasks,
+    agent_data<span class="op">=</span>{<span class="st">"model_id"</span>: <span class="st">"gpt-4o"</span>},
+)
+metrics <span class="op">=</span> compute_gaia2_metrics(results)
+<span class="fn">print</span>(<span class="st">f"GSR: </span>{metrics[<span class="st">'gsr'</span>]:<span class="st">.0%}</span><span class="st">"</span>)</pre>
+        </div>
+
+        <div class="gs-card">
+          <div class="gs-step">4</div>
+          <h3>Inspect Traces</h3>
+          <pre><span class="cm"># Per-agent traces — e.g. agent2agent capability</span>
+<span class="cm"># where two agents coordinate via messaging</span>
+r <span class="op">=</span> results[<span class="nr">0</span>]
+<span class="kw">for</span> name, t <span class="kw">in</span> r[<span class="st">"traces"</span>][<span class="st">"agents"</span>].items():
+    <span class="fn">print</span>(name, t[<span class="st">"message_count"</span>])
+
+<span class="cm"># &gt;&gt; orchestrator    34 messages</span>
+<span class="cm"># &gt;&gt; search_agent    12 messages</span>
+
+<span class="cm"># Token usage per model</span>
+<span class="kw">for</span> name, m <span class="kw">in</span> r[<span class="st">"traces"</span>][<span class="st">"models"</span>].items():
+    <span class="fn">print</span>(name, m[<span class="st">"total_tokens"</span>])
+
+<span class="cm"># &gt;&gt; orch_model      48291 tokens</span>
+<span class="cm"># &gt;&gt; search_model     9140 tokens</span>
+
+r[<span class="st">"eval"</span>]   <span class="cm"># {"gsr": 1.0, "passed": true}</span>
+r[<span class="st">"config"</span>] <span class="cm"># reproducibility snapshot</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== LINKS & AUTHORS ==================== -->
+  <section class="section links-section" id="links">
+    <div class="container">
+      <div class="reveal">
+        <p class="section-label">Links &amp; Authors</p>
+        <h2 class="section-title">Open source, built by researchers</h2>
+        <p class="section-desc">
+          MASEval is developed by Parameter Lab and collaborators. MIT licensed, published on PyPI, with CI/CD and comprehensive documentation.
+        </p>
+      </div>
+
+      <div class="links-grid-gradient reveal">
+        <a href="https://github.com/parameterlab/MASEval" target="_blank" class="link-card">
+          <div class="link-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.605-.015 2.896-.015 3.286 0 .315.21.694.825.576C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"/></svg>
+          </div>
+          <h3>GitHub</h3>
+          <p>Source code &amp; issues</p>
+        </a>
+        <a href="https://maseval.readthedocs.io/en/stable/" target="_blank" class="link-card">
+          <div class="link-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+          </div>
+          <h3>Documentation</h3>
+          <p>Guides &amp; API reference</p>
+        </a>
+        <a href="https://www.parameterlab.de" target="_blank" class="link-card">
+          <div class="link-card-icon">
+            <svg width="38" height="24" viewBox="0 0 38 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
+              <text text-anchor="middle" x="19" y="20" font-family="Inter, sans-serif" font-size="20" font-weight="800" fill="#fafafa">( )</text>
+              <text x="30" y="6" font-family="Inter, sans-serif" font-size="7" font-weight="600" fill="#a1a1aa">NT</text>
+            </svg>
+          </div>
+          <h3>Parameter Lab</h3>
+          <p>Research lab website</p>
+        </a>
+        <a href="https://pypi.org/project/maseval/" target="_blank" class="link-card">
+          <div class="link-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+          </div>
+          <h3>PyPI</h3>
+          <p>pip install maseval</p>
+        </a>
+      </div>
+
+      <!-- Blog & Paper -->
+      <div style="display:flex;gap:16px;justify-content:center;margin-top:24px;flex-wrap:wrap" class="reveal">
+        <a href="https://medium.com/@ai_91339/evaluating-multi-agent-systems-719a9a550ddf" target="_blank" class="link-card" style="flex:1;max-width:260px;text-align:center">
+          <div class="link-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+          </div>
+          <h3>Blog Post</h3>
+          <p>Evaluating Multi-Agent Systems</p>
+        </a>
+        <a href="https://github.com/parameterlab/MASEval/releases" target="_blank" class="link-card" style="flex:1;max-width:260px;text-align:center">
+          <div class="link-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+          </div>
+          <h3>Release Notes</h3>
+          <p>Changelog &amp; versions</p>
+        </a>
+        <a href="http://arxiv.org/abs/2603.08835" target="_blank" class="link-card" style="flex:1;max-width:260px;text-align:center">
+          <div class="link-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+          </div>
+          <h3>Paper</h3>
+          <p>View on arXiv</p>
+        </a>
+      </div>
+
+      <div class="authors-list reveal">
+        <a href="https://corneliusemde.com" target="_blank" class="author-chip">
+          Cornelius Emde <span class="author-aff">Oxford &middot; Parameter Lab</span>
+        </a>
+        <a href="https://www.goel.ai" target="_blank" class="author-chip">
+          Anmol Goel <span class="author-aff">TU Darmstadt &middot; Parameter Lab</span>
+        </a>
+        <a href="https://arubique.github.io" target="_blank" class="author-chip">
+          Alexander Rubinstein <span class="author-aff">University of T&uuml;bingen</span>
+        </a>
+        <a href="https://github.com/ahmedheakl" target="_blank" class="author-chip">
+          Ahmed Heakl <span class="author-aff">NAVER AI Lab</span>
+        </a>
+        <a href="https://sangdooyun.github.io" target="_blank" class="author-chip">
+          Sangdoo Yun <span class="author-aff">NAVER AI Lab</span>
+        </a>
+        <a href="https://coallaoh.github.io" target="_blank" class="author-chip">
+          Seong Joon Oh <span class="author-aff">T&uuml;bingen &middot; Parameter Lab</span>
+        </a>
+        <a href="https://gubri.eu" target="_blank" class="author-chip">
+          Martin Gubri <span class="author-aff">Parameter Lab</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-left">
+        <span style="font-weight:700"><span style="background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent">MAS</span><span style="font-weight:200">Eval</span></span>
+        &nbsp;&mdash;&nbsp; MIT License &middot; Supported by <a href="https://www.parameterlab.de" target="_blank">Parameter Lab</a> &amp; <a href="https://www.navercorp.com" target="_blank">NAVER</a>
+      </div>
+      <div class="footer-right">
+        <a href="https://github.com/parameterlab/MASEval" target="_blank">GitHub</a>
+        <a href="https://maseval.readthedocs.io/en/stable/" target="_blank">Docs</a>
+        <a href="https://pypi.org/project/maseval/" target="_blank">PyPI</a>
+        <a href="https://medium.com/@ai_91339/evaluating-multi-agent-systems-719a9a550ddf" target="_blank">Blog</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ==================== JS ==================== -->
+  <script>
+    // Navbar scroll effect
+    const navbar = document.getElementById('navbar');
+    window.addEventListener('scroll', () => {
+      navbar.classList.toggle('scrolled', window.scrollY > 40);
+    }, { passive: true });
+
+    // Mobile menu toggle
+    const navToggle = document.getElementById('navToggle');
+    const navLinks = document.getElementById('navLinks');
+    navToggle.addEventListener('click', () => {
+      navLinks.classList.toggle('open');
+    });
+    // Close on link click
+    navLinks.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', () => navLinks.classList.remove('open'));
+    });
+
+    // Scroll-triggered reveal animations
+    const reveals = document.querySelectorAll('.reveal');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry, i) => {
+        if (entry.isIntersecting) {
+          // Stagger children slightly
+          setTimeout(() => {
+            entry.target.classList.add('visible');
+          }, i * 80);
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    reveals.forEach(el => observer.observe(el));
+
+    // Code section tab switching
+    document.querySelectorAll('.code-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+        document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.code-tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.querySelector(`.code-tab-content[data-tab="${target}"]`).classList.add('active');
+      });
+    });
+
+    // Copy install command
+    const installBtn = document.querySelector('.hero-install');
+    installBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText('pip install maseval').then(() => {
+        const icon = installBtn.querySelector('.copy-icon');
+        icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+        setTimeout(() => {
+          icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+        }, 2000);
+      });
+    });
+
+    // Fetch latest version from PyPI (with 3s timeout)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    fetch('https://pypi.org/pypi/maseval/json', { signal: controller.signal })
+      .then(r => r.json())
+      .then(data => {
+        clearTimeout(timeout);
+        const version = data.info && data.info.version;
+        if (version) {
+          document.getElementById('versionText').textContent = 'v' + version;
+        }
+      })
+      .catch(() => { clearTimeout(timeout); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<svg width="315" height="75" viewBox="0 5 315 75" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!-- A high-contrast gradient from blazing orange to electric cyan. -->
+        <linearGradient id="wildGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#FF4500; stop-opacity:1" /> <!-- OrangeRed -->
+            <stop offset="100%" style="stop-color:#00FFFF; stop-opacity:1" /> <!-- Cyan -->
+        </linearGradient>
+    </defs>
+    <!-- Bold, gradient "MAS" text -->
+    <text x="10" y="70" font-family="Roboto, sans-serif" font-size="72" font-weight="900" fill="url(#wildGrad2)">MAS</text>
+    <!-- Thin, white "Eval" text -->
+    <text x="175" y="70" font-family="Roboto, sans-serif" font-size="72" font-weight="100" fill="#FFFFFF">Eval</text>
+</svg>
