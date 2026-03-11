@@ -558,7 +558,26 @@ a.hero-badge:hover {
   tab-size: 4;
 }
 
-/* Syntax highlighting */
+/*
+ * Manual syntax highlighting for <pre> code blocks (dark mode defaults).
+ * Light mode overrides are at the top of this file under [data-theme="light"].
+ *
+ * Usage in HTML:
+ *   <span class="kw">from</span>                     — Python keywords: from, import, class, def, return, for, in, if
+ *   <span class="fn">my_func</span>                  — Function names: after `def`, and function calls like print(), load_tasks()
+ *   <span class="cl">MyClass</span>                  — Class names: after `class`, and constructor calls like MyClass(), OpenAI()
+ *   <span class="st">"hello"</span>                  — String literals (including f-string delimiters)
+ *   <span class="cm"># comment</span>               — Comments
+ *   <span class="op">=</span>                        — Operators: =, !=, ==
+ *   <span class="nr">42</span>                       — Numeric literals
+ *   <span class="im">maseval.core</span>             — Module paths after `from` / `import`
+ *   <span class="ty">int</span>                      — Type annotations (unused currently)
+ *   <span class="dc">@decorator</span>               — Decorators (unused currently)
+ *
+ * Tokens left unstyled: variable names, self, parameters, punctuation (brackets, colons, commas).
+ * For f-strings, wrap the f"..." and format spec in .st, leaving the interpolated expression unstyled.
+ *   Example: <span class="st">f"Score: {</span>val<span class="st">:.0%}"</span>
+ */
 .kw { color: #c084fc; }  /* keywords */
 .fn { color: #60a5fa; }  /* functions */
 .st { color: #86efac; }  /* strings */

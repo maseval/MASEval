@@ -211,24 +211,24 @@
 <span class="kw">class</span> <span class="cl">MyBenchmark</span>(Benchmark):
     <span class="kw">def</span> <span class="fn">setup_environment</span>(self, agent_data,
             task, seed_generator):
-        <span class="kw">return</span> MyEnvironment(task.environment_data)
+        <span class="kw">return</span> <span class="cl">MyEnvironment</span>(task.environment_data)
 
     <span class="kw">def</span> <span class="fn">setup_agents</span>(self, agent_data, environment,
             task, user, seed_generator):
-        agent <span class="op">=</span> build_agent(agent_data, environment)
-        adapter <span class="op">=</span> MyAdapter(agent, <span class="st">"agent"</span>)
+        agent <span class="op">=</span> <span class="fn">build_agent</span>(agent_data, environment)
+        adapter <span class="op">=</span> <span class="cl">MyAdapter</span>(agent, <span class="st">"agent"</span>)
         <span class="kw">return</span> [adapter], {<span class="st">"agent"</span>: adapter}
 
     <span class="kw">def</span> <span class="fn">setup_evaluators</span>(self, environment, task,
             agents, user, seed_generator):
-        <span class="kw">return</span> [MyEvaluator(task.evaluation_data)]
+        <span class="kw">return</span> [<span class="cl">MyEvaluator</span>(task.evaluation_data)]
 
     <span class="kw">def</span> <span class="fn">run_agents</span>(self, agents, task,
             environment, query):
         <span class="kw">return</span> agents[<span class="nr">0</span>].run(query)
 
     <span class="kw">def</span> <span class="fn">get_model_adapter</span>(self, model_id, **kw):
-        <span class="kw">return</span> OpenAIModelAdapter(client, model_id)</pre>
+        <span class="kw">return</span> <span class="cl">OpenAIModelAdapter</span>(client, model_id)</pre>
         </div>
 
         <div class="code-block">
@@ -239,7 +239,7 @@
             </span>
           </div>
           <pre><span class="cm"># Run it</span>
-results <span class="op">=</span> MyBenchmark(seed<span class="op">=</span><span class="nr">42</span>).run(
+results <span class="op">=</span> <span class="cl">MyBenchmark</span>(seed<span class="op">=</span><span class="nr">42</span>).run(
     tasks<span class="op">=</span>tasks, agent_data<span class="op">=</span>{<span class="st">"model_id"</span>: <span class="st">"gpt-4o"</span>},
 )
 
@@ -283,20 +283,20 @@ errors <span class="op">=</span> [r <span class="kw">for</span> r <span class="k
     load_tasks, compute_benchmark_metrics,
 )
 
-ensure_data_exists(domain<span class="op">=</span><span class="st">"retail"</span>)
-tasks <span class="op">=</span> load_tasks(domain<span class="op">=</span><span class="st">"retail"</span>, split<span class="op">=</span><span class="st">"base"</span>)
+<span class="fn">ensure_data_exists</span>(domain<span class="op">=</span><span class="st">"retail"</span>)
+tasks <span class="op">=</span> <span class="fn">load_tasks</span>(domain<span class="op">=</span><span class="st">"retail"</span>, split<span class="op">=</span><span class="st">"base"</span>)
 
 <span class="cm"># One agent handles everything</span>
 <span class="kw">class</span> <span class="cl">SingleAgent</span>(Tau2Benchmark):
     <span class="kw">def</span> <span class="fn">setup_agents</span>(self, agent_data, env,
             task, user, seed_gen):
-        agent <span class="op">=</span> ToolCallingAgent(
+        agent <span class="op">=</span> <span class="cl">ToolCallingAgent</span>(
             model<span class="op">=</span>model, tools<span class="op">=</span>env.create_tools(),
         )
-        a <span class="op">=</span> SmolAgentAdapter(agent, <span class="st">"agent"</span>)
+        a <span class="op">=</span> <span class="cl">SmolAgentAdapter</span>(agent, <span class="st">"agent"</span>)
         <span class="kw">return</span> [a], {<span class="st">"agent"</span>: a}
 
-single <span class="op">=</span> SingleAgent(n_task_repeats<span class="op">=</span><span class="nr">3</span>, seed<span class="op">=</span><span class="nr">42</span>)
+single <span class="op">=</span> <span class="cl">SingleAgent</span>(n_task_repeats<span class="op">=</span><span class="nr">3</span>, seed<span class="op">=</span><span class="nr">42</span>)
 results_single <span class="op">=</span> single.run(
     tasks<span class="op">=</span>tasks,
     agent_data<span class="op">=</span>{<span class="st">"model_id"</span>: <span class="st">"gpt-4o"</span>},
@@ -315,30 +315,30 @@ results_single <span class="op">=</span> single.run(
     <span class="kw">def</span> <span class="fn">setup_agents</span>(self, agent_data, env,
             task, user, seed_gen):
         tools <span class="op">=</span> env.create_tools()
-        specialist <span class="op">=</span> ToolCallingAgent(
+        specialist <span class="op">=</span> <span class="cl">ToolCallingAgent</span>(
             model<span class="op">=</span>model, tools<span class="op">=</span>tools,
             name<span class="op">=</span><span class="st">"tool_specialist"</span>,
         )
-        orchestrator <span class="op">=</span> ToolCallingAgent(
+        orchestrator <span class="op">=</span> <span class="cl">ToolCallingAgent</span>(
             model<span class="op">=</span>model,
             managed_agents<span class="op">=</span>[specialist],
         )
-        orch <span class="op">=</span> SmolAgentAdapter(orchestrator, <span class="st">"orch"</span>)
-        spec <span class="op">=</span> SmolAgentAdapter(specialist, <span class="st">"spec"</span>)
+        orch <span class="op">=</span> <span class="cl">SmolAgentAdapter</span>(orchestrator, <span class="st">"orch"</span>)
+        spec <span class="op">=</span> <span class="cl">SmolAgentAdapter</span>(specialist, <span class="st">"spec"</span>)
         <span class="cm"># Run orchestrator, trace both</span>
         <span class="kw">return</span> [orch], {<span class="st">"orch"</span>: orch, <span class="st">"spec"</span>: spec}
 
-multi <span class="op">=</span> MultiAgent(n_task_repeats<span class="op">=</span><span class="nr">3</span>, seed<span class="op">=</span><span class="nr">42</span>)
+multi <span class="op">=</span> <span class="cl">MultiAgent</span>(n_task_repeats<span class="op">=</span><span class="nr">3</span>, seed<span class="op">=</span><span class="nr">42</span>)
 results_multi <span class="op">=</span> multi.run(
     tasks<span class="op">=</span>tasks,
     agent_data<span class="op">=</span>{<span class="st">"model_id"</span>: <span class="st">"gpt-4o"</span>},
 )
 
 <span class="cm"># Compare on the same benchmark</span>
-s <span class="op">=</span> compute_benchmark_metrics(results_single)
-m <span class="op">=</span> compute_benchmark_metrics(results_multi)
-<span class="fn">print</span>(<span class="st">f"Single: </span>{s[<span class="st">'success_rate'</span>]:<span class="st">.0%}</span><span class="st">"</span>)
-<span class="fn">print</span>(<span class="st">f"Multi:  </span>{m[<span class="st">'success_rate'</span>]:<span class="st">.0%}</span><span class="st">"</span>)</pre>
+s <span class="op">=</span> <span class="fn">compute_benchmark_metrics</span>(results_single)
+m <span class="op">=</span> <span class="fn">compute_benchmark_metrics</span>(results_multi)
+<span class="fn">print</span>(<span class="st">f"Single: {</span>s[<span class="st">'success_rate'</span>]<span class="st">:.0%}"</span>)
+<span class="fn">print</span>(<span class="st">f"Multi:  {</span>m[<span class="st">'success_rate'</span>]<span class="st">:.0%}"</span>)</pre>
         </div>
       </div>
     </div>
@@ -652,7 +652,7 @@ m <span class="op">=</span> compute_benchmark_metrics(results_multi)
 <span class="kw">from</span> <span class="im">openai</span> <span class="kw">import</span> OpenAI
 
 <span class="cm"># Load 5 "execution" tasks from HuggingFace</span>
-tasks <span class="op">=</span> load_tasks(
+tasks <span class="op">=</span> <span class="fn">load_tasks</span>(
     capability<span class="op">=</span><span class="st">"execution"</span>, limit<span class="op">=</span><span class="nr">5</span>,
 )</pre>
         </div>
@@ -664,8 +664,8 @@ tasks <span class="op">=</span> load_tasks(
 <span class="cm"># subclass and tell it how to create one</span>
 <span class="kw">class</span> <span class="cl">MyGaia2</span>(DefaultAgentGaia2Benchmark):
     <span class="kw">def</span> <span class="fn">get_model_adapter</span>(self, model_id, **kw):
-        adapter <span class="op">=</span> OpenAIModelAdapter(
-            OpenAI(), model_id<span class="op">=</span>model_id,
+        adapter <span class="op">=</span> <span class="cl">OpenAIModelAdapter</span>(
+            <span class="cl">OpenAI</span>(), model_id<span class="op">=</span>model_id,
         )
         <span class="cm"># Register so traces capture model usage</span>
         <span class="kw">if</span> <span class="st">"register_name"</span> <span class="kw">in</span> kw:
@@ -680,13 +680,13 @@ tasks <span class="op">=</span> load_tasks(
           <h3>Run &amp; Evaluate</h3>
           <pre><span class="cm"># Agent gets calendar, email, messaging,</span>
 <span class="cm"># browser, shopping &amp; 7 more tool apps</span>
-benchmark <span class="op">=</span> MyGaia2()
+benchmark <span class="op">=</span> <span class="cl">MyGaia2</span>()
 results <span class="op">=</span> benchmark.run(
     tasks<span class="op">=</span>tasks,
     agent_data<span class="op">=</span>{<span class="st">"model_id"</span>: <span class="st">"gpt-4o"</span>},
 )
-metrics <span class="op">=</span> compute_gaia2_metrics(results)
-<span class="fn">print</span>(<span class="st">f"GSR: </span>{metrics[<span class="st">'gsr'</span>]:<span class="st">.0%}</span><span class="st">"</span>)</pre>
+metrics <span class="op">=</span> <span class="fn">compute_gaia2_metrics</span>(results)
+<span class="fn">print</span>(<span class="st">f"GSR: {</span>metrics[<span class="st">'gsr'</span>]<span class="st">:.0%}"</span>)</pre>
         </div>
 
         <div class="gs-card">
