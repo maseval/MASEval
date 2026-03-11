@@ -1,0 +1,53 @@
+cff-version: 1.2.0
+title: "MASEval: Extending Multi-Agent Evaluation from Models to Systems"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Emde
+    given-names: Cornelius
+  - family-names: Rubinstein
+    given-names: Alexander
+    equal-contrib: true
+  - family-names: Goel
+    given-names: Anmol
+    equal-contrib: true
+  - family-names: Heakl
+    given-names: Ahmed
+    equal-contrib: true
+  - family-names: Yun
+    given-names: Sangdoo
+  - family-names: Oh
+    given-names: Seong Joon
+  - family-names: Gubri
+    given-names: Martin
+year: 2026
+identifiers:
+  - type: url
+    value: "https://arxiv.org/abs/2603.08835"
+  - type: other
+    value: "2603.08835"
+    description: arXiv eprint
+preferred-citation:
+  type: article
+  title: "MASEval: Extending Multi-Agent Evaluation from Models to Systems"
+  authors:
+    - family-names: Emde
+      given-names: Cornelius
+    - family-names: Rubinstein
+      given-names: Alexander
+      equal-contrib: true
+    - family-names: Goel
+      given-names: Anmol
+      equal-contrib: true
+    - family-names: Heakl
+      given-names: Ahmed
+      equal-contrib: true
+    - family-names: Yun
+      given-names: Sangdoo
+    - family-names: Oh
+      given-names: Seong Joon
+    - family-names: Gubri
+      given-names: Martin
+  year: 2026
+  url: "https://arxiv.org/abs/2603.08835"
+  journal: "arXiv preprint arXiv:2603.08835"
