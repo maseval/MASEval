@@ -1,0 +1,301 @@
+"""Core usage tracking infrastructure for API cost and resource monitoring.
+
+This module provides the `Usage` and `TokenUsage` data classes for recording
+billable resource consumption, and the `UsageTrackableMixin` that enables
+automatic usage collection through the component registry.
+
+Usage tracking is a first-class collection axis alongside tracing
+(`TraceableMixin`) and configuration (`ConfigurableMixin`). Components that
+inherit `UsageTrackableMixin` have their usage automatically collected by the
+registry via `gather_usage()`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Optional, Dict
+
+
+@dataclass
+class Usage:
+    """Generic usage record for any billable resource.
+
+    Represents accumulated cost and countable units for a component or
+    aggregated group. Grouping fields (`provider`, `category`,
+    `component_name`, `kind`) identify what scope the record covers.
+    When two records are summed, matching grouping fields are preserved;
+    mismatches become `None` (meaning "aggregated over").
+
+    Attributes:
+        cost: Total cost in USD. `None` means unknown/not reported.
+        units: Arbitrary countable units (e.g., ``{"api_calls": 3}``).
+        provider: Provider identifier (e.g., ``"anthropic"``, ``"bloomberg"``).
+        category: Registry category (e.g., ``"models"``, ``"tools"``).
+        component_name: Component name within category (e.g., ``"main_model"``).
+        kind: Component kind (e.g., ``"llm"``, ``"service"``, ``"local"``).
+
+    Example:
+        ```python
+        usage = Usage(cost=0.05, units={"api_calls": 1}, provider="bloomberg", kind="service")
+
+        # Summing preserves matching fields
+        total = usage + Usage(cost=0.03, units={"api_calls": 2}, provider="bloomberg", kind="service")
+        assert total.cost == 0.08
+        assert total.units == {"api_calls": 3}
+        assert total.provider == "bloomberg"
+
+        # Mismatched fields become None
+        mixed = usage + Usage(cost=0.10, provider="anthropic", kind="llm")
+        assert mixed.provider is None  # aggregated over
+        assert mixed.kind is None      # aggregated over
+        ```
+    """
+
+    cost: Optional[float] = None
+    units: Dict[str, int | float] = field(default_factory=dict)
+    provider: Optional[str] = None
+    category: Optional[str] = None
+    component_name: Optional[str] = None
+    kind: Optional[str] = None
+
+    def __add__(self, other: Usage) -> Usage:
+        if not isinstance(other, Usage):
+            return NotImplemented
+
+        # Sum costs: both known -> sum, either unknown -> None
+        if self.cost is not None and other.cost is not None:
+            cost = self.cost + other.cost
+        else:
+            cost = None
+
+        # Sum units
+        units: Dict[str, int | float] = dict(self.units)
+        for key, value in other.units.items():
+            units[key] = units.get(key, 0) + value
+
+        # Grouping fields: preserve on match, None on mismatch
+        provider = self.provider if self.provider == other.provider else None
+        category = self.category if self.category == other.category else None
+        component_name = self.component_name if self.component_name == other.component_name else None
+        kind = self.kind if self.kind == other.kind else None
+
+        return Usage(
+            cost=cost,
+            units=units,
+            provider=provider,
+            category=category,
+            component_name=component_name,
+            kind=kind,
+        )
+
+    def __radd__(self, other: object) -> Usage:
+        """Support sum() by handling 0 + Usage."""
+        if other == 0:
+            return self
+        if isinstance(other, Usage):
+            return other.__add__(self)
+        return NotImplemented
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to a JSON-compatible dictionary."""
+        return {
+            "cost": self.cost,
+            "units": dict(self.units),
+            "provider": self.provider,
+            "category": self.category,
+            "component_name": self.component_name,
+            "kind": self.kind,
+        }
+
+
+@dataclass
+class TokenUsage(Usage):
+    """LLM-specific usage record with token counts.
+
+    Extends `Usage` with token fields reported by LLM providers. Use
+    `from_chat_response_usage()` to create from the dict returned by
+    model adapters.
+
+    Attributes:
+        input_tokens: Number of input/prompt tokens.
+        output_tokens: Number of output/completion tokens.
+        total_tokens: Total tokens (input + output).
+        cached_input_tokens: Tokens served from cache (Anthropic ``cache_read_input_tokens``,
+            OpenAI ``cached_tokens``).
+        reasoning_tokens: Tokens used for reasoning (OpenAI ``reasoning_tokens``,
+            Google ``thoughts_token_count``).
+        audio_tokens: Tokens for audio processing (OpenAI).
+
+    Example:
+        ```python
+        token_usage = TokenUsage.from_chat_response_usage({
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "total_tokens": 150,
+        })
+        assert token_usage.input_tokens == 100
+        ```
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cached_input_tokens: int = 0
+    reasoning_tokens: int = 0
+    audio_tokens: int = 0
+
+    def __add__(self, other: Usage) -> Usage:
+        base = super().__add__(other)
+        if not isinstance(base, Usage):
+            return NotImplemented
+
+        if isinstance(other, TokenUsage):
+            return TokenUsage(
+                cost=base.cost,
+                units=base.units,
+                provider=base.provider,
+                category=base.category,
+                component_name=base.component_name,
+                kind=base.kind,
+                input_tokens=self.input_tokens + other.input_tokens,
+                output_tokens=self.output_tokens + other.output_tokens,
+                total_tokens=self.total_tokens + other.total_tokens,
+                cached_input_tokens=self.cached_input_tokens + other.cached_input_tokens,
+                reasoning_tokens=self.reasoning_tokens + other.reasoning_tokens,
+                audio_tokens=self.audio_tokens + other.audio_tokens,
+            )
+
+        # Adding TokenUsage + plain Usage: preserve token fields from self
+        return TokenUsage(
+            cost=base.cost,
+            units=base.units,
+            provider=base.provider,
+            category=base.category,
+            component_name=base.component_name,
+            kind=base.kind,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            total_tokens=self.total_tokens,
+            cached_input_tokens=self.cached_input_tokens,
+            reasoning_tokens=self.reasoning_tokens,
+            audio_tokens=self.audio_tokens,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to a JSON-compatible dictionary."""
+        return {
+            **super().to_dict(),
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "cached_input_tokens": self.cached_input_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+            "audio_tokens": self.audio_tokens,
+        }
+
+    @classmethod
+    def from_chat_response_usage(
+        cls,
+        usage_dict: Dict[str, int],
+        *,
+        cost: Optional[float] = None,
+        provider: Optional[str] = None,
+        category: Optional[str] = None,
+        component_name: Optional[str] = None,
+        kind: str = "llm",
+    ) -> TokenUsage:
+        """Create a TokenUsage from a ChatResponse.usage dict.
+
+        Maps provider-specific key names to the canonical fields.
+
+        Args:
+            usage_dict: The usage dict from ``ChatResponse.usage``.
+            cost: Cost in USD if known (e.g., from provider-reported cost).
+            provider: Provider identifier.
+            category: Registry category.
+            component_name: Component name.
+            kind: Component kind, defaults to ``"llm"``.
+
+        Returns:
+            A TokenUsage instance with mapped fields.
+        """
+        return cls(
+            cost=cost,
+            provider=provider,
+            category=category,
+            component_name=component_name,
+            kind=kind,
+            input_tokens=usage_dict.get("input_tokens", 0),
+            output_tokens=usage_dict.get("output_tokens", 0),
+            total_tokens=usage_dict.get("total_tokens", 0),
+            cached_input_tokens=usage_dict.get("cached_input_tokens", 0),
+            reasoning_tokens=usage_dict.get("reasoning_tokens", 0),
+            audio_tokens=usage_dict.get("audio_tokens", 0),
+        )
+
+
+class UsageTrackableMixin:
+    """Mixin that provides usage tracking capability to any component.
+
+    Classes that inherit from UsageTrackableMixin can be registered with a
+    Benchmark instance and will have their usage automatically collected
+    by the registry via `collect_usage()`.
+
+    The `gather_usage()` method provides a default implementation that returns
+    an empty `Usage`. Subclasses should override this to return their
+    accumulated usage data.
+
+    How to use:
+        For custom components that incur billable costs, inherit from
+        UsageTrackableMixin and override `gather_usage()`:
+
+        ```python
+        class MyPaidService(TraceableMixin, UsageTrackableMixin):
+            def __init__(self):
+                self._usage_records: List[Usage] = []
+
+            def call_api(self, query):
+                result = api.call(query)
+                self._usage_records.append(Usage(
+                    cost=result.cost,
+                    units={"api_calls": 1},
+                ))
+                return result
+
+            def gather_usage(self) -> Usage:
+                return sum(self._usage_records, Usage())
+        ```
+
+        Then register it with your benchmark:
+
+        ```python
+        service = MyPaidService()
+        benchmark.register("tools", "my_service", service)
+        ```
+
+    Thread Safety:
+        Usage collection happens synchronously in the main thread after
+        task execution completes. Components should use thread-safe data
+        structures when accumulating usage during concurrent execution,
+        but `gather_usage()` itself is called sequentially.
+    """
+
+    def gather_usage(self) -> Usage:
+        """Gather accumulated usage from this component.
+
+        Provides a default implementation that returns an empty Usage.
+        Subclasses should override this to return their accumulated
+        usage data.
+
+        Returns:
+            Accumulated usage for this component.
+
+        How to use:
+            Override this method to return your component's usage:
+
+            ```python
+            def gather_usage(self) -> Usage:
+                return sum(self._usage_records, Usage())
+            ```
+        """
+        return Usage()

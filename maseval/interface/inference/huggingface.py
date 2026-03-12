@@ -34,6 +34,7 @@ Note on tool calling:
 from typing import Any, Optional, Dict, List, Callable, Union
 
 from maseval.core.model import ModelAdapter, ChatResponse
+from maseval.core.cost import CostCalculator
 
 
 class ToolCallingNotSupportedError(Exception):
@@ -65,6 +66,7 @@ class HuggingFaceModelAdapter(ModelAdapter):
         model_id: Optional[str] = None,
         default_generation_params: Optional[Dict[str, Any]] = None,
         seed: Optional[int] = None,
+        cost_calculator: Optional[CostCalculator] = None,
     ):
         """Initialize HuggingFace model adapter.
 
@@ -78,8 +80,10 @@ class HuggingFaceModelAdapter(ModelAdapter):
                 Common parameters: max_new_tokens, temperature, top_p, do_sample.
             seed: Seed for deterministic generation. Sets the random seed before
                 each generation call using transformers.set_seed().
+            cost_calculator: Optional cost calculator for computing cost from
+                token counts when the provider doesn't report cost directly.
         """
-        super().__init__(seed=seed)
+        super().__init__(seed=seed, cost_calculator=cost_calculator)
         self._model = model
         self._model_id = model_id or getattr(model, "name_or_path", "huggingface:unknown")
         self._default_generation_params = default_generation_params or {}

@@ -30,13 +30,15 @@ Generic usage record for any billable resource. Stored as a simple dataclass.
 
 ```
 Usage
-  cost: Optional[float]         # Total cost in USD (None = unknown)
-  cost_details: Dict[str, float]  # Breakdown (e.g., {"input": 0.01, "output": 0.03})
-  units: Dict[str, int | float]   # Arbitrary countable units (e.g., {"api_calls": 3, "bytes": 1024})
-  metadata: Dict[str, Any]        # Provider-specific extras
+  cost: Optional[float]            # Total cost in USD (None = unknown)
+  units: Dict[str, int | float]    # Countable units (e.g., {"api_calls": 3, "bytes": 1024})
+  provider: Optional[str]          # e.g., "anthropic", "openai", "bloomberg"
+  category: Optional[str]          # e.g., "models", "evaluator_models", "tools"
+  component_name: Optional[str]    # e.g., "main_model", "judge", "bloomberg_api"
+  kind: Optional[str]              # e.g., "llm", "service", "local"
 ```
 
-Supports `__add__` to sum two records (costs sum if both known, else None; units sum; metadata merges).
+Supports `__add__`: costs sum (if both known, else None), units sum. Grouping fields (`provider`, `category`, `component_name`, `kind`) are preserved when they match, set to `None` on mismatch. `None` means "aggregated over" — e.g., `provider=None, category="models"` represents all models summed across providers. A fully `None` grouping is a grand total.
 
 ### `TokenUsage(Usage)` (LLM-specific)
 
@@ -289,29 +291,82 @@ These already hold a `ModelAdapter`. Their model's usage is collected automatica
 | File | Action | Content |
 |------|--------|---------|
 | `maseval/core/usage.py` | **Create** | `Usage`, `TokenUsage`, `UsageTrackableMixin` |
+| `maseval/core/cost.py` | **Create** | `CostCalculator` protocol, `StaticPricingCalculator` |
 | `maseval/core/registry.py` | **Edit** | Add `_usage_registry`, `_usage_total`, `_usage_by_component`, `collect_usage()`, `total_usage` property |
-| `maseval/core/model.py` | **Edit** | Add `UsageTrackableMixin` to `ModelAdapter`, accumulate `TokenUsage` in `chat()`, implement `gather_usage()` |
+| `maseval/core/model.py` | **Edit** | Add `UsageTrackableMixin` to `ModelAdapter`, accumulate `TokenUsage` in `chat()`, implement `gather_usage()`, accept `cost_calculator` param |
 | `maseval/core/benchmark.py` | **Edit** | Add `collect_all_usage()`, `usage` property, include `"usage"` in report dict |
 | `maseval/core/reporting.py` | **Create** | `UsageReporter` post-hoc analysis utility |
-| `maseval/interface/inference/openai.py` | **Edit** | Enrich `ChatResponse.usage` with `reasoning_tokens`, `cached_input_tokens` |
-| `maseval/interface/inference/anthropic.py` | **Edit** | Enrich with `cached_input_tokens` |
-| `maseval/interface/inference/google_genai.py` | **Edit** | Enrich with `reasoning_tokens` |
-| `maseval/interface/inference/litellm.py` | **Edit** | Enrich with detail tokens + provider-reported `cost` |
-| `maseval/__init__.py` | **Edit** | Export `Usage`, `TokenUsage`, `UsageTrackableMixin`, `UsageReporter` |
-| `tests/test_usage.py` | **Create** | Unit tests for data model, mixin, registry collection, aggregation |
+| `maseval/interface/cost.py` | **Create** | `LiteLLMCostCalculator` (optional `litellm` dependency) |
+| `maseval/interface/inference/openai.py` | **Edit** | Enrich `ChatResponse.usage` with `reasoning_tokens`, `cached_input_tokens`; accept `cost_calculator` |
+| `maseval/interface/inference/anthropic.py` | **Edit** | Enrich with `cached_input_tokens`; accept `cost_calculator` |
+| `maseval/interface/inference/google_genai.py` | **Edit** | Enrich with `reasoning_tokens`; accept `cost_calculator` |
+| `maseval/interface/inference/litellm.py` | **Edit** | Enrich with detail tokens + provider-reported `cost`; accept `cost_calculator` |
+| `maseval/interface/inference/huggingface.py` | **Edit** | Accept `cost_calculator` |
+| `maseval/__init__.py` | **Edit** | Export `Usage`, `TokenUsage`, `UsageTrackableMixin`, `CostCalculator`, `StaticPricingCalculator`, `UsageReporter` |
+| `tests/test_usage.py` | **Create** | Unit tests for data model, mixin, registry collection, aggregation, cost calculators |
 
 No changes to: `evaluator.py`, `user.py`, `agent.py`, `environment.py`, `callback.py`, `tracing.py`, `config.py`.
 
 ---
 
+## Cost Calculation
+
+Most LLM APIs return token counts but **not** cost. Cost calculation is a client-side concern.
+
+### CostCalculator protocol
+
+A `CostCalculator` is a simple protocol with one method:
+
+```python
+class CostCalculator(Protocol):
+    def calculate_cost(self, usage: TokenUsage, model_id: str) -> Optional[float]: ...
+```
+
+`ModelAdapter` accepts an optional `cost_calculator` parameter. After each `chat()` call, if the provider didn't report cost and a calculator is present, the calculator fills in `TokenUsage.cost`. Provider-reported cost always takes precedence.
+
+### Built-in implementations
+
+| Calculator | Location | Dependencies | Use case |
+|-----------|----------|-------------|----------|
+| `StaticPricingCalculator` | `maseval.core.cost` | None | User-supplied per-model rates. Supports custom units (USD, EUR, credits). |
+| `LiteLLMCostCalculator` | `maseval.interface.cost` | `litellm` | Automatic pricing via LiteLLM's bundled model database. Covers OpenAI, Anthropic, Google, Mistral, etc. |
+
+### Cost flow (priority order)
+
+1. **Provider-reported cost** — e.g., LiteLLM's `response._hidden_params.response_cost`. Set directly in `ChatResponse.usage["cost"]`.
+2. **CostCalculator** — if no provider cost, `ModelAdapter.chat()` calls `calculator.calculate_cost(token_usage, model_id)`.
+3. **None** — if neither source provides cost, `Usage.cost` stays `None`.
+
+### Examples
+
+```python
+# Static pricing for a university cluster (credits per token)
+calculator = StaticPricingCalculator({
+    "llama-3-70b": {"input": 0.5, "output": 1.0},
+})
+
+# Automatic pricing via LiteLLM's database
+from maseval.interface.cost import LiteLLMCostCalculator
+calculator = LiteLLMCostCalculator()
+
+# Pass to any model adapter
+model = OpenAIModelAdapter(client=client, model_id="gpt-4", cost_calculator=calculator)
+```
+
+### Non-LLM components
+
+Non-LLM components (tools, environments) set cost directly in their `gather_usage()` implementation — there is no calculator involvement. Each component knows its own billing model.
+
+---
+
 ## Non-goals
 
-- **Hardcoded pricing tables** — prices change too often; user-supplied or provider-reported only.
+- **Hardcoded pricing tables** — prices change too often; delegated to LiteLLM or user-supplied.
 - **Agent-internal model tracking** — models inside agent frameworks (AutoGen, LangGraph internals) are out of scope for now.
 - **Billing integration** — no webhook/billing system integration.
 - **Streaming usage** — not supported yet (usage is captured after completion).
+- **Currency conversion** — `Usage.cost` is a bare float in whatever unit the calculator uses. Mixing units in one benchmark is a user error.
 
 ## Open Questions
 
-1. **Pricing config format**: Should pricing be passed to `ModelAdapter.__init__` as a new param, or set externally after construction? Leaning toward a `pricing` kwarg on adapter init for ergonomics. When `pricing` is provided and a `TokenUsage` record has `cost=None`, cost is computed from `pricing["input"] * input_tokens + pricing["output"] * output_tokens`.
-2. **HuggingFace local inference**: Should we track compute-time as a "cost" proxy for local models? Probably not in v1.
+1. **HuggingFace local inference**: Should we track compute-time as a "cost" proxy for local models? Probably not in v1.

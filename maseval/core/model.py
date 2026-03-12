@@ -55,6 +55,8 @@ import time
 
 from .tracing import TraceableMixin
 from .config import ConfigurableMixin
+from .usage import Usage, TokenUsage, UsageTrackableMixin
+from .cost import CostCalculator
 from .history import MessageHistory
 
 
@@ -133,7 +135,7 @@ class ChatResponse:
         return msg
 
 
-class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
+class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
     """Abstract base class for model adapters.
 
     ModelAdapter provides a consistent interface for LLM inference across
@@ -169,17 +171,24 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
         adapter's seed parameter.
     """
 
-    def __init__(self, seed: Optional[int] = None):
+    def __init__(self, seed: Optional[int] = None, cost_calculator: Optional[CostCalculator] = None):
         """Initialize the model adapter with call tracing.
 
         Args:
             seed: Seed for deterministic generation. Passed to the underlying
                 provider API if supported. If the provider doesn't support
                 seeding, subclasses should raise SeedingError.
+            cost_calculator: Optional cost calculator for computing USD (or
+                other unit) cost from token counts. If provided and the
+                provider does not report cost directly, the calculator is
+                used to fill in ``Usage.cost`` after each call. Provider-
+                reported cost always takes precedence.
         """
         super().__init__()
         self._seed = seed
+        self._cost_calculator = cost_calculator
         self.logs: List[Dict[str, Any]] = []
+        self._usage_records: List[Usage] = []
 
     @property
     def seed(self) -> Optional[int]:
@@ -298,6 +307,17 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
                 }
             )
 
+            # Record token usage if available
+            if result.usage:
+                cost = result.usage.get("cost") if isinstance(result.usage.get("cost"), (int, float)) else None
+                token_usage = TokenUsage.from_chat_response_usage(result.usage, cost=cost, kind="llm")
+
+                # If no provider-reported cost, try the cost calculator
+                if token_usage.cost is None and self._cost_calculator is not None:
+                    token_usage.cost = self._cost_calculator.calculate_cost(token_usage, self.model_id)
+
+                self._usage_records.append(token_usage)
+
             return result
 
         except Exception as e:
@@ -375,6 +395,16 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
         response = self.chat(messages, generation_params=generation_params, **kwargs)
         return response.content or ""
 
+    def gather_usage(self) -> Usage:
+        """Gather accumulated token usage from all chat calls.
+
+        Returns:
+            Summed TokenUsage across all calls, or empty Usage if no calls were made.
+        """
+        if not self._usage_records:
+            return Usage()
+        return sum(self._usage_records, Usage())
+
     def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces from this model adapter.
 
@@ -431,9 +461,13 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin):
         Returns:
             Dictionary containing model configuration.
         """
-        return {
+        config = {
             **super().gather_config(),
             "model_id": self.model_id,
             "adapter_type": type(self).__name__,
             "seed": self._seed,
         }
+        if self._cost_calculator is not None:
+            gather = getattr(self._cost_calculator, "gather_config", None)
+            config["cost_calculator"] = gather() if callable(gather) else type(self._cost_calculator).__name__
+        return config
