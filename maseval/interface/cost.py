@@ -46,7 +46,11 @@ class LiteLLMCostCalculator:
         ```
     """
 
-    def __init__(self, custom_pricing: Optional[Dict[str, Dict[str, float]]] = None):
+    def __init__(
+        self,
+        custom_pricing: Optional[Dict[str, Dict[str, float]]] = None,
+        model_id_map: Optional[Dict[str, str]] = None,
+    ):
         """Initialize the LiteLLM cost calculator.
 
         Args:
@@ -54,6 +58,18 @@ class LiteLLMCostCalculator:
                 model IDs, values are dicts with ``"input_cost_per_token"``
                 and ``"output_cost_per_token"``. These take precedence over
                 LiteLLM's built-in pricing.
+            model_id_map: Optional mapping from adapter model IDs to LiteLLM
+                model IDs. Use this when your adapter's ``model_id`` doesn't
+                match LiteLLM's naming convention — e.g., when using Google's
+                OpenAI-compatible endpoint where the adapter sees
+                ``"gemini-2.0-flash"`` but LiteLLM expects
+                ``"gemini/gemini-2.0-flash"``.
+
+                Example::
+
+                    LiteLLMCostCalculator(model_id_map={
+                        "gemini-2.0-flash": "gemini/gemini-2.0-flash",
+                    })
         """
         try:
             import litellm  # noqa: F401
