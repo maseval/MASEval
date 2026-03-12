@@ -44,7 +44,7 @@ Example:
 from typing import Any, Optional, Dict, List, Union
 
 from maseval.core.model import ModelAdapter, ChatResponse
-from maseval.core.cost import CostCalculator
+from maseval.core.usage import CostCalculator
 
 
 class LiteLLMModelAdapter(ModelAdapter):

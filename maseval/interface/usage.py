@@ -1,4 +1,4 @@
-"""Cost calculators that depend on optional third-party packages.
+"""Usage and cost utilities that depend on optional third-party packages.
 
 This module provides ``LiteLLMCostCalculator``, which uses LiteLLM's
 bundled model pricing database to compute cost from token counts.
@@ -10,8 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from maseval.core.cost import CostCalculator  # noqa: F401 — re-export protocol
-from maseval.core.usage import TokenUsage
+from maseval.core.usage import CostCalculator, TokenUsage  # noqa: F401 — re-export protocol
 
 
 class LiteLLMCostCalculator:
@@ -34,7 +33,7 @@ class LiteLLMCostCalculator:
 
     Example:
         ```python
-        from maseval.interface.cost import LiteLLMCostCalculator
+        from maseval.interface.usage import LiteLLMCostCalculator
         from maseval.interface.inference import OpenAIModelAdapter
 
         calculator = LiteLLMCostCalculator()
@@ -77,18 +76,24 @@ class LiteLLMCostCalculator:
             raise ImportError("LiteLLMCostCalculator requires litellm. Install it with: pip install litellm") from e
 
         self._custom_pricing = custom_pricing or {}
+        self._model_id_map = model_id_map or {}
 
     def calculate_cost(self, usage: TokenUsage, model_id: str) -> Optional[float]:
         """Compute cost using LiteLLM's pricing database.
 
         Args:
             usage: Token usage from the call.
-            model_id: The model identifier (must match LiteLLM's naming).
+            model_id: The model identifier. Remapped via ``model_id_map``
+                if configured, then looked up in custom pricing and
+                LiteLLM's database.
 
         Returns:
             Cost in USD, or ``None`` if LiteLLM doesn't have pricing for
             this model and no custom pricing was provided.
         """
+        # Remap model ID if configured
+        model_id = self._model_id_map.get(model_id, model_id)
+
         # Check custom overrides first
         if model_id in self._custom_pricing:
             rates = self._custom_pricing[model_id]
@@ -115,4 +120,5 @@ class LiteLLMCostCalculator:
         return {
             "type": type(self).__name__,
             "custom_pricing": dict(self._custom_pricing) if self._custom_pricing else None,
+            "model_id_map": dict(self._model_id_map) if self._model_id_map else None,
         }

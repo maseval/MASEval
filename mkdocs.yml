@@ -95,6 +95,7 @@ nav:
       - Configuration Gathering: guides/config-gathering.md
       - Exception Handling: guides/exception-handling.md
       - Seeding: guides/seeding.md
+      - Usage & Cost Tracking: guides/usage-tracking.md
   - Examples:
       - examples/index.md
       - Tiny Tutorial: examples/tutorial.ipynb
@@ -113,6 +114,7 @@ nav:
           - Seeding: reference/seeding.md
           - Simulator: reference/simulator.md
           - Tasks: reference/task.md
+          - Usage & Cost: reference/usage.md
           - User: reference/user.md
           - Utilities: reference/utilities.md
       - Interface:
