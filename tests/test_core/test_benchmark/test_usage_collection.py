@@ -6,7 +6,6 @@ model adapters and includes it in report dicts.
 
 import pytest
 from maseval import TaskQueue
-from maseval.core.usage import StaticPricingCalculator
 
 
 @pytest.mark.core
@@ -71,10 +70,12 @@ class TestBenchmarkUsageCollection:
         """Benchmark.usage accumulates across multiple tasks."""
         from conftest import DummyBenchmark
 
-        tasks = TaskQueue.from_list([
-            {"query": "Task 1", "environment_data": {}},
-            {"query": "Task 2", "environment_data": {}},
-        ])
+        tasks = TaskQueue.from_list(
+            [
+                {"query": "Task 1", "environment_data": {}},
+                {"query": "Task 2", "environment_data": {}},
+            ]
+        )
         benchmark = DummyBenchmark()
         benchmark.run(tasks, agent_data={"model": "test"})
 

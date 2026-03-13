@@ -31,9 +31,7 @@ class TestTokenUsageConstruction:
 
     def test_from_chat_response_basic(self):
         """Minimal usage dict maps to the right fields."""
-        tu = TokenUsage.from_chat_response_usage(
-            {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
-        )
+        tu = TokenUsage.from_chat_response_usage({"input_tokens": 100, "output_tokens": 50, "total_tokens": 150})
         assert tu.input_tokens == 100
         assert tu.output_tokens == 50
         assert tu.total_tokens == 150
@@ -158,6 +156,7 @@ class TestTokenUsageArithmetic:
 
         assert total.cost is None
         # Token fields still sum correctly
+        assert isinstance(total, TokenUsage)
         assert total.input_tokens == 300
         assert total.output_tokens == 80
 
@@ -206,9 +205,11 @@ class TestStaticPricingCalculator:
         50 output * $0.02 = $1.00
         Total = $2.00
         """
-        calc = StaticPricingCalculator({
-            "test-model": {"input": 0.01, "output": 0.02},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "test-model": {"input": 0.01, "output": 0.02},
+            }
+        )
         usage = TokenUsage(input_tokens=100, output_tokens=50, total_tokens=150)
         cost = calc.calculate_cost(usage, "test-model")
 
@@ -223,13 +224,15 @@ class TestStaticPricingCalculator:
         Output: 100 * $0.015 = $1.50
         Total = $2.34
         """
-        calc = StaticPricingCalculator({
-            "claude-sonnet-4-5": {
-                "input": 0.003,
-                "output": 0.015,
-                "cached_input": 0.0003,
-            },
-        })
+        calc = StaticPricingCalculator(
+            {
+                "claude-sonnet-4-5": {
+                    "input": 0.003,
+                    "output": 0.015,
+                    "cached_input": 0.0003,
+                },
+            }
+        )
         usage = TokenUsage(input_tokens=1000, output_tokens=100, total_tokens=1100, cached_input_tokens=800)
         cost = calc.calculate_cost(usage, "claude-sonnet-4-5")
 
@@ -245,14 +248,16 @@ class TestStaticPricingCalculator:
         Output: 100 * $0.015 = $1.50
         Total = $3.03
         """
-        calc = StaticPricingCalculator({
-            "claude-sonnet-4-5": {
-                "input": 0.003,
-                "output": 0.015,
-                "cached_input": 0.0003,
-                "cache_creation_input": 0.00375,
-            },
-        })
+        calc = StaticPricingCalculator(
+            {
+                "claude-sonnet-4-5": {
+                    "input": 0.003,
+                    "output": 0.015,
+                    "cached_input": 0.0003,
+                    "cache_creation_input": 0.00375,
+                },
+            }
+        )
         usage = TokenUsage(
             input_tokens=1000,
             output_tokens=100,
@@ -273,9 +278,11 @@ class TestStaticPricingCalculator:
         Output: 100 * $0.015 = $1.50
         Total = $4.50
         """
-        calc = StaticPricingCalculator({
-            "claude-sonnet-4-5": {"input": 0.003, "output": 0.015},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "claude-sonnet-4-5": {"input": 0.003, "output": 0.015},
+            }
+        )
         usage = TokenUsage(
             input_tokens=1000,
             output_tokens=100,
@@ -307,9 +314,11 @@ class TestStaticPricingCalculator:
         200 output * $0.000015 = $0.003
         Total = $0.0045
         """
-        calc = StaticPricingCalculator({
-            "claude-sonnet-4-5": {"input": 3e-6, "output": 15e-6},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "claude-sonnet-4-5": {"input": 3e-6, "output": 15e-6},
+            }
+        )
         usage = TokenUsage(input_tokens=500, output_tokens=200, total_tokens=700)
         cost = calc.calculate_cost(usage, "claude-sonnet-4-5")
 
@@ -322,9 +331,11 @@ class TestStaticPricingCalculator:
         500 output * $0.000010 = $0.005
         Total = $0.0075
         """
-        calc = StaticPricingCalculator({
-            "gpt-4o": {"input": 2.5e-6, "output": 10e-6},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "gpt-4o": {"input": 2.5e-6, "output": 10e-6},
+            }
+        )
         usage = TokenUsage(input_tokens=1000, output_tokens=500, total_tokens=1500)
         cost = calc.calculate_cost(usage, "gpt-4o")
 
@@ -341,7 +352,7 @@ class TestLiteLLMCostCalculator:
 
     def test_passes_cache_tokens_to_cost_per_token(self):
         """Verify cache_read and cache_creation tokens are forwarded."""
-        litellm = pytest.importorskip("litellm")
+        pytest.importorskip("litellm")
         from unittest.mock import patch
         from maseval.interface.usage import LiteLLMCostCalculator
 
@@ -372,9 +383,11 @@ class TestLiteLLMCostCalculator:
         from unittest.mock import patch
         from maseval.interface.usage import LiteLLMCostCalculator
 
-        calc = LiteLLMCostCalculator(model_id_map={
-            "gemini-2.0-flash": "gemini/gemini-2.0-flash",
-        })
+        calc = LiteLLMCostCalculator(
+            model_id_map={
+                "gemini-2.0-flash": "gemini/gemini-2.0-flash",
+            }
+        )
         usage = TokenUsage(input_tokens=100, output_tokens=50, total_tokens=150)
 
         with patch("litellm.cost_per_token", return_value=(0.001, 0.002)) as mock_cpt:
@@ -394,12 +407,14 @@ class TestLiteLLMCostCalculator:
         from unittest.mock import patch
         from maseval.interface.usage import LiteLLMCostCalculator
 
-        calc = LiteLLMCostCalculator(custom_pricing={
-            "my-model": {
-                "input_cost_per_token": 0.0001,
-                "output_cost_per_token": 0.0002,
-            },
-        })
+        calc = LiteLLMCostCalculator(
+            custom_pricing={
+                "my-model": {
+                    "input_cost_per_token": 0.0001,
+                    "output_cost_per_token": 0.0002,
+                },
+            }
+        )
         usage = TokenUsage(input_tokens=100, output_tokens=50, total_tokens=150)
 
         with patch("litellm.cost_per_token") as mock_cpt:
@@ -444,9 +459,11 @@ class TestFullPipeline:
         """
         from tests.conftest import DummyModelAdapter
 
-        calc = StaticPricingCalculator({
-            "test-model": {"input": 0.01, "output": 0.02},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "test-model": {"input": 0.01, "output": 0.02},
+            }
+        )
         adapter = DummyModelAdapter(
             model_id="test-model",
             usage={"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
@@ -470,9 +487,11 @@ class TestFullPipeline:
         """
         from tests.conftest import DummyModelAdapter
 
-        calc = StaticPricingCalculator({
-            "test-model": {"input": 0.01, "output": 0.02},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "test-model": {"input": 0.01, "output": 0.02},
+            }
+        )
         adapter = DummyModelAdapter(
             model_id="test-model",
             usage={"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
@@ -483,6 +502,7 @@ class TestFullPipeline:
         adapter.chat([{"role": "user", "content": "World"}])
         total = adapter.gather_usage()
 
+        assert isinstance(total, TokenUsage)
         assert total.input_tokens == 200
         assert total.output_tokens == 100
         assert total.cost == pytest.approx(4.00)
@@ -496,9 +516,11 @@ class TestFullPipeline:
         """
         from tests.conftest import DummyModelAdapter
 
-        calc = StaticPricingCalculator({
-            "test-model": {"input": 0.01, "output": 0.02},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "test-model": {"input": 0.01, "output": 0.02},
+            }
+        )
         adapter = DummyModelAdapter(
             model_id="test-model",
             usage={"input_tokens": 100, "output_tokens": 50, "total_tokens": 150, "cost": 0.99},
@@ -522,6 +544,7 @@ class TestFullPipeline:
         adapter.chat([{"role": "user", "content": "Hello"}])
         total = adapter.gather_usage()
 
+        assert isinstance(total, TokenUsage)
         assert total.input_tokens == 100
         assert total.cost is None
 
@@ -536,13 +559,15 @@ class TestFullPipeline:
         """
         from tests.conftest import DummyModelAdapter
 
-        calc = StaticPricingCalculator({
-            "claude-sonnet-4-5": {
-                "input": 0.003,
-                "output": 0.015,
-                "cached_input": 0.0003,
-            },
-        })
+        calc = StaticPricingCalculator(
+            {
+                "claude-sonnet-4-5": {
+                    "input": 0.003,
+                    "output": 0.015,
+                    "cached_input": 0.0003,
+                },
+            }
+        )
         adapter = DummyModelAdapter(
             model_id="claude-sonnet-4-5",
             usage={
@@ -557,6 +582,7 @@ class TestFullPipeline:
         adapter.chat([{"role": "user", "content": "Hello"}])
         total = adapter.gather_usage()
 
+        assert isinstance(total, TokenUsage)
         assert total.cached_input_tokens == 800
         assert total.cost == pytest.approx(2.34)
 
@@ -625,6 +651,7 @@ class TestUsageReporter:
         reporter = UsageReporter.from_reports(sample_reports)
         total = reporter.total()
 
+        assert isinstance(total, TokenUsage)
         assert total.cost == pytest.approx(0.30)
         assert total.input_tokens == 300
         assert total.output_tokens == 150
@@ -635,8 +662,10 @@ class TestUsageReporter:
         by_task = reporter.by_task()
 
         assert len(by_task) == 2
+        assert isinstance(by_task["task_1"], TokenUsage)
         assert by_task["task_1"].cost == pytest.approx(0.10)
         assert by_task["task_1"].input_tokens == 100
+        assert isinstance(by_task["task_2"], TokenUsage)
         assert by_task["task_2"].cost == pytest.approx(0.20)
         assert by_task["task_2"].input_tokens == 200
 
@@ -646,8 +675,10 @@ class TestUsageReporter:
 
         assert len(by_comp) == 1
         assert "models:main_model" in by_comp
-        assert by_comp["models:main_model"].cost == pytest.approx(0.30)
-        assert by_comp["models:main_model"].input_tokens == 300
+        total = by_comp["models:main_model"]
+        assert isinstance(total, TokenUsage)
+        assert total.cost == pytest.approx(0.30)
+        assert total.input_tokens == 300
 
     def test_summary_structure(self, sample_reports):
         reporter = UsageReporter.from_reports(sample_reports)
@@ -734,6 +765,7 @@ class TestUsageReporter:
         by_task = reporter.by_task()
 
         assert len(by_task) == 1
+        assert isinstance(by_task["task_1"], TokenUsage)
         assert by_task["task_1"].cost == pytest.approx(0.30)
         assert by_task["task_1"].input_tokens == 300
 
@@ -796,6 +828,7 @@ class TestUsageReporter:
         total = reporter.total()
 
         # Only the model's cost, metadata should not contribute
+        assert isinstance(total, TokenUsage)
         assert total.cost == pytest.approx(0.10)
         assert total.input_tokens == 50
 
@@ -833,6 +866,7 @@ class TestUsageReporter:
         reporter = UsageReporter.from_reports(reports)
         total = reporter.total()
 
+        assert isinstance(total, TokenUsage)
         assert total.cost == pytest.approx(0.10)
         assert total.input_tokens == 100
 
@@ -894,10 +928,12 @@ class TestStaticPricingCalculatorUtilities:
         assert cost == pytest.approx(2.00)
 
     def test_models_property(self):
-        calc = StaticPricingCalculator({
-            "model-a": {"input": 0.01, "output": 0.02},
-            "model-b": {"input": 0.001, "output": 0.002},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "model-a": {"input": 0.01, "output": 0.02},
+                "model-b": {"input": 0.001, "output": 0.002},
+            }
+        )
         assert sorted(calc.models) == ["model-a", "model-b"]
 
     def test_gather_config(self):

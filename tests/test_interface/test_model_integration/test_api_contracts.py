@@ -680,14 +680,13 @@ class TestOpenAIUsageExtraction:
         from openai import OpenAI
         from maseval.interface.inference.openai import OpenAIModelAdapter
 
-        respx.post("https://api.openai.com/v1/chat/completions").respond(
-            200, json=OPENAI_USAGE_RICH_RESPONSE
-        )
+        respx.post("https://api.openai.com/v1/chat/completions").respond(200, json=OPENAI_USAGE_RICH_RESPONSE)
 
         client = OpenAI(api_key="test-key-not-real")
         adapter = OpenAIModelAdapter(client=client, model_id="gpt-4o")
         response = adapter.chat([{"role": "user", "content": "Hello"}])
 
+        assert response.usage is not None
         assert response.usage["input_tokens"] == 500
         assert response.usage["output_tokens"] == 200
         assert response.usage["total_tokens"] == 700
@@ -709,22 +708,20 @@ class TestOpenAIUsageExtraction:
         from maseval.interface.inference.openai import OpenAIModelAdapter
         from maseval.core.usage import StaticPricingCalculator, TokenUsage
 
-        respx.post("https://api.openai.com/v1/chat/completions").respond(
-            200, json=OPENAI_USAGE_RICH_RESPONSE
-        )
+        respx.post("https://api.openai.com/v1/chat/completions").respond(200, json=OPENAI_USAGE_RICH_RESPONSE)
 
-        calc = StaticPricingCalculator({
-            "gpt-4o": {
-                "input": 2.5e-6,
-                "output": 10e-6,
-                "cached_input": 1.25e-6,
-            },
-        })
+        calc = StaticPricingCalculator(
+            {
+                "gpt-4o": {
+                    "input": 2.5e-6,
+                    "output": 10e-6,
+                    "cached_input": 1.25e-6,
+                },
+            }
+        )
 
         client = OpenAI(api_key="test-key-not-real")
-        adapter = OpenAIModelAdapter(
-            client=client, model_id="gpt-4o", cost_calculator=calc
-        )
+        adapter = OpenAIModelAdapter(client=client, model_id="gpt-4o", cost_calculator=calc)
         adapter.chat([{"role": "user", "content": "Hello"}])
         total = adapter.gather_usage()
 
@@ -745,16 +742,13 @@ class TestAnthropicUsageExtraction:
         from anthropic import Anthropic
         from maseval.interface.inference.anthropic import AnthropicModelAdapter
 
-        respx.post("https://api.anthropic.com/v1/messages").respond(
-            200, json=ANTHROPIC_USAGE_RICH_RESPONSE
-        )
+        respx.post("https://api.anthropic.com/v1/messages").respond(200, json=ANTHROPIC_USAGE_RICH_RESPONSE)
 
         client = Anthropic(api_key="test-key-not-real")
-        adapter = AnthropicModelAdapter(
-            client=client, model_id="claude-sonnet-4-5-20250514"
-        )
+        adapter = AnthropicModelAdapter(client=client, model_id="claude-sonnet-4-5-20250514")
         response = adapter.chat([{"role": "user", "content": "Hello"}])
 
+        assert response.usage is not None
         assert response.usage["input_tokens"] == 1000
         assert response.usage["output_tokens"] == 200
         assert response.usage["total_tokens"] == 1200  # computed by adapter
@@ -777,18 +771,18 @@ class TestAnthropicUsageExtraction:
         from maseval.interface.inference.anthropic import AnthropicModelAdapter
         from maseval.core.usage import StaticPricingCalculator, TokenUsage
 
-        respx.post("https://api.anthropic.com/v1/messages").respond(
-            200, json=ANTHROPIC_USAGE_RICH_RESPONSE
-        )
+        respx.post("https://api.anthropic.com/v1/messages").respond(200, json=ANTHROPIC_USAGE_RICH_RESPONSE)
 
-        calc = StaticPricingCalculator({
-            "claude-sonnet-4-5-20250514": {
-                "input": 3e-6,
-                "output": 15e-6,
-                "cached_input": 0.3e-6,
-                "cache_creation_input": 3.75e-6,
-            },
-        })
+        calc = StaticPricingCalculator(
+            {
+                "claude-sonnet-4-5-20250514": {
+                    "input": 3e-6,
+                    "output": 15e-6,
+                    "cached_input": 0.3e-6,
+                    "cache_creation_input": 3.75e-6,
+                },
+            }
+        )
 
         client = Anthropic(api_key="test-key-not-real")
         adapter = AnthropicModelAdapter(
@@ -824,11 +818,10 @@ class TestGoogleGenAIUsageExtraction:
             api_key="test-key-not-real",
             http_options={"api_version": "v1beta"},
         )
-        adapter = GoogleGenAIModelAdapter(
-            client=client, model_id="gemini-2.0-flash-thinking"
-        )
+        adapter = GoogleGenAIModelAdapter(client=client, model_id="gemini-2.0-flash-thinking")
         response = adapter.chat([{"role": "user", "content": "Hello"}])
 
+        assert response.usage is not None
         assert response.usage["input_tokens"] == 500
         assert response.usage["output_tokens"] == 200
         assert response.usage["total_tokens"] == 700
@@ -852,12 +845,14 @@ class TestGoogleGenAIUsageExtraction:
             url__regex=r".*generativelanguage\.googleapis\.com.*models.*generateContent.*",
         ).respond(200, json=GOOGLE_USAGE_RICH_RESPONSE)
 
-        calc = StaticPricingCalculator({
-            "gemini-2.0-flash-thinking": {
-                "input": 0.075e-6,
-                "output": 0.3e-6,
-            },
-        })
+        calc = StaticPricingCalculator(
+            {
+                "gemini-2.0-flash-thinking": {
+                    "input": 0.075e-6,
+                    "output": 0.3e-6,
+                },
+            }
+        )
 
         client = genai.Client(
             api_key="test-key-not-real",
@@ -913,6 +908,7 @@ class TestLiteLLMUsageExtraction:
             adapter = LiteLLMModelAdapter(model_id="claude-sonnet-4-5-20250514")
             response = adapter.chat([{"role": "user", "content": "Hello"}])
 
+        assert response.usage is not None
         assert response.usage["input_tokens"] == 800
         assert response.usage["output_tokens"] == 150
         assert response.usage["total_tokens"] == 950
@@ -948,14 +944,14 @@ class TestLiteLLMUsageExtraction:
         mock_response._hidden_params = {"response_cost": 0.0042}
 
         # Calculator would compute a different cost — provider should win
-        calc = StaticPricingCalculator({
-            "gpt-4o": {"input": 0.01, "output": 0.02},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "gpt-4o": {"input": 0.01, "output": 0.02},
+            }
+        )
 
         with patch("litellm.completion", return_value=mock_response):
-            adapter = LiteLLMModelAdapter(
-                model_id="gpt-4o", cost_calculator=calc
-            )
+            adapter = LiteLLMModelAdapter(model_id="gpt-4o", cost_calculator=calc)
             adapter.chat([{"role": "user", "content": "Hello"}])
             total = adapter.gather_usage()
 
@@ -989,14 +985,14 @@ class TestLiteLLMUsageExtraction:
         mock_response.usage = mock_usage
         mock_response._hidden_params = {}
 
-        calc = StaticPricingCalculator({
-            "gpt-4o": {"input": 0.01, "output": 0.02},
-        })
+        calc = StaticPricingCalculator(
+            {
+                "gpt-4o": {"input": 0.01, "output": 0.02},
+            }
+        )
 
         with patch("litellm.completion", return_value=mock_response):
-            adapter = LiteLLMModelAdapter(
-                model_id="gpt-4o", cost_calculator=calc
-            )
+            adapter = LiteLLMModelAdapter(model_id="gpt-4o", cost_calculator=calc)
             adapter.chat([{"role": "user", "content": "Hello"}])
             total = adapter.gather_usage()
 

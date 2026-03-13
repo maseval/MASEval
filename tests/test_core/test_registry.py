@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 from maseval.core.registry import ComponentRegistry
 from maseval.core.tracing import TraceableMixin
 from maseval.core.config import ConfigurableMixin
+from maseval.core.usage import UsageTrackableMixin
 
 
 # ==================== Test Components ====================
@@ -276,6 +277,7 @@ class MockUsageComponent(TraceableMixin):
 
     def gather_usage(self):
         from maseval.core.usage import TokenUsage
+
         return TokenUsage(
             cost=self._cost,
             input_tokens=self._input_tokens,
@@ -297,10 +299,6 @@ class MockBrokenUsageComponent(TraceableMixin):
         raise RuntimeError("Usage collection failed")
 
 
-# Ensure MockUsageComponent also inherits UsageTrackableMixin
-from maseval.core.usage import UsageTrackableMixin
-
-
 class UsageAwareComponent(TraceableMixin, UsageTrackableMixin):
     """Component with both tracing and usage tracking."""
 
@@ -315,6 +313,7 @@ class UsageAwareComponent(TraceableMixin, UsageTrackableMixin):
 
     def gather_usage(self):
         from maseval.core.usage import TokenUsage
+
         return TokenUsage(
             cost=self._cost,
             input_tokens=self._input_tokens,
@@ -362,7 +361,6 @@ class TestRegistryUsageCollection:
 
     def test_collect_usage_basic(self):
         """collect_usage returns structured dict with usage from registered components."""
-        from maseval.core.usage import TokenUsage
 
         registry = ComponentRegistry()
         model = UsageAwareComponent(cost=0.10, input_tokens=500, output_tokens=200)
@@ -445,7 +443,10 @@ class TestRegistryUsageCollection:
         by_comp = registry.usage_by_component
         assert "models:main_model" in by_comp
 
+        from maseval.core.usage import TokenUsage
+
         total = by_comp["models:main_model"]
+        assert isinstance(total, TokenUsage)
         assert total.input_tokens == 300
         assert total.output_tokens == 150
         assert total.cost == pytest.approx(0.30)

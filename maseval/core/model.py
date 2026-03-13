@@ -100,7 +100,7 @@ class ChatResponse:
     content: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
     role: str = "assistant"
-    usage: Optional[Dict[str, int]] = None
+    usage: Optional[Dict[str, Any]] = None
     model: Optional[str] = None
     stop_reason: Optional[str] = None
 
