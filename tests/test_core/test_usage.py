@@ -679,3 +679,231 @@ class TestUsageReporter:
         total = reporter.total()
         assert total.cost is None
         assert isinstance(total, Usage)
+
+    def test_by_task_accumulates_repeats(self):
+        """by_task sums usage when a task_id appears in multiple reports."""
+        reports = [
+            {
+                "task_id": "task_1",
+                "repeat_idx": 0,
+                "usage": {
+                    "models": {
+                        "m": {
+                            "cost": 0.10,
+                            "input_tokens": 100,
+                            "output_tokens": 50,
+                            "total_tokens": 150,
+                            "cached_input_tokens": 0,
+                            "cache_creation_input_tokens": 0,
+                            "reasoning_tokens": 0,
+                            "audio_tokens": 0,
+                            "units": {},
+                            "provider": None,
+                            "category": "models",
+                            "component_name": "m",
+                            "kind": "llm",
+                        }
+                    }
+                },
+            },
+            {
+                "task_id": "task_1",
+                "repeat_idx": 1,
+                "usage": {
+                    "models": {
+                        "m": {
+                            "cost": 0.20,
+                            "input_tokens": 200,
+                            "output_tokens": 100,
+                            "total_tokens": 300,
+                            "cached_input_tokens": 0,
+                            "cache_creation_input_tokens": 0,
+                            "reasoning_tokens": 0,
+                            "audio_tokens": 0,
+                            "units": {},
+                            "provider": None,
+                            "category": "models",
+                            "component_name": "m",
+                            "kind": "llm",
+                        }
+                    }
+                },
+            },
+        ]
+        reporter = UsageReporter.from_reports(reports)
+        by_task = reporter.by_task()
+
+        assert len(by_task) == 1
+        assert by_task["task_1"].cost == pytest.approx(0.30)
+        assert by_task["task_1"].input_tokens == 300
+
+    def test_plain_usage_fallback(self):
+        """_usage_from_dict returns plain Usage when no token fields present."""
+        reports = [
+            {
+                "task_id": "task_1",
+                "repeat_idx": 0,
+                "usage": {
+                    "tools": {
+                        "my_tool": {
+                            "cost": 0.05,
+                            "units": {"api_calls": 3},
+                            "provider": None,
+                            "category": "tools",
+                            "component_name": "my_tool",
+                            "kind": "tool",
+                        }
+                    }
+                },
+            },
+        ]
+        reporter = UsageReporter.from_reports(reports)
+        total = reporter.total()
+
+        assert total.cost == pytest.approx(0.05)
+        assert isinstance(total, Usage)
+        assert not isinstance(total, TokenUsage)
+
+    def test_metadata_key_skipped(self):
+        """The 'metadata' key in usage dicts is not treated as a component."""
+        reports = [
+            {
+                "task_id": "task_1",
+                "repeat_idx": 0,
+                "usage": {
+                    "metadata": {"timestamp": "2025-01-01", "total_components": 1},
+                    "models": {
+                        "m": {
+                            "cost": 0.10,
+                            "input_tokens": 50,
+                            "output_tokens": 25,
+                            "total_tokens": 75,
+                            "cached_input_tokens": 0,
+                            "cache_creation_input_tokens": 0,
+                            "reasoning_tokens": 0,
+                            "audio_tokens": 0,
+                            "units": {},
+                            "provider": None,
+                            "category": "models",
+                            "component_name": "m",
+                            "kind": "llm",
+                        }
+                    },
+                },
+            },
+        ]
+        reporter = UsageReporter.from_reports(reports)
+        total = reporter.total()
+
+        # Only the model's cost, metadata should not contribute
+        assert total.cost == pytest.approx(0.10)
+        assert total.input_tokens == 50
+
+    def test_skips_component_with_error(self):
+        """Components with error dicts are skipped, others still counted."""
+        reports = [
+            {
+                "task_id": "task_1",
+                "repeat_idx": 0,
+                "usage": {
+                    "models": {
+                        "good_model": {
+                            "cost": 0.10,
+                            "input_tokens": 100,
+                            "output_tokens": 50,
+                            "total_tokens": 150,
+                            "cached_input_tokens": 0,
+                            "cache_creation_input_tokens": 0,
+                            "reasoning_tokens": 0,
+                            "audio_tokens": 0,
+                            "units": {},
+                            "provider": None,
+                            "category": "models",
+                            "component_name": "good_model",
+                            "kind": "llm",
+                        },
+                        "bad_model": {
+                            "error": "Failed to gather usage",
+                            "error_type": "RuntimeError",
+                        },
+                    }
+                },
+            },
+        ]
+        reporter = UsageReporter.from_reports(reports)
+        total = reporter.total()
+
+        assert total.cost == pytest.approx(0.10)
+        assert total.input_tokens == 100
+
+    def test_environment_direct_usage(self):
+        """Environment/user usage (direct dicts with 'cost') are parsed."""
+        reports = [
+            {
+                "task_id": "task_1",
+                "repeat_idx": 0,
+                "usage": {
+                    "environment": {
+                        "cost": 0.05,
+                        "units": {"steps": 10},
+                        "provider": None,
+                        "category": "environment",
+                        "component_name": "env",
+                        "kind": "env",
+                    },
+                    "models": {
+                        "m": {
+                            "cost": 0.10,
+                            "input_tokens": 100,
+                            "output_tokens": 50,
+                            "total_tokens": 150,
+                            "cached_input_tokens": 0,
+                            "cache_creation_input_tokens": 0,
+                            "reasoning_tokens": 0,
+                            "audio_tokens": 0,
+                            "units": {},
+                            "provider": None,
+                            "category": "models",
+                            "component_name": "m",
+                            "kind": "llm",
+                        }
+                    },
+                },
+            },
+        ]
+        reporter = UsageReporter.from_reports(reports)
+        total = reporter.total()
+
+        assert total.cost == pytest.approx(0.15)
+
+
+# =============================================================================
+# StaticPricingCalculator — Utility Methods
+# =============================================================================
+
+
+class TestStaticPricingCalculatorUtilities:
+    """Tests for add_model, models property, and gather_config."""
+
+    def test_add_model(self):
+        calc = StaticPricingCalculator({})
+        calc.add_model("new-model", {"input": 0.01, "output": 0.02})
+
+        usage = TokenUsage(input_tokens=100, output_tokens=50, total_tokens=150)
+        cost = calc.calculate_cost(usage, "new-model")
+        assert cost == pytest.approx(2.00)
+
+    def test_models_property(self):
+        calc = StaticPricingCalculator({
+            "model-a": {"input": 0.01, "output": 0.02},
+            "model-b": {"input": 0.001, "output": 0.002},
+        })
+        assert sorted(calc.models) == ["model-a", "model-b"]
+
+    def test_gather_config(self):
+        pricing = {"model-a": {"input": 0.01, "output": 0.02}}
+        calc = StaticPricingCalculator(pricing)
+        config = calc.gather_config()
+
+        assert config["type"] == "StaticPricingCalculator"
+        assert config["pricing"] == pricing
