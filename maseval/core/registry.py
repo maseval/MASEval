@@ -319,9 +319,14 @@ class ComponentRegistry:
                         usage[category] = {}
                     usage[category][comp_name] = usage_dict
 
-                # Accumulate into persistent aggregates (thread-safe)
+                # Accumulate into persistent aggregates (thread-safe).
+                # _usage_total starts as Usage(cost=None); adding to it would
+                # poison the cost (None + X = None).  Assign directly on first use.
                 with self._usage_lock:
-                    self._usage_total = self._usage_total + component_usage
+                    if self._usage_total.cost is None and not self._usage_total.units:
+                        self._usage_total = component_usage
+                    else:
+                        self._usage_total = self._usage_total + component_usage
                     if key in self._usage_by_component:
                         self._usage_by_component[key] = self._usage_by_component[key] + component_usage
                     else:
