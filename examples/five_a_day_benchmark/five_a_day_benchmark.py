@@ -26,7 +26,7 @@ from pathlib import Path
 
 from utils import sanitize_name  # type: ignore[unresolved-import]
 
-from maseval import Benchmark, Environment, Evaluator, Task, TaskQueue, AgentAdapter, ModelAdapter, SeedGenerator
+from maseval import Benchmark, Environment, Evaluator, Task, TaskQueue, AgentAdapter, ModelAdapter, SeedGenerator, UsageReporter
 from maseval.core.callbacks.result_logger import FileResultLogger
 
 # Import tool implementations
@@ -959,6 +959,26 @@ if __name__ == "__main__":
         fail_on_evaluation_error=True,
     )
     results = benchmark.run(tasks=tasks, agent_data=agent_configs)
+
+    # --- Usage summary ---
+    print("\n--- Usage Summary ---")
+    total = benchmark.usage
+    cost_str = f"${total.cost:.6f}" if total.cost is not None else "N/A (no cost calculator)"
+    print(f"Total cost: {cost_str}")
+
+    if benchmark.usage_by_component:
+        print("\nPer-component:")
+        for key, usage in benchmark.usage_by_component.items():
+            c = f"${usage.cost:.6f}" if usage.cost is not None else "N/A"
+            print(f"  {key:<35} cost={c}  units={dict(usage.units) if usage.units else '{}'}")
+
+    reporter = UsageReporter.from_reports(results)
+    by_task = reporter.by_task()
+    if by_task:
+        print("\nPer-task:")
+        for task_id, usage in by_task.items():
+            c = f"${usage.cost:.6f}" if usage.cost is not None else "N/A"
+            print(f"  {task_id:<35} cost={c}")
 
     print("\n--- Benchmark Complete ---")
     print(f"Total tasks: {len(tasks)}")

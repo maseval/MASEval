@@ -18,11 +18,7 @@ See the [Usage & Cost Tracking guide](../guides/usage-tracking.md) for usage pat
 
 ::: maseval.core.usage.StaticPricingCalculator
 
-## Reporting
-
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/core/reporting.py){ .md-source-file }
-
-::: maseval.core.reporting.UsageReporter
+::: maseval.core.usage.UsageReporter
 
 ## Interface
 
