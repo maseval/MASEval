@@ -130,6 +130,8 @@ class TokenUsage(Usage):
         total_tokens: Total tokens (input + output).
         cached_input_tokens: Tokens served from cache (Anthropic ``cache_read_input_tokens``,
             OpenAI ``cached_tokens``).
+        cache_creation_input_tokens: Tokens used to create a new cache entry
+            (Anthropic ``cache_creation_input_tokens``). Billed at a higher rate.
         reasoning_tokens: Tokens used for reasoning (OpenAI ``reasoning_tokens``,
             Google ``thoughts_token_count``).
         audio_tokens: Tokens for audio processing (OpenAI).
@@ -149,6 +151,7 @@ class TokenUsage(Usage):
     output_tokens: int = 0
     total_tokens: int = 0
     cached_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
     reasoning_tokens: int = 0
     audio_tokens: int = 0
 
@@ -169,6 +172,7 @@ class TokenUsage(Usage):
                 output_tokens=self.output_tokens + other.output_tokens,
                 total_tokens=self.total_tokens + other.total_tokens,
                 cached_input_tokens=self.cached_input_tokens + other.cached_input_tokens,
+                cache_creation_input_tokens=self.cache_creation_input_tokens + other.cache_creation_input_tokens,
                 reasoning_tokens=self.reasoning_tokens + other.reasoning_tokens,
                 audio_tokens=self.audio_tokens + other.audio_tokens,
             )
@@ -185,6 +189,7 @@ class TokenUsage(Usage):
             output_tokens=self.output_tokens,
             total_tokens=self.total_tokens,
             cached_input_tokens=self.cached_input_tokens,
+            cache_creation_input_tokens=self.cache_creation_input_tokens,
             reasoning_tokens=self.reasoning_tokens,
             audio_tokens=self.audio_tokens,
         )
@@ -197,6 +202,7 @@ class TokenUsage(Usage):
             "output_tokens": self.output_tokens,
             "total_tokens": self.total_tokens,
             "cached_input_tokens": self.cached_input_tokens,
+            "cache_creation_input_tokens": self.cache_creation_input_tokens,
             "reasoning_tokens": self.reasoning_tokens,
             "audio_tokens": self.audio_tokens,
         }
@@ -237,6 +243,7 @@ class TokenUsage(Usage):
             output_tokens=usage_dict.get("output_tokens", 0),
             total_tokens=usage_dict.get("total_tokens", 0),
             cached_input_tokens=usage_dict.get("cached_input_tokens", 0),
+            cache_creation_input_tokens=usage_dict.get("cache_creation_input_tokens", 0),
             reasoning_tokens=usage_dict.get("reasoning_tokens", 0),
             audio_tokens=usage_dict.get("audio_tokens", 0),
         )
@@ -353,6 +360,7 @@ class StaticPricingCalculator:
             - ``"input"`` — cost per input token (required)
             - ``"output"`` — cost per output token (required)
             - ``"cached_input"`` — cost per cached input token (optional, defaults to ``"input"`` rate)
+            - ``"cache_creation_input"`` — cost per cache creation token (optional, defaults to ``"input"`` rate)
 
     Example:
         ```python
@@ -394,11 +402,17 @@ class StaticPricingCalculator:
         input_rate = rates.get("input", 0.0)
         output_rate = rates.get("output", 0.0)
         cached_rate = rates.get("cached_input", input_rate)
+        cache_creation_rate = rates.get("cache_creation_input", input_rate)
 
-        # Non-cached input tokens = total input - cached
-        non_cached_input = max(0, usage.input_tokens - usage.cached_input_tokens)
+        # Non-cached input tokens = total input - cached - cache_creation
+        non_cached_input = max(0, usage.input_tokens - usage.cached_input_tokens - usage.cache_creation_input_tokens)
 
-        cost = non_cached_input * input_rate + usage.cached_input_tokens * cached_rate + usage.output_tokens * output_rate
+        cost = (
+            non_cached_input * input_rate
+            + usage.cached_input_tokens * cached_rate
+            + usage.cache_creation_input_tokens * cache_creation_rate
+            + usage.output_tokens * output_rate
+        )
 
         return cost
 
@@ -503,6 +517,7 @@ class UsageReporter:
                 output_tokens=d.get("output_tokens", 0),
                 total_tokens=d.get("total_tokens", 0),
                 cached_input_tokens=d.get("cached_input_tokens", 0),
+                cache_creation_input_tokens=d.get("cache_creation_input_tokens", 0),
                 reasoning_tokens=d.get("reasoning_tokens", 0),
                 audio_tokens=d.get("audio_tokens", 0),
             )
@@ -548,7 +563,10 @@ class UsageReporter:
                 all_usages.append(self._usage_from_dict(usage_dict))
         if not all_usages:
             return Usage()
-        return sum(all_usages, Usage())
+        result = all_usages[0]
+        for u in all_usages[1:]:
+            result = result + u
+        return result
 
     def summary(self) -> Dict[str, Any]:
         """Nested dict with all breakdowns."""

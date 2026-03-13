@@ -109,6 +109,8 @@ class LiteLLMCostCalculator:
                 model=model_id,
                 prompt_tokens=usage.input_tokens,
                 completion_tokens=usage.output_tokens,
+                cache_read_input_tokens=usage.cached_input_tokens,
+                cache_creation_input_tokens=usage.cache_creation_input_tokens,
             )
             return input_cost + output_cost
         except Exception:

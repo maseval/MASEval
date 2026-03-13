@@ -352,6 +352,9 @@ class AnthropicModelAdapter(ModelAdapter):
             cached = getattr(response.usage, "cache_read_input_tokens", 0)
             if cached:
                 usage["cached_input_tokens"] = cached
+            cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0)
+            if cache_creation:
+                usage["cache_creation_input_tokens"] = cache_creation
 
         # Extract stop reason
         stop_reason = None

@@ -402,7 +402,10 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
         """
         if not self._usage_records:
             return Usage()
-        return sum(self._usage_records, Usage())
+        result = self._usage_records[0]
+        for record in self._usage_records[1:]:
+            result = result + record
+        return result
 
     def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces from this model adapter.

@@ -193,6 +193,9 @@ class LiteLLMModelAdapter(ModelAdapter):
                 cached = getattr(prompt_details, "cached_tokens", 0)
                 if cached:
                     usage["cached_input_tokens"] = cached
+                cache_creation = getattr(prompt_details, "cache_creation_tokens", 0)
+                if cache_creation:
+                    usage["cache_creation_input_tokens"] = cache_creation
             # LiteLLM provider-reported cost
             hidden = getattr(response, "_hidden_params", None)
             if hidden and isinstance(hidden, dict):
