@@ -121,6 +121,7 @@ examples = [
     "ipykernel>=6.0.0",
     "ipywidgets>=8.0.0",
     "accelerate>=1.11.0",
+    "RestrictedPython>=7.0",
 ]
 
 # Complete installation with absolutely everything (uses self-reference for DRY)
