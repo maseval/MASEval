@@ -240,3 +240,139 @@ def test_langgraph_adapter_logs_without_token_metadata():
     assert log_entry.get("input_tokens") in [None, 0]
     assert log_entry.get("output_tokens") in [None, 0]
     assert log_entry.get("total_tokens") in [None, 0]
+
+
+# =============================================================================
+# gather_usage() Tests
+# =============================================================================
+
+
+def test_langgraph_adapter_gather_usage_with_metadata():
+    """Test that gather_usage() extracts token usage from message metadata."""
+    from maseval.interface.agents.langgraph import LangGraphAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage
+    from langgraph.graph import StateGraph, END
+    from typing_extensions import TypedDict
+    from langchain_core.messages import AIMessage
+    from langchain_core.messages.ai import UsageMetadata
+
+    class State(TypedDict):
+        messages: list
+
+    def agent_node(state: State) -> State:
+        messages = state["messages"]
+        response = AIMessage(
+            content="Response",
+            usage_metadata=UsageMetadata(
+                input_tokens=150,
+                output_tokens=60,
+                total_tokens=210,
+            ),
+        )
+        return {"messages": messages + [response]}
+
+    graph = StateGraph(State)  # type: ignore[arg-type]
+    graph.add_node("agent", agent_node)
+    graph.set_entry_point("agent")
+    graph.add_edge("agent", END)
+    compiled = graph.compile()
+
+    adapter = LangGraphAgentAdapter(agent_instance=compiled, name="test_agent")
+    adapter.run("Test query")
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.input_tokens == 150
+    assert usage.output_tokens == 60
+    assert usage.total_tokens == 210
+
+
+def test_langgraph_adapter_gather_usage_with_token_details():
+    """Test that gather_usage() extracts detailed token breakdowns."""
+    from maseval.interface.agents.langgraph import LangGraphAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage
+    from langgraph.graph import StateGraph, END
+    from typing_extensions import TypedDict
+    from langchain_core.messages import AIMessage
+    from langchain_core.messages.ai import UsageMetadata
+
+    class State(TypedDict):
+        messages: list
+
+    def agent_node(state: State) -> State:
+        messages = state["messages"]
+        response = AIMessage(
+            content="Response",
+            usage_metadata=UsageMetadata(
+                input_tokens=200,
+                output_tokens=100,
+                total_tokens=300,
+                input_token_details={"cache_read": 50, "cache_creation": 30},
+                output_token_details={"reasoning": 40},
+            ),
+        )
+        return {"messages": messages + [response]}
+
+    graph = StateGraph(State)  # type: ignore[arg-type]
+    graph.add_node("agent", agent_node)
+    graph.set_entry_point("agent")
+    graph.add_edge("agent", END)
+    compiled = graph.compile()
+
+    adapter = LangGraphAgentAdapter(agent_instance=compiled, name="test_agent")
+    adapter.run("Test query")
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.input_tokens == 200
+    assert usage.output_tokens == 100
+    assert usage.cached_input_tokens == 50
+    assert usage.cache_creation_input_tokens == 30
+    assert usage.reasoning_tokens == 40
+
+
+def test_langgraph_adapter_gather_usage_no_metadata():
+    """Test that gather_usage() returns empty Usage when no usage_metadata."""
+    from maseval.interface.agents.langgraph import LangGraphAgentAdapter
+    from maseval.core.usage import Usage
+    from langgraph.graph import StateGraph, END
+    from typing_extensions import TypedDict
+    from langchain_core.messages import AIMessage
+
+    class State(TypedDict):
+        messages: list
+
+    def agent_node(state: State) -> State:
+        messages = state["messages"]
+        response = AIMessage(content="Response")  # No usage_metadata
+        return {"messages": messages + [response]}
+
+    graph = StateGraph(State)  # type: ignore[arg-type]
+    graph.add_node("agent", agent_node)
+    graph.set_entry_point("agent")
+    graph.add_edge("agent", END)
+    compiled = graph.compile()
+
+    adapter = LangGraphAgentAdapter(agent_instance=compiled, name="test_agent")
+    adapter.run("Test query")
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, Usage)
+    assert usage.cost is None
+
+
+def test_langgraph_adapter_gather_usage_before_run():
+    """Test that gather_usage() returns empty Usage before any run."""
+    from maseval.interface.agents.langgraph import LangGraphAgentAdapter
+    from maseval.core.usage import Usage
+    from unittest.mock import Mock
+
+    adapter = LangGraphAgentAdapter(agent_instance=Mock(), name="test_agent")
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, Usage)
+    assert usage.cost is None

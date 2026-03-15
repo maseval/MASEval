@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
+from maseval.core.usage import TokenUsage, Usage
 
 __all__ = ["LangGraphAgentAdapter", "LangGraphLLMUser"]
 
@@ -212,6 +213,88 @@ class LangGraphAgentAdapter(AgentAdapter):
             base_config["langgraph_config"] = langgraph_config
 
         return base_config
+
+    def gather_usage(self) -> Usage:
+        """Gather aggregated token usage from LangGraph message metadata.
+
+        Walks messages from the last graph execution (or persistent state)
+        and sums their ``usage_metadata``, including detailed token breakdowns
+        for caching, reasoning, and audio tokens when available.
+
+        Returns:
+            Aggregated token usage, or empty ``Usage`` if no messages or no usage data.
+        """
+        _check_langgraph_installed()
+        messages = self._get_usage_messages()
+        if not messages:
+            return Usage()
+
+        total_input = 0
+        total_output = 0
+        cached_input = 0
+        cache_creation_input = 0
+        reasoning = 0
+        audio_input = 0
+        audio_output = 0
+        has_usage = False
+
+        for msg in messages:
+            if not (hasattr(msg, "usage_metadata") and msg.usage_metadata):
+                continue
+            meta = msg.usage_metadata
+            has_usage = True
+
+            # Core counts — usage_metadata is a TypedDict (dict-like)
+            if isinstance(meta, dict):
+                total_input += meta.get("input_tokens", 0)
+                total_output += meta.get("output_tokens", 0)
+                # Detailed breakdowns (optional)
+                input_details = meta.get("input_token_details", {}) or {}
+                output_details = meta.get("output_token_details", {}) or {}
+            else:
+                total_input += getattr(meta, "input_tokens", 0)
+                total_output += getattr(meta, "output_tokens", 0)
+                input_details = getattr(meta, "input_token_details", {}) or {}
+                output_details = getattr(meta, "output_token_details", {}) or {}
+
+            if isinstance(input_details, dict):
+                cached_input += input_details.get("cache_read", 0)
+                cache_creation_input += input_details.get("cache_creation", 0)
+                audio_input += input_details.get("audio", 0)
+            if isinstance(output_details, dict):
+                reasoning += output_details.get("reasoning", 0)
+                audio_output += output_details.get("audio", 0)
+
+        if not has_usage:
+            return Usage()
+
+        return TokenUsage(
+            input_tokens=total_input,
+            output_tokens=total_output,
+            total_tokens=total_input + total_output,
+            cached_input_tokens=cached_input,
+            cache_creation_input_tokens=cache_creation_input,
+            reasoning_tokens=reasoning,
+            audio_tokens=audio_input + audio_output,
+        )
+
+    def _get_usage_messages(self) -> list:
+        """Get messages for usage extraction, preferring persistent state."""
+        # Try persistent state first
+        if self._langgraph_config and hasattr(self.agent, "get_state"):
+            try:
+                state = self.agent.get_state(self._langgraph_config)
+                messages = state.values.get("messages", [])
+                if messages:
+                    return messages
+            except Exception:
+                pass
+
+        # Fall back to cached result
+        if self._last_result and isinstance(self._last_result, dict):
+            return self._last_result.get("messages", [])
+
+        return []
 
     def _run_agent(self, query: str) -> Any:
         _check_langgraph_installed()

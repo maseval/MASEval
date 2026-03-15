@@ -5,9 +5,10 @@ from .callback import AgentCallback
 from .history import MessageHistory
 from .tracing import TraceableMixin
 from .config import ConfigurableMixin
+from .usage import UsageTrackableMixin
 
 
-class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin):
+class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
     """Wraps an agent from any framework to provide a standard interface.
 
     This Adapter provides:

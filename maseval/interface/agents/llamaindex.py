@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
+from maseval.core.usage import TokenUsage, Usage
 
 __all__ = ["LlamaIndexAgentAdapter", "LlamaIndexLLMUser"]
 
@@ -214,6 +215,35 @@ class LlamaIndexAgentAdapter(AgentAdapter):
             base_config["llamaindex_config"] = llamaindex_config
 
         return base_config
+
+    def gather_usage(self) -> Usage:
+        """Gather aggregated token usage from LlamaIndex execution logs.
+
+        Sums token counts recorded in ``self.logs`` during agent execution.
+        LlamaIndex does not provide built-in cumulative usage tracking, so
+        this aggregates per-call usage extracted from LLM responses.
+
+        Returns:
+            Aggregated token usage, or empty ``Usage`` if no usage data was recorded.
+        """
+        total_input = 0
+        total_output = 0
+        has_usage = False
+
+        for log_entry in self.logs:
+            if "input_tokens" in log_entry or "output_tokens" in log_entry:
+                total_input += log_entry.get("input_tokens", 0)
+                total_output += log_entry.get("output_tokens", 0)
+                has_usage = True
+
+        if not has_usage:
+            return Usage()
+
+        return TokenUsage(
+            input_tokens=total_input,
+            output_tokens=total_output,
+            total_tokens=total_input + total_output,
+        )
 
     def _run_agent(self, query: str) -> Any:
         """Run the LlamaIndex agent and cache execution state.

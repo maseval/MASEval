@@ -84,13 +84,11 @@ def test_camel_adapter_gather_traces_with_response():
 
     traces = adapter.gather_traces()
 
-    # New API uses last_terminated and aggregated stats
+    # New API uses last_terminated and aggregated stats (token totals moved to gather_usage)
     assert "last_terminated" in traces
     assert traces["last_terminated"] is True
     assert "total_steps" in traces
     assert traces["total_steps"] == 1
-    assert "total_tokens" in traces
-    assert traces["total_tokens"] == 15
 
 
 def test_camel_adapter_gather_config_basic():
@@ -1079,3 +1077,172 @@ def test_workforce_tracer_truncates_long_content():
 
     assert len(traces["completed_tasks"][0]["content"]) == 200
     assert len(traces["completed_tasks"][0]["result"]) == 200
+
+
+# =============================================================================
+# gather_usage() Tests
+# =============================================================================
+
+
+def test_camel_adapter_gather_usage_with_responses():
+    """Test that gather_usage() aggregates token usage across CAMEL responses."""
+    from maseval.interface.agents.camel import CamelAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage
+
+    mock_agent = create_mock_camel_agent()
+    adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test_agent")
+
+    # Simulate responses with usage data
+    adapter._responses.append(
+        MockCamelResponse(
+            content="Response 1",
+            terminated=False,
+            info={"usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}},
+        )
+    )
+    adapter._responses.append(
+        MockCamelResponse(
+            content="Response 2",
+            terminated=True,
+            info={"usage": {"prompt_tokens": 200, "completion_tokens": 80, "total_tokens": 280}},
+        )
+    )
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.input_tokens == 300  # 100 + 200
+    assert usage.output_tokens == 130  # 50 + 80
+    assert usage.total_tokens == 430
+
+
+def test_camel_adapter_gather_usage_no_responses():
+    """Test that gather_usage() returns empty Usage when no responses exist."""
+    from maseval.interface.agents.camel import CamelAgentAdapter
+    from maseval.core.usage import Usage
+
+    mock_agent = create_mock_camel_agent()
+    adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test_agent")
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, Usage)
+    assert usage.cost is None
+
+
+def test_camel_adapter_gather_usage_responses_without_usage():
+    """Test that gather_usage() handles responses without usage info."""
+    from maseval.interface.agents.camel import CamelAgentAdapter
+    from maseval.core.usage import Usage
+
+    mock_agent = create_mock_camel_agent()
+    adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test_agent")
+
+    # Response without info or usage
+    adapter._responses.append(MockCamelResponse(content="Response", terminated=True, info={}))
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, Usage)
+    assert usage.cost is None
+
+
+# =============================================================================
+# End-to-End Usage Collection Tests
+# (real ChatAgent + StubModel execution, not pre-populated mock data)
+# =============================================================================
+
+
+def test_e2e_camel_gather_usage_single_step():
+    """Run a real CAMEL ChatAgent with StubModel, verify gather_usage() returns real token counts."""
+    from camel.agents import ChatAgent
+    from camel.models import StubModel
+    from camel.types import ModelType
+    from maseval.interface.agents.camel import CamelAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage
+
+    # StubModel returns CompletionUsage(prompt_tokens=10, completion_tokens=10)
+    stub = StubModel(model_type=ModelType.STUB)
+    agent = ChatAgent(system_message="You are a helpful assistant.", model=stub)
+    adapter = CamelAgentAdapter(agent_instance=agent, name="e2e_test")
+
+    result = adapter.run("What is 2+2?")
+
+    assert result == "Lorem Ipsum"
+    assert len(adapter._responses) == 1
+
+    usage = adapter.gather_usage()
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.input_tokens == 10
+    assert usage.output_tokens == 10
+    assert usage.total_tokens == 20
+
+
+def test_e2e_camel_gather_usage_multi_step():
+    """Run a real CAMEL ChatAgent multiple times, verify usage aggregation."""
+    from camel.agents import ChatAgent
+    from camel.models import StubModel
+    from camel.types import ModelType
+    from maseval.interface.agents.camel import CamelAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage
+
+    stub = StubModel(model_type=ModelType.STUB)
+    agent = ChatAgent(system_message="You are helpful.", model=stub)
+    adapter = CamelAgentAdapter(agent_instance=agent, name="e2e_test")
+
+    adapter.run("First query")
+    adapter.run("Second query")
+    adapter.run("Third query")
+
+    assert len(adapter._responses) == 3
+
+    usage = adapter.gather_usage()
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.input_tokens == 30  # 10 * 3
+    assert usage.output_tokens == 30  # 10 * 3
+    assert usage.total_tokens == 60  # 20 * 3
+
+
+def test_e2e_camel_gather_usage_empty_before_run():
+    """Verify gather_usage() returns empty Usage before run, real TokenUsage after."""
+    from camel.agents import ChatAgent
+    from camel.models import StubModel
+    from camel.types import ModelType
+    from maseval.interface.agents.camel import CamelAgentAdapter
+    from maseval.core.usage import Usage, TokenUsage as MasevalTokenUsage
+
+    stub = StubModel(model_type=ModelType.STUB)
+    agent = ChatAgent(system_message="You are helpful.", model=stub)
+    adapter = CamelAgentAdapter(agent_instance=agent, name="e2e_test")
+
+    # Before run: no usage
+    usage_before = adapter.gather_usage()
+    assert isinstance(usage_before, Usage)
+    assert not isinstance(usage_before, MasevalTokenUsage)
+
+    # After run: real usage from the StubModel pipeline
+    adapter.run("test query")
+    usage_after = adapter.gather_usage()
+    assert isinstance(usage_after, MasevalTokenUsage)
+    assert usage_after.input_tokens > 0
+    assert usage_after.output_tokens > 0
+
+
+def test_e2e_camel_logs_contain_usage():
+    """Verify adapter.logs also contain usage data from real execution."""
+    from camel.agents import ChatAgent
+    from camel.models import StubModel
+    from camel.types import ModelType
+    from maseval.interface.agents.camel import CamelAgentAdapter
+
+    stub = StubModel(model_type=ModelType.STUB)
+    agent = ChatAgent(system_message="You are helpful.", model=stub)
+    adapter = CamelAgentAdapter(agent_instance=agent, name="e2e_test")
+
+    adapter.run("Tell me something")
+
+    assert len(adapter.logs) == 1
+    assert adapter.logs[0]["status"] == "success"
+    assert adapter.logs[0]["input_tokens"] == 10
+    assert adapter.logs[0]["output_tokens"] == 10
+    assert adapter.logs[0]["total_tokens"] == 20

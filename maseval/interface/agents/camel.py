@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from maseval import AgentAdapter, MessageHistory, LLMUser, User
 from maseval.core.tracing import TraceableMixin
 from maseval.core.config import ConfigurableMixin
+from maseval.core.usage import TokenUsage, Usage
 
 __all__ = [
     "CamelAgentAdapter",
@@ -135,9 +136,12 @@ class CamelAgentAdapter(AgentAdapter):
             for msg in agent_adapter.get_messages():
                 print(f"{msg['role']}: {msg['content']}")
 
-            # Gather execution traces with token usage and tool calls
+            # Gather aggregated usage
+            usage = agent_adapter.gather_usage()
+            print(f"Total tokens: {usage.total_tokens}")
+
+            # Gather execution traces with tool call counts
             traces = agent_adapter.gather_traces()
-            print(f"Total tokens: {traces['total_tokens']}")
             print(f"Tool calls: {traces['total_tool_calls']}")
 
             # Gather configuration
@@ -383,25 +387,16 @@ class CamelAgentAdapter(AgentAdapter):
     def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces from this CAMEL agent.
 
-        Extends the base class to include CAMEL-specific execution data
-        with aggregated statistics from all responses.
+        Extends the base class to include CAMEL-specific per-step execution
+        data. Aggregated usage totals are available via ``gather_usage()``.
 
         Returns:
-            Dictionary containing:
-            - Base traces (type, gathered_at, name, messages, logs, etc.)
-            - total_steps: Number of step() calls made
-            - total_input_tokens: Aggregated input tokens
-            - total_output_tokens: Aggregated output tokens
-            - total_tokens: Aggregated total tokens
-            - total_tool_calls: Total number of tool calls made
-            - last_terminated: Whether the last response indicated termination
+            Dictionary containing base traces plus step count, tool call count,
+            and termination status.
         """
         base_traces = super().gather_traces()
         _check_camel_installed()
 
-        # Calculate aggregated statistics from responses
-        total_input_tokens = 0
-        total_output_tokens = 0
         total_tool_calls = 0
         last_terminated = False
 
@@ -411,30 +406,50 @@ class CamelAgentAdapter(AgentAdapter):
 
             if hasattr(response, "info") and response.info:
                 info = response.info
-
-                # Aggregate token usage
-                if "usage" in info and isinstance(info["usage"], dict):
-                    usage = info["usage"]
-                    total_input_tokens += usage.get("prompt_tokens", 0)
-                    total_output_tokens += usage.get("completion_tokens", 0)
-
-                # Count tool calls
                 if "tool_calls" in info and info["tool_calls"]:
                     total_tool_calls += len(info["tool_calls"])
 
-        # Add aggregated statistics
         base_traces.update(
             {
                 "total_steps": len(self._responses),
-                "total_input_tokens": total_input_tokens,
-                "total_output_tokens": total_output_tokens,
-                "total_tokens": total_input_tokens + total_output_tokens,
                 "total_tool_calls": total_tool_calls,
                 "last_terminated": last_terminated,
             }
         )
 
         return base_traces
+
+    def gather_usage(self) -> Usage:
+        """Gather aggregated token usage across all CAMEL agent responses.
+
+        Walks stored ``ChatAgentResponse`` objects and sums their
+        ``info["usage"]`` dicts (which contain ``prompt_tokens`` and
+        ``completion_tokens``).
+
+        Returns:
+            Aggregated token usage, or empty ``Usage`` if no responses or no usage data.
+        """
+        total_input = 0
+        total_output = 0
+        has_usage = False
+
+        for response in self._responses:
+            if hasattr(response, "info") and response.info:
+                info = response.info
+                if "usage" in info and isinstance(info["usage"], dict):
+                    usage_dict = info["usage"]
+                    total_input += usage_dict.get("prompt_tokens", 0)
+                    total_output += usage_dict.get("completion_tokens", 0)
+                    has_usage = True
+
+        if not has_usage:
+            return Usage()
+
+        return TokenUsage(
+            input_tokens=total_input,
+            output_tokens=total_output,
+            total_tokens=total_input + total_output,
+        )
 
     def gather_config(self) -> Dict[str, Any]:
         """Gather configuration from this CAMEL agent.
