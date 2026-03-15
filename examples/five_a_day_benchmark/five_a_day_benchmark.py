@@ -961,24 +961,49 @@ if __name__ == "__main__":
     results = benchmark.run(tasks=tasks, agent_data=agent_configs)
 
     # --- Usage summary ---
+    from collections import defaultdict
+    from maseval import TokenUsage
+
+    def _fmt_usage(usage):
+        parts = [f"cost=${usage.cost:.6f}"]
+        if isinstance(usage, TokenUsage):
+            parts.append(f"in={usage.input_tokens}  out={usage.output_tokens}")
+        if usage.units:
+            parts.append(f"units={dict(usage.units)}")
+        return "  ".join(parts)
+
     print("\n--- Usage Summary ---")
     total = benchmark.usage
-    cost_str = f"${total.cost:.6f}" if total.cost is not None else "N/A (no cost calculator)"
-    print(f"Total cost: {cost_str}")
+    print(f"Total: {_fmt_usage(total)}")
 
+    # Group components by category
     if benchmark.usage_by_component:
-        print("\nPer-component:")
+        by_category: dict[str, dict[str, object]] = defaultdict(dict)
         for key, usage in benchmark.usage_by_component.items():
-            c = f"${usage.cost:.6f}" if usage.cost is not None else "N/A"
-            print(f"  {key:<35} cost={c}  units={dict(usage.units) if usage.units else '{}'}")
+            category, name = key.split(":", 1)
+            by_category[category][name] = usage
+
+        for category in ["agents", "models", "tools", "simulators", "callbacks"]:
+            if category not in by_category:
+                continue
+            print(f"\n{category.capitalize()}:")
+            for name, usage in by_category[category].items():
+                print(f"  {name:<35} {_fmt_usage(usage)}")
+
+        # Print any remaining categories not in the standard list
+        for category, components in by_category.items():
+            if category in {"agents", "models", "tools", "simulators", "callbacks"}:
+                continue
+            print(f"\n{category.capitalize()}:")
+            for name, usage in components.items():
+                print(f"  {name:<35} {_fmt_usage(usage)}")
 
     reporter = UsageReporter.from_reports(results)
     by_task = reporter.by_task()
     if by_task:
         print("\nPer-task:")
         for task_id, usage in by_task.items():
-            c = f"${usage.cost:.6f}" if usage.cost is not None else "N/A"
-            print(f"  {task_id:<35} cost={c}")
+            print(f"  {task_id:<35} {_fmt_usage(usage)}")
 
     print("\n--- Benchmark Complete ---")
     print(f"Total tasks: {len(tasks)}")
