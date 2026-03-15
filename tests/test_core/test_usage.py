@@ -39,7 +39,7 @@ class TestTokenUsageConstruction:
         assert tu.cache_creation_input_tokens == 0
         assert tu.reasoning_tokens == 0
         assert tu.audio_tokens == 0
-        assert tu.cost is None
+        assert tu.cost == 0.0
 
     def test_from_chat_response_all_fields(self):
         """All optional fields are mapped when present."""
@@ -148,17 +148,25 @@ class TestTokenUsageArithmetic:
         assert total.output_tokens == 30
         assert total.total_tokens == 90
 
-    def test_none_cost_propagates(self):
-        """If either cost is None, sum cost is None."""
+    def test_zero_cost_preserves_known(self):
+        """Adding a zero-cost usage preserves the known cost."""
         a = TokenUsage(cost=0.10, input_tokens=100, output_tokens=50, total_tokens=150)
-        b = TokenUsage(cost=None, input_tokens=200, output_tokens=30, total_tokens=230)
+        b = TokenUsage(input_tokens=200, output_tokens=30, total_tokens=230)
         total = a + b
 
-        assert total.cost is None
+        assert total.cost == pytest.approx(0.10)
         # Token fields still sum correctly
         assert isinstance(total, TokenUsage)
         assert total.input_tokens == 300
         assert total.output_tokens == 80
+
+    def test_both_zero_cost_stays_zero(self):
+        """Summing two zero-cost usages gives zero cost."""
+        a = TokenUsage(input_tokens=100, output_tokens=50, total_tokens=150)
+        b = TokenUsage(input_tokens=200, output_tokens=30, total_tokens=230)
+        total = a + b
+
+        assert total.cost == 0.0
 
     def test_grouping_fields_match(self):
         """Matching grouping fields are preserved."""
@@ -546,7 +554,7 @@ class TestFullPipeline:
 
         assert isinstance(total, TokenUsage)
         assert total.input_tokens == 100
-        assert total.cost is None
+        assert total.cost == 0.0
 
     def test_pipeline_with_cached_tokens(self):
         """Pipeline correctly handles cached tokens in cost calculation.
@@ -694,8 +702,7 @@ class TestUsageReporter:
         reporter = UsageReporter.from_reports([])
         total = reporter.total()
 
-        # Empty reports return a plain Usage with no cost
-        assert total.cost is None
+        assert total.cost == 0.0
         assert isinstance(total, Usage)
 
     def test_skips_error_reports(self):
@@ -708,7 +715,7 @@ class TestUsageReporter:
         ]
         reporter = UsageReporter.from_reports(reports)
         total = reporter.total()
-        assert total.cost is None
+        assert total.cost == 0.0
         assert isinstance(total, Usage)
 
     def test_by_task_accumulates_repeats(self):

@@ -308,12 +308,15 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
 
             # Record token usage if available
             if result.usage:
-                cost = result.usage.get("cost") if isinstance(result.usage.get("cost"), (int, float)) else None
+                raw_cost = result.usage.get("cost")
+                cost = raw_cost if isinstance(raw_cost, (int, float)) else 0.0
                 token_usage = TokenUsage.from_chat_response_usage(result.usage, cost=cost, kind="llm")
 
                 # If no provider-reported cost, try the cost calculator
-                if token_usage.cost is None and self._cost_calculator is not None:
-                    token_usage.cost = self._cost_calculator.calculate_cost(token_usage, self.model_id)
+                if token_usage.cost == 0.0 and self._cost_calculator is not None:
+                    calculated = self._cost_calculator.calculate_cost(token_usage, self.model_id)
+                    if calculated is not None:
+                        token_usage.cost = calculated
 
                 self._usage_records.append(token_usage)
 
@@ -398,10 +401,10 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
         """Gather accumulated token usage from all chat calls.
 
         Returns:
-            Summed TokenUsage across all calls, or empty Usage if no calls were made.
+            Summed TokenUsage across all calls, or empty TokenUsage if no calls were made.
         """
         if not self._usage_records:
-            return Usage()
+            return TokenUsage()
         result = self._usage_records[0]
         for record in self._usage_records[1:]:
             result = result + record

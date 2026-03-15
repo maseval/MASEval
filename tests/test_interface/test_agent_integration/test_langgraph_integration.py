@@ -361,7 +361,7 @@ def test_langgraph_adapter_gather_usage_no_metadata():
     usage = adapter.gather_usage()
 
     assert isinstance(usage, Usage)
-    assert usage.cost is None
+    assert usage.cost == 0.0
 
 
 def test_langgraph_adapter_gather_usage_before_run():
@@ -375,4 +375,4 @@ def test_langgraph_adapter_gather_usage_before_run():
     usage = adapter.gather_usage()
 
     assert isinstance(usage, Usage)
-    assert usage.cost is None
+    assert usage.cost == 0.0

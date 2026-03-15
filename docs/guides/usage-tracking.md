@@ -2,7 +2,7 @@
 
 ## Overview
 
-MASEval tracks how much each benchmark run consumes — tokens, API calls, dollars — so you can compare models, stay within budget, and explain where money went.
+MASEval tracks how much each benchmark run consumes (tokens, API calls, dollars) so you can compare models, stay within budget, and explain where money went.
 
 !!! info "Usage vs Cost"
 
@@ -14,9 +14,9 @@ MASEval tracks how much each benchmark run consumes — tokens, API calls, dolla
 
 ## What Gets Tracked Automatically
 
-**Model adapters** track every `chat()` call — input tokens, output tokens, cached tokens, reasoning tokens. No setup needed.
+**Model adapters** track every `chat()` call: input tokens, output tokens, cached tokens, reasoning tokens. No setup needed.
 
-**Agent adapters** aggregate token usage from the underlying framework's execution. Each framework adapter (`SmolAgentAdapter`, `CamelAgentAdapter`, `LangGraphAgentAdapter`, `LlamaIndexAgentAdapter`) extracts usage from its framework's native data structures — memory steps, response metadata, message annotations, or execution logs respectively.
+**Agent adapters** aggregate token usage from the underlying framework's execution. Each framework adapter (`SmolAgentAdapter`, `CamelAgentAdapter`, `LangGraphAgentAdapter`, `LlamaIndexAgentAdapter`) extracts usage from its framework's native data structures (memory steps, response metadata, message annotations, or execution logs respectively).
 
 **Benchmarks** collect usage from all registered components after each task and include it in reports.
 
@@ -35,7 +35,7 @@ model.chat([{"role": "user", "content": "How are you?"}])
 # Accumulated usage across both calls
 usage = model.gather_usage()
 print(f"{usage.input_tokens} in, {usage.output_tokens} out")
-print(f"Cost: ${usage.cost}")  # None if no cost calculator configured
+print(f"Cost: ${usage.cost}")  # $0.0 if no cost calculator configured
 ```
 
 ### Reading Agent Usage
@@ -53,7 +53,7 @@ usage = adapter.gather_usage()
 print(f"{usage.input_tokens} in, {usage.output_tokens} out")
 ```
 
-This works across all supported frameworks — smolagents, CAMEL, LangGraph, and LlamaIndex. The adapter handles the framework-specific extraction; you always call `gather_usage()`.
+This works across all supported frameworks (smolagents, CAMEL, LangGraph, and LlamaIndex). The adapter handles the framework-specific extraction; you always call `gather_usage()`.
 
 ### In Benchmarks
 
@@ -79,7 +79,7 @@ Most LLM APIs return token counts but not cost. MASEval provides two built-in co
 
 ### Quick Start: LiteLLM Pricing
 
-The easiest path — uses LiteLLM's [model pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) covering OpenAI, Anthropic, Google, Mistral, and many more:
+The easiest path. Uses LiteLLM's [model pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) covering OpenAI, Anthropic, Google, Mistral, and many more:
 
 ```python
 from maseval.interface.usage import LiteLLMCostCalculator
@@ -121,7 +121,7 @@ calculator = LiteLLMCostCalculator(custom_pricing={
 
 ### Manual Pricing
 
-When you know your rates, use `StaticPricingCalculator` — zero dependencies, fully explicit:
+When you know your rates, use `StaticPricingCalculator`. Zero dependencies, fully explicit:
 
 ```python
 from maseval import StaticPricingCalculator
@@ -144,7 +144,7 @@ calculator = StaticPricingCalculator({
 })
 ```
 
-The cost unit is whatever your pricing represents — USD, EUR, university credits:
+The cost unit is whatever your pricing represents (USD, EUR, university credits):
 
 ```python
 calculator = StaticPricingCalculator({
@@ -154,7 +154,7 @@ calculator = StaticPricingCalculator({
 
 ### Sharing a Calculator Across Models
 
-A single calculator instance works for multiple model adapters — the `model_id` is passed on each cost computation:
+A single calculator instance works for multiple model adapters. The `model_id` is passed on each cost computation:
 
 ```python
 calculator = StaticPricingCalculator({
@@ -170,13 +170,13 @@ model_b = AnthropicModelAdapter(client=client, model_id="claude-sonnet-4-5", cos
 
 When a `ModelAdapter` records usage after a `chat()` call, cost is resolved in priority order:
 
-1. **Provider-reported cost** — e.g., LiteLLM sets `response._hidden_params.response_cost` directly. This always wins.
-2. **CostCalculator** — if no provider cost, the adapter calls `calculator.calculate_cost(token_usage, model_id)`.
-3. **None** — if neither source provides cost, `usage.cost` stays `None`.
+1. **Provider-reported cost**: e.g., LiteLLM sets `response._hidden_params.response_cost` directly. This always wins.
+2. **CostCalculator**: if no provider cost, the adapter calls `calculator.calculate_cost(token_usage, model_id)`.
+3. **Zero**: if neither source provides cost, `usage.cost` stays `0.0`.
 
 ### Writing a Custom Calculator
 
-Implement the `CostCalculator` protocol — a single method:
+Implement the `CostCalculator` protocol (a single method):
 
 ```python
 from maseval import CostCalculator, TokenUsage
@@ -218,6 +218,64 @@ for task_id, usage in reporter.by_task().items():
 summary = reporter.summary()
 ```
 
+## How Usage Addition Works
+
+`Usage` records can be added together with `+` or `sum()`. Understanding how fields combine helps you interpret aggregated results.
+
+### Cost
+
+`cost` defaults to `0.0`. Addition is straightforward numeric addition:
+
+```python
+from maseval import Usage
+
+a = Usage(cost=0.05)
+b = Usage(cost=0.03)
+a + b  # cost=0.08
+
+# Components without cost tracking default to 0.0, so they don't affect the total
+agent_usage = Usage()  # cost=0.0 (default)
+model_usage = Usage(cost=0.12)
+agent_usage + model_usage  # cost=0.12
+
+# sum() works with Usage() as the starting value
+records = [Usage(cost=0.10), Usage(cost=0.20), Usage(cost=0.05)]
+sum(records, Usage())  # cost=0.35
+```
+
+### Units
+
+`units` dicts are merged by key. Matching keys are summed, new keys are added:
+
+```python
+a = Usage(units={"api_calls": 3, "data_points": 100})
+b = Usage(units={"api_calls": 2, "images": 5})
+total = a + b
+# total.units == {"api_calls": 5, "data_points": 100, "images": 5}
+```
+
+### Grouping Fields
+
+`provider`, `category`, `component_name`, and `kind` track where a record came from. When two records are added:
+
+- **Same value** → preserved
+- **Different values** → becomes `None` (meaning "aggregated across multiple")
+
+```python
+a = Usage(cost=0.05, provider="openai", kind="llm")
+b = Usage(cost=0.03, provider="openai", kind="llm")
+total = a + b
+# total.provider == "openai"  (both match)
+# total.kind == "llm"         (both match)
+
+c = Usage(cost=0.10, provider="anthropic", kind="llm")
+mixed = a + c
+# mixed.provider is None  (openai ≠ anthropic → aggregated over)
+# mixed.kind == "llm"     (both match)
+```
+
+This lets you tell at a glance whether a summed record came from one source or many.
+
 ## Tracking Non-LLM Resources
 
 Tools, environments, and other components can track arbitrary usage by inheriting `UsageTrackableMixin` and overriding `gather_usage()`. Here's an example for a paid API:
@@ -246,7 +304,7 @@ class BloombergEnvironment(Environment, UsageTrackableMixin):
         return sum(self._usage_records, Usage())
 ```
 
-Non-LLM components set cost directly — there is no calculator involvement. Each component knows its own billing model.
+Non-LLM components set cost directly. There is no calculator involvement; each component knows its own billing model.
 
 ## Evaluator Usage
 

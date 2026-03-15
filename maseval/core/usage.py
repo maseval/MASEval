@@ -12,10 +12,13 @@ Usage tracking is a first-class collection axis alongside tracing
 inherit `UsageTrackableMixin` have their usage automatically collected by the
 registry via `gather_usage()`.
 
-Cost calculators are optional — if no calculator is provided to a
-``ModelAdapter``, cost is only set when the provider reports it directly
-(e.g., LiteLLM's ``response._hidden_params.response_cost``). For automatic
-pricing via LiteLLM's bundled model database, see ``maseval.interface.usage``.
+``Usage.cost`` defaults to ``0.0``, so ``Usage()`` works as a starting value
+for accumulation (e.g., ``sum(records, Usage())``). Cost calculators are
+optional — if no calculator is provided to a ``ModelAdapter``, cost stays
+at ``0.0`` unless the provider reports it directly (e.g., LiteLLM's
+``response._hidden_params.response_cost``).
+For automatic pricing via LiteLLM's bundled model database, see
+``maseval.interface.usage``.
 """
 
 from __future__ import annotations
@@ -29,13 +32,26 @@ class Usage:
     """Generic usage record for any billable resource.
 
     Represents accumulated cost and countable units for a component or
-    aggregated group. Grouping fields (`provider`, `category`,
-    `component_name`, `kind`) identify what scope the record covers.
-    When two records are summed, matching grouping fields are preserved;
-    mismatches become `None` (meaning "aggregated over").
+    aggregated group. All fields default to zero, so ``Usage()`` can be
+    used as a starting value for accumulation with ``+`` and ``sum()``.
+
+    Note:
+        ``cost`` defaults to ``0.0``. This means adding a ``Usage()``
+        to another record never changes the cost:
+        ``Usage() + Usage(cost=0.05)`` gives ``cost=0.05``.
+        Components that track cost start at ``0.0`` and accumulate upward.
+        Components that *do not* track cost (e.g., agent adapters that only
+        count tokens) also default to ``0.0`` — their cost simply has no
+        effect when summed with components that do report cost.
+
+    Grouping fields (``provider``, ``category``, ``component_name``, ``kind``)
+    identify what scope the record covers. When two records are summed,
+    matching grouping fields are preserved; mismatches become ``None``
+    (meaning "aggregated over").
 
     Attributes:
-        cost: Total cost in USD. `None` means unknown/not reported.
+        cost: Total cost in USD (or whatever unit your calculator uses).
+            Defaults to ``0.0``.
         units: Arbitrary countable units (e.g., ``{"api_calls": 3}``).
         provider: Provider identifier (e.g., ``"anthropic"``, ``"bloomberg"``).
         category: Registry category (e.g., ``"models"``, ``"tools"``).
@@ -52,14 +68,21 @@ class Usage:
         assert total.units == {"api_calls": 3}
         assert total.provider == "bloomberg"
 
-        # Mismatched fields become None
+        # Usage() is the zero element
+        assert (usage + Usage()).cost == 0.05
+
+        # Accumulate with sum()
+        records = [Usage(cost=0.10), Usage(cost=0.20), Usage(cost=0.05)]
+        assert sum(records, Usage()).cost == 0.35
+
+        # Mismatched grouping fields become None
         mixed = usage + Usage(cost=0.10, provider="anthropic", kind="llm")
         assert mixed.provider is None  # aggregated over
         assert mixed.kind is None      # aggregated over
         ```
     """
 
-    cost: Optional[float] = None
+    cost: float = 0.0
     units: Dict[str, int | float] = field(default_factory=dict)
     provider: Optional[str] = None
     category: Optional[str] = None
@@ -70,11 +93,7 @@ class Usage:
         if not isinstance(other, Usage):
             return NotImplemented
 
-        # Sum costs: both known -> sum, either unknown -> None
-        if self.cost is not None and other.cost is not None:
-            cost = self.cost + other.cost
-        else:
-            cost = None
+        cost = self.cost + other.cost
 
         # Sum units
         units: Dict[str, int | float] = dict(self.units)
@@ -212,7 +231,7 @@ class TokenUsage(Usage):
         cls,
         usage_dict: Dict[str, int],
         *,
-        cost: Optional[float] = None,
+        cost: float = 0.0,
         provider: Optional[str] = None,
         category: Optional[str] = None,
         component_name: Optional[str] = None,
@@ -224,7 +243,7 @@ class TokenUsage(Usage):
 
         Args:
             usage_dict: The usage dict from ``ChatResponse.usage``.
-            cost: Cost in USD if known (e.g., from provider-reported cost).
+            cost: Cost in USD (e.g., from provider-reported cost). Defaults to ``0.0``.
             provider: Provider identifier.
             category: Registry category.
             component_name: Component name.
@@ -507,7 +526,7 @@ class UsageReporter:
         has_tokens = "input_tokens" in d
         if has_tokens:
             return TokenUsage(
-                cost=d.get("cost"),
+                cost=d.get("cost", 0.0),
                 units=d.get("units", {}),
                 provider=d.get("provider"),
                 category=d.get("category"),
@@ -522,7 +541,7 @@ class UsageReporter:
                 audio_tokens=d.get("audio_tokens", 0),
             )
         return Usage(
-            cost=d.get("cost"),
+            cost=d.get("cost", 0.0),
             units=d.get("units", {}),
             provider=d.get("provider"),
             category=d.get("category"),

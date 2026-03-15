@@ -1127,7 +1127,7 @@ def test_camel_adapter_gather_usage_no_responses():
     usage = adapter.gather_usage()
 
     assert isinstance(usage, Usage)
-    assert usage.cost is None
+    assert usage.cost == 0.0
 
 
 def test_camel_adapter_gather_usage_responses_without_usage():
@@ -1144,7 +1144,7 @@ def test_camel_adapter_gather_usage_responses_without_usage():
     usage = adapter.gather_usage()
 
     assert isinstance(usage, Usage)
-    assert usage.cost is None
+    assert usage.cost == 0.0
 
 
 # =============================================================================

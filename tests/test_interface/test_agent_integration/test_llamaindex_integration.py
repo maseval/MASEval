@@ -451,7 +451,7 @@ def test_llamaindex_adapter_gather_usage_no_logs():
     usage = adapter.gather_usage()
 
     assert isinstance(usage, Usage)
-    assert usage.cost is None
+    assert usage.cost == 0.0
 
 
 def test_llamaindex_adapter_gather_usage_logs_without_tokens():
@@ -476,7 +476,7 @@ def test_llamaindex_adapter_gather_usage_logs_without_tokens():
     usage = adapter.gather_usage()
 
     assert isinstance(usage, Usage)
-    assert usage.cost is None
+    assert usage.cost == 0.0
 
 
 # =============================================================================

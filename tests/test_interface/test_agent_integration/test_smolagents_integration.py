@@ -525,7 +525,7 @@ def test_smolagents_adapter_gather_usage_no_steps():
     usage = adapter.gather_usage()
 
     assert isinstance(usage, Usage)
-    assert usage.cost is None
+    assert usage.cost == 0.0
     assert usage.input_tokens == 0 if hasattr(usage, "input_tokens") else True
 
 
@@ -557,7 +557,7 @@ def test_smolagents_adapter_gather_usage_steps_without_token_usage():
 
     # Should return plain Usage (not TokenUsage) since no usage data
     assert isinstance(usage, Usage)
-    assert usage.cost is None
+    assert usage.cost == 0.0
 
 
 # =============================================================================
