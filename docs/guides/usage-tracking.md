@@ -2,12 +2,7 @@
 
 ## Overview
 
-MASEval provides first-class usage and cost tracking to monitor resource consumption during benchmark execution. This is useful for:
-
-- **Cost control**: Track how much each benchmark run costs across providers
-- **Budgeting**: Compare cost across models, tasks, and components
-- **Billing**: Support custom credit systems (university clusters, internal APIs)
-- **Analysis**: Understand token usage patterns per task, agent, or model
+MASEval tracks how much each benchmark run consumes — tokens, API calls, dollars — so you can compare models, stay within budget, and explain where money went.
 
 !!! info "Usage vs Cost"
 
@@ -17,39 +12,52 @@ MASEval provides first-class usage and cost tracking to monitor resource consump
 
     Usage is always tracked automatically for LLM calls. Cost requires either a provider that reports it (e.g., LiteLLM) or a pluggable cost calculator.
 
-## Core Concepts
+## What Gets Tracked Automatically
 
-**`Usage`**: Generic usage record for any billable resource — cost, arbitrary units, and grouping metadata.
+**Model adapters** track every `chat()` call — input tokens, output tokens, cached tokens, reasoning tokens. No setup needed.
 
-**`TokenUsage`**: LLM-specific extension of `Usage` with token fields (`input_tokens`, `output_tokens`, `cached_input_tokens`, etc.).
+**Agent adapters** aggregate token usage from the underlying framework's execution. Each framework adapter (`SmolAgentAdapter`, `CamelAgentAdapter`, `LangGraphAgentAdapter`, `LlamaIndexAgentAdapter`) extracts usage from its framework's native data structures — memory steps, response metadata, message annotations, or execution logs respectively.
 
-**`UsageTrackableMixin`**: Mixin that enables automatic usage collection for any component via `gather_usage()`.
+**Benchmarks** collect usage from all registered components after each task and include it in reports.
 
-**`CostCalculator`**: Protocol for pluggable cost computation from token counts.
+## Getting Started
 
-## Automatic LLM Usage Tracking
-
-All `ModelAdapter` subclasses track token usage automatically. No configuration needed — every `chat()` call records a `TokenUsage` entry internally.
+### Reading Model Usage
 
 ```python
 from maseval.interface.inference import OpenAIModelAdapter
 
 model = OpenAIModelAdapter(client=client, model_id="gpt-4")
 
-# Make some calls
 model.chat([{"role": "user", "content": "Hello"}])
 model.chat([{"role": "user", "content": "How are you?"}])
 
-# Inspect accumulated usage
+# Accumulated usage across both calls
 usage = model.gather_usage()
-print(usage.input_tokens)   # e.g., 25
-print(usage.output_tokens)  # e.g., 42
-print(usage.cost)           # None (no cost calculator configured)
+print(f"{usage.input_tokens} in, {usage.output_tokens} out")
+print(f"Cost: ${usage.cost}")  # None if no cost calculator configured
 ```
+
+### Reading Agent Usage
+
+Agent adapters expose the same `gather_usage()` interface. Each adapter knows how to extract usage from its framework's internals:
+
+```python
+from maseval.interface.agents import SmolAgentAdapter
+
+adapter = SmolAgentAdapter(agent, name="researcher")
+adapter.run("What's the capital of France?")
+
+# Usage is aggregated from the agent's memory steps
+usage = adapter.gather_usage()
+print(f"{usage.input_tokens} in, {usage.output_tokens} out")
+```
+
+This works across all supported frameworks — smolagents, CAMEL, LangGraph, and LlamaIndex. The adapter handles the framework-specific extraction; you always call `gather_usage()`.
 
 ### In Benchmarks
 
-Usage is collected automatically alongside traces and configs after each task repetition. Each report includes a `"usage"` key:
+Usage is collected automatically alongside traces and configs after each task. Each report includes a `"usage"` key:
 
 ```python
 results = benchmark.run()
@@ -65,63 +73,13 @@ benchmark.usage               # -> Usage (grand total across all tasks)
 benchmark.usage_by_component  # -> Dict[str, Usage] (per-component totals)
 ```
 
-## Cost Calculation
+## Adding Cost Tracking
 
-Most LLM APIs return token counts but not cost. Cost is a client-side concern. MASEval provides two built-in cost calculators and a protocol for custom ones.
+Most LLM APIs return token counts but not cost. MASEval provides two built-in cost calculators.
 
-### Cost Priority
+### Quick Start: LiteLLM Pricing
 
-When a `ModelAdapter` records usage after a `chat()` call, cost is resolved in this order:
-
-1. **Provider-reported cost** — e.g., LiteLLM sets `response._hidden_params.response_cost` directly. This always wins.
-2. **CostCalculator** — if no provider cost, the adapter calls `calculator.calculate_cost(token_usage, model_id)`.
-3. **None** — if neither source provides cost, `Usage.cost` stays `None`.
-
-### StaticPricingCalculator
-
-Zero-dependency calculator using user-supplied per-token rates. Lives in `maseval.core.usage`.
-
-```python
-from maseval import StaticPricingCalculator
-
-calculator = StaticPricingCalculator({
-    "gpt-4": {"input": 0.00003, "output": 0.00006},
-    "claude-sonnet-4-5": {"input": 0.000003, "output": 0.000015},
-})
-
-model = OpenAIModelAdapter(
-    client=client,
-    model_id="gpt-4",
-    cost_calculator=calculator,
-)
-
-response = model.chat([{"role": "user", "content": "Hello"}])
-print(model.gather_usage().cost)  # e.g., 0.00234
-```
-
-Pricing is per token (not per 1K or 1M). Cached input tokens are handled automatically — set a `"cached_input"` rate to differentiate:
-
-```python
-calculator = StaticPricingCalculator({
-    "claude-sonnet-4-5": {
-        "input": 0.000003,
-        "output": 0.000015,
-        "cached_input": 0.0000003,  # 10x cheaper for cached tokens
-    },
-})
-```
-
-For custom unit systems (university credits, EUR, etc.), the "cost" unit is whatever your pricing represents:
-
-```python
-calculator = StaticPricingCalculator({
-    "llama-3-70b": {"input": 0.5, "output": 1.0},  # credits per token
-})
-```
-
-### LiteLLMCostCalculator
-
-Uses LiteLLM's bundled [model pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) for automatic cost calculation. Covers OpenAI, Anthropic, Google, Mistral, Cohere, and many more.
+The easiest path — uses LiteLLM's [model pricing database](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) covering OpenAI, Anthropic, Google, Mistral, and many more:
 
 ```python
 from maseval.interface.usage import LiteLLMCostCalculator
@@ -133,15 +91,24 @@ model = OpenAIModelAdapter(
     model_id="gpt-4",
     cost_calculator=calculator,
 )
+
+response = model.chat([{"role": "user", "content": "Hello"}])
+print(f"Cost: ${model.gather_usage().cost:.4f}")
 ```
 
 !!! tip "LiteLLMModelAdapter already reports cost"
 
-    If you're using the `LiteLLMModelAdapter`, it extracts provider-reported cost from `response._hidden_params.response_cost` automatically. You only need `LiteLLMCostCalculator` when using other adapters (OpenAI, Anthropic, Google) and want automatic pricing lookup.
+    If you're using `LiteLLMModelAdapter`, it extracts provider-reported cost automatically. You only need `LiteLLMCostCalculator` when using other adapters (OpenAI, Anthropic, Google) and want automatic pricing lookup.
 
-#### Custom Pricing Overrides
+If your model ID doesn't match LiteLLM's naming (e.g., using Google's OpenAI-compatible endpoint), remap it:
 
-Override pricing for specific models while using LiteLLM's database for the rest:
+```python
+calculator = LiteLLMCostCalculator(model_id_map={
+    "gemini-2.0-flash": "gemini/gemini-2.0-flash",
+})
+```
+
+You can also override pricing for specific models while using LiteLLM's database for the rest:
 
 ```python
 calculator = LiteLLMCostCalculator(custom_pricing={
@@ -152,22 +119,64 @@ calculator = LiteLLMCostCalculator(custom_pricing={
 })
 ```
 
-#### Model ID Remapping
+### Manual Pricing
 
-When your adapter's `model_id` doesn't match LiteLLM's naming convention (e.g., using Google's OpenAI-compatible endpoint), use `model_id_map` to remap:
+When you know your rates, use `StaticPricingCalculator` — zero dependencies, fully explicit:
 
 ```python
-calculator = LiteLLMCostCalculator(model_id_map={
-    "gemini-2.0-flash": "gemini/gemini-2.0-flash",
-    "my-custom-gpt4": "gpt-4",
+from maseval import StaticPricingCalculator
+
+calculator = StaticPricingCalculator({
+    "gpt-4": {"input": 0.00003, "output": 0.00006},
+    "claude-sonnet-4-5": {"input": 0.000003, "output": 0.000015},
 })
 ```
 
-The map is applied before both custom pricing and LiteLLM lookup.
+Pricing is **per token** (not per 1K or 1M). For cached tokens, add a `"cached_input"` rate:
 
-### Custom Cost Calculator
+```python
+calculator = StaticPricingCalculator({
+    "claude-sonnet-4-5": {
+        "input": 0.000003,
+        "output": 0.000015,
+        "cached_input": 0.0000003,  # 10x cheaper
+    },
+})
+```
 
-Implement the `CostCalculator` protocol for custom pricing logic:
+The cost unit is whatever your pricing represents — USD, EUR, university credits:
+
+```python
+calculator = StaticPricingCalculator({
+    "llama-3-70b": {"input": 0.5, "output": 1.0},  # credits per token
+})
+```
+
+### Sharing a Calculator Across Models
+
+A single calculator instance works for multiple model adapters — the `model_id` is passed on each cost computation:
+
+```python
+calculator = StaticPricingCalculator({
+    "gpt-4": {"input": 0.00003, "output": 0.00006},
+    "claude-sonnet-4-5": {"input": 0.000003, "output": 0.000015},
+})
+
+model_a = OpenAIModelAdapter(client=client, model_id="gpt-4", cost_calculator=calculator)
+model_b = AnthropicModelAdapter(client=client, model_id="claude-sonnet-4-5", cost_calculator=calculator)
+```
+
+### How Cost Is Resolved
+
+When a `ModelAdapter` records usage after a `chat()` call, cost is resolved in priority order:
+
+1. **Provider-reported cost** — e.g., LiteLLM sets `response._hidden_params.response_cost` directly. This always wins.
+2. **CostCalculator** — if no provider cost, the adapter calls `calculator.calculate_cost(token_usage, model_id)`.
+3. **None** — if neither source provides cost, `usage.cost` stays `None`.
+
+### Writing a Custom Calculator
+
+Implement the `CostCalculator` protocol — a single method:
 
 ```python
 from maseval import CostCalculator, TokenUsage
@@ -181,29 +190,40 @@ class MyCostCalculator:
         return rate["input"] * usage.input_tokens + rate["output"] * usage.output_tokens
 ```
 
-The protocol requires a single method: `calculate_cost(usage, model_id) -> Optional[float]`. Return `None` if you don't have pricing for the given model.
+Return `None` if you don't have pricing for the given model.
 
-### Sharing Calculators Across Adapters
+## Post-hoc Analysis
 
-A single calculator instance can be shared across multiple model adapters. The `model_id` is passed on each call, so the calculator can look up the right pricing:
+After a benchmark completes, `UsageReporter` lets you slice usage by task, component, or both:
 
 ```python
-calculator = StaticPricingCalculator({
-    "gpt-4": {"input": 0.00003, "output": 0.00006},
-    "claude-sonnet-4-5": {"input": 0.000003, "output": 0.000015},
-})
+from maseval import UsageReporter
 
-model_a = OpenAIModelAdapter(client=client, model_id="gpt-4", cost_calculator=calculator)
-model_b = AnthropicModelAdapter(client=client, model_id="claude-sonnet-4-5", cost_calculator=calculator)
+reporter = UsageReporter.from_reports(benchmark.reports)
+
+# Grand total
+total = reporter.total()
+print(f"Total cost: ${total.cost:.4f}")
+print(f"Total tokens: {total.input_tokens + total.output_tokens}")
+
+# Where did the money go?
+for component, usage in reporter.by_component().items():
+    print(f"  {component}: ${usage.cost:.4f}")
+
+# Which tasks were expensive?
+for task_id, usage in reporter.by_task().items():
+    print(f"  {task_id}: ${usage.cost:.4f}")
+
+# Full nested summary dict
+summary = reporter.summary()
 ```
 
-## Non-LLM Usage Tracking
+## Tracking Non-LLM Resources
 
-Tools, environments, and other components can track usage by inheriting `UsageTrackableMixin` and overriding `gather_usage()`:
+Tools, environments, and other components can track arbitrary usage by inheriting `UsageTrackableMixin` and overriding `gather_usage()`. Here's an example for a paid API:
 
 ```python
 from maseval import Usage, UsageTrackableMixin
-from maseval.core.tracing import TraceableMixin
 
 class BloombergEnvironment(Environment, UsageTrackableMixin):
     def __init__(self, task_data):
@@ -226,67 +246,11 @@ class BloombergEnvironment(Environment, UsageTrackableMixin):
         return sum(self._usage_records, Usage())
 ```
 
-Non-LLM components set cost directly in their `Usage` records — there is no calculator involvement. Each component knows its own billing model.
-
-## Post-hoc Analysis with UsageReporter
-
-`UsageReporter` provides sliced analysis across all benchmark reports:
-
-```python
-from maseval import UsageReporter
-
-reporter = UsageReporter.from_reports(benchmark.reports)
-
-# Grand total
-total = reporter.total()
-print(f"Total cost: ${total.cost:.4f}")
-print(f"Total tokens: {total.input_tokens + total.output_tokens}")
-
-# Per-task breakdown
-for task_id, usage in reporter.by_task().items():
-    print(f"  {task_id}: ${usage.cost:.4f}")
-
-# Per-component breakdown
-for component, usage in reporter.by_component().items():
-    print(f"  {component}: ${usage.cost:.4f}")
-
-# Full nested summary dict
-summary = reporter.summary()
-```
-
-## Usage Data Model
-
-### Usage
-
-Generic record for any billable resource:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `cost` | `Optional[float]` | Cost in USD (or custom unit). `None` = unknown. |
-| `units` | `Dict[str, int\|float]` | Arbitrary countable units (e.g., `{"api_calls": 3}`). |
-| `provider` | `Optional[str]` | Provider identifier (e.g., `"anthropic"`). |
-| `category` | `Optional[str]` | Registry category (e.g., `"models"`, `"tools"`). |
-| `component_name` | `Optional[str]` | Component name (e.g., `"main_model"`). |
-| `kind` | `Optional[str]` | Component kind (e.g., `"llm"`, `"service"`). |
-
-`Usage` supports addition: costs sum (both known) or become `None` (either unknown), units sum, grouping fields are preserved on match or set to `None` on mismatch.
-
-### TokenUsage
-
-Extends `Usage` with LLM-specific token counts:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `input_tokens` | `int` | Input/prompt tokens. |
-| `output_tokens` | `int` | Output/completion tokens. |
-| `total_tokens` | `int` | Total tokens. |
-| `cached_input_tokens` | `int` | Tokens served from cache. |
-| `reasoning_tokens` | `int` | Reasoning/thinking tokens. |
-| `audio_tokens` | `int` | Audio processing tokens. |
+Non-LLM components set cost directly — there is no calculator involvement. Each component knows its own billing model.
 
 ## Evaluator Usage
 
-Evaluators that use LLM calls (LLM-as-judge) hold a `ModelAdapter`. Register the evaluator's model in the benchmark and its usage is collected automatically:
+Evaluators that use LLM calls (LLM-as-judge) hold a `ModelAdapter`. Register it in the benchmark and its usage is collected separately from agent usage:
 
 ```python
 class MyBenchmark(Benchmark):
@@ -296,11 +260,11 @@ class MyBenchmark(Benchmark):
         return [MyLLMEvaluator(judge_model)]
 ```
 
-The judge model's usage appears under `usage["evaluator_models"]["judge"]` in the report, separate from the agent's model usage.
+The judge model's usage appears under `usage["evaluator_models"]["judge"]` in the report, so you can distinguish evaluation cost from agent cost.
 
 ## Tips
 
-**For cost tracking**: Use `LiteLLMCostCalculator` for automatic pricing, or `StaticPricingCalculator` for custom rates.
+**For cost tracking**: Use `LiteLLMCostCalculator` for automatic pricing, or `StaticPricingCalculator` when you know your rates.
 
 **For custom hosts**: Use `model_id_map` in `LiteLLMCostCalculator` when your adapter's model ID doesn't match LiteLLM's naming.
 
