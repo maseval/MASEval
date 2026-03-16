@@ -129,6 +129,7 @@ nav:
               - LiteLLM: interface/inference/litellm.md
               - OpenAI: interface/inference/openai.md
       - Benchmarks:
+          - Overview: benchmark/index.md
           - ConVerse: benchmark/converse.md
           - GAIA2: benchmark/gaia2.md
           - MACS: benchmark/macs.md
