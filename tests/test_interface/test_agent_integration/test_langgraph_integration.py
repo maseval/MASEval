@@ -420,7 +420,7 @@ def test_langgraph_adapter_cost_with_explicit_model_id():
 def test_langgraph_adapter_no_cost_without_model_id():
     """Test that LangGraph adapter cannot auto-detect model_id (by design)."""
     from maseval.interface.agents.langgraph import LangGraphAgentAdapter
-    from maseval.core.usage import StaticPricingCalculator
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage, StaticPricingCalculator
     from langgraph.graph import StateGraph, END
     from typing_extensions import TypedDict
     from langchain_core.messages import AIMessage
@@ -448,5 +448,6 @@ def test_langgraph_adapter_no_cost_without_model_id():
     adapter.run("Test")
 
     usage = adapter.gather_usage()
+    assert isinstance(usage, MasevalTokenUsage)
     assert usage.cost == 0.0
     assert usage.input_tokens == 100
