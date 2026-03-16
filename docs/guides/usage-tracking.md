@@ -16,7 +16,7 @@ MASEval tracks how much each benchmark run consumes (tokens, API calls, dollars)
 
 **Model adapters** track every `chat()` call: input tokens, output tokens, cached tokens, reasoning tokens. No setup needed.
 
-**Agent adapters** aggregate token usage from the underlying framework's execution. Each framework adapter (`SmolAgentAdapter`, `CamelAgentAdapter`, `LangGraphAgentAdapter`, `LlamaIndexAgentAdapter`) extracts usage from its framework's native data structures (memory steps, response metadata, message annotations, or execution logs respectively). Cost is computed automatically when litellm is installed (see [Agent Cost Tracking](#agent-cost-tracking) below).
+**Agent adapters** aggregate token usage from the underlying framework's execution. Cost is computed automatically when litellm is installed (see [Agent Cost Tracking](#agent-cost-tracking) below).
 
 **Benchmarks** collect usage from all registered components after each task and include it in reports.
 
@@ -57,7 +57,7 @@ This works across all supported frameworks (smolagents, CAMEL, LangGraph, and Ll
 
 ### Agent Cost Tracking
 
-Agent adapters auto-detect cost when possible. For smolagents, CAMEL, and LlamaIndex, the adapter reads the model ID from the framework's agent object and uses `LiteLLMCostCalculator` if litellm is installed. No configuration needed:
+Agent adapters compute cost automatically when litellm is installed. The adapter detects the model ID from the framework's agent object and uses `LiteLLMCostCalculator` behind the scenes. No configuration needed:
 
 ```python
 # Cost tracking works automatically if litellm is installed
@@ -66,16 +66,16 @@ adapter.run("What's the capital of France?")
 print(f"Cost: ${adapter.gather_usage().cost:.4f}")
 ```
 
-For **LangGraph**, the model ID cannot be auto-detected because a graph can contain multiple models across its nodes. Pass `model_id` explicitly:
+If auto-detection doesn't work for your setup (e.g., the adapter can't find the model ID), pass `model_id` explicitly:
 
 ```python
 adapter = LangGraphAgentAdapter(
     compiled_graph, "agent",
-    model_id="gpt-4o-mini",  # Required for cost tracking
+    model_id="gpt-4o-mini",
 )
 ```
 
-To override auto-detection or use custom pricing, pass `cost_calculator` and/or `model_id`:
+To use custom pricing instead, pass `cost_calculator` and/or `model_id`:
 
 ```python
 from maseval import StaticPricingCalculator
@@ -90,13 +90,6 @@ adapter = SmolAgentAdapter(
     model_id="my-model",
 )
 ```
-
-| Framework | Model ID | Cost Calculator |
-|-----------|----------|-----------------|
-| smolagents | Auto (`agent.model.model_id`) | Auto (`LiteLLMCostCalculator`) |
-| CAMEL | Auto (`agent.model_backend.model_type`) | Auto (`LiteLLMCostCalculator`) |
-| LlamaIndex | Auto (`agent.llm.metadata.model_name`) | Auto (`LiteLLMCostCalculator`) |
-| LangGraph | **Manual** (`model_id=...`) | Auto (`LiteLLMCostCalculator`) |
 
 If litellm is not installed, auto-creation of the calculator is skipped and cost stays at `0.0`. Tokens are always tracked regardless.
 
@@ -215,7 +208,7 @@ model_b = AnthropicModelAdapter(client=client, model_id="claude-sonnet-4-5", cos
 
 When a `ModelAdapter` records usage after a `chat()` call, cost is resolved in priority order:
 
-1. **Provider-reported cost**: e.g., LiteLLM sets `response._hidden_params.response_cost` directly. This always wins.
+1. **Provider-reported cost**: some providers (e.g., LiteLLM) include cost in the API response. This always wins.
 2. **CostCalculator**: if no provider cost, the adapter calls `calculator.calculate_cost(token_usage, model_id)`.
 3. **Zero**: if neither source provides cost, `usage.cost` stays `0.0`.
 

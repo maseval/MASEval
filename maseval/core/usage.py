@@ -15,8 +15,7 @@ registry via `gather_usage()`.
 ``Usage.cost`` defaults to ``0.0``, so ``Usage()`` works as a starting value
 for accumulation (e.g., ``sum(records, Usage())``). Cost calculators are
 optional — if no calculator is provided to a ``ModelAdapter``, cost stays
-at ``0.0`` unless the provider reports it directly (e.g., LiteLLM's
-``response._hidden_params.response_cost``).
+at ``0.0`` unless the provider reports it directly.
 For automatic pricing via LiteLLM's bundled model database, see
 ``maseval.interface.usage``.
 """
