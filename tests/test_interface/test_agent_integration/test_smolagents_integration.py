@@ -710,3 +710,114 @@ def test_e2e_smolagents_gather_usage_empty_before_run():
     assert isinstance(usage_after, MasevalTokenUsage)
     assert usage_after.input_tokens > 0
     assert usage_after.output_tokens > 0
+
+
+# --- Cost calculation tests ---
+
+
+def test_smolagents_adapter_cost_with_explicit_calculator():
+    """Test that passing a cost_calculator computes cost from token usage."""
+    from maseval.interface.agents.smolagents import SmolAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage, StaticPricingCalculator
+    from smolagents.memory import ActionStep, AgentMemory
+    from smolagents.monitoring import TokenUsage, Timing
+    from unittest.mock import Mock
+    import time
+
+    mock_agent = Mock()
+    mock_agent.memory = AgentMemory(system_prompt="Test")
+    mock_agent.model.model_id = "gpt-4o-mini"
+
+    start = time.time()
+    step = ActionStep(step_number=1, timing=Timing(start_time=start, end_time=start + 0.5), observations_images=[])
+    step.token_usage = TokenUsage(input_tokens=1000, output_tokens=500)
+    mock_agent.memory.steps.append(step)
+
+    calculator = StaticPricingCalculator({"gpt-4o-mini": {"input": 0.00001, "output": 0.00002}})
+
+    adapter = SmolAgentAdapter(agent_instance=mock_agent, name="test_agent", cost_calculator=calculator)
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.input_tokens == 1000
+    assert usage.output_tokens == 500
+    # Cost = 1000 * 0.00001 + 500 * 0.00002 = 0.01 + 0.01 = 0.02
+    assert usage.cost == pytest.approx(0.02)
+
+
+def test_smolagents_adapter_cost_with_explicit_model_id():
+    """Test that explicit model_id overrides auto-detected one."""
+    from maseval.interface.agents.smolagents import SmolAgentAdapter
+    from maseval.core.usage import StaticPricingCalculator
+    from smolagents.memory import ActionStep, AgentMemory
+    from smolagents.monitoring import TokenUsage, Timing
+    from unittest.mock import Mock
+    import time
+
+    mock_agent = Mock()
+    mock_agent.memory = AgentMemory(system_prompt="Test")
+    mock_agent.model.model_id = "wrong-model"  # Auto-detected, but overridden
+
+    start = time.time()
+    step = ActionStep(step_number=1, timing=Timing(start_time=start, end_time=start + 0.5), observations_images=[])
+    step.token_usage = TokenUsage(input_tokens=100, output_tokens=50)
+    mock_agent.memory.steps.append(step)
+
+    calculator = StaticPricingCalculator({"my-model": {"input": 0.001, "output": 0.002}})
+
+    adapter = SmolAgentAdapter(agent_instance=mock_agent, name="test", cost_calculator=calculator, model_id="my-model")
+    usage = adapter.gather_usage()
+
+    # Should use "my-model" pricing, not "wrong-model"
+    assert usage.cost == pytest.approx(0.001 * 100 + 0.002 * 50)
+
+
+def test_smolagents_adapter_resolve_model_id():
+    """Test that _resolve_model_id() reads from agent.model.model_id."""
+    from maseval.interface.agents.smolagents import SmolAgentAdapter
+    from unittest.mock import Mock
+
+    mock_agent = Mock()
+    mock_agent.model.model_id = "gpt-4o"
+    mock_agent.write_memory_to_messages = Mock(return_value=[])
+
+    adapter = SmolAgentAdapter(agent_instance=mock_agent, name="test")
+    assert adapter._resolve_model_id() == "gpt-4o"
+
+
+def test_smolagents_adapter_resolve_model_id_missing():
+    """Test that _resolve_model_id() returns None when model has no model_id."""
+    from maseval.interface.agents.smolagents import SmolAgentAdapter
+    from unittest.mock import Mock
+
+    mock_agent = Mock(spec=[])  # No attributes at all
+    adapter = SmolAgentAdapter(agent_instance=mock_agent, name="test")
+    assert adapter._resolve_model_id() is None
+
+
+def test_smolagents_adapter_no_cost_without_calculator():
+    """Test that cost stays 0.0 when no calculator is available and auto-create fails."""
+    from maseval.interface.agents.smolagents import SmolAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage
+    from smolagents.memory import ActionStep, AgentMemory
+    from smolagents.monitoring import TokenUsage, Timing
+    from unittest.mock import Mock, patch
+    import time
+
+    mock_agent = Mock()
+    mock_agent.memory = AgentMemory(system_prompt="Test")
+    mock_agent.model.model_id = "some-model"
+
+    start = time.time()
+    step = ActionStep(step_number=1, timing=Timing(start_time=start, end_time=start + 0.5), observations_images=[])
+    step.token_usage = TokenUsage(input_tokens=100, output_tokens=50)
+    mock_agent.memory.steps.append(step)
+
+    # Patch LiteLLMCostCalculator to simulate litellm not installed
+    with patch("maseval.interface.agents.smolagents.SmolAgentAdapter._resolve_cost_calculator", return_value=None):
+        adapter = SmolAgentAdapter(agent_instance=mock_agent, name="test")
+        usage = adapter.gather_usage()
+
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.cost == 0.0
+    assert usage.input_tokens == 100

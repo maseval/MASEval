@@ -4,7 +4,7 @@ This module requires smolagents to be installed:
     pip install maseval[smolagents]
 """
 
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
 from maseval.core.usage import TokenUsage, Usage
@@ -102,16 +102,29 @@ class SmolAgentAdapter(AgentAdapter):
         smolagents to be installed: `pip install maseval[smolagents]`
     """
 
-    def __init__(self, agent_instance, name: str, callbacks=None):
+    def __init__(self, agent_instance: Any, name: str, callbacks: Any = None, cost_calculator: Any = None, model_id: Optional[str] = None):
         """Initialize the Smolagent adapter.
 
         Note: We don't call super().__init__() to avoid initializing self.logs as a list,
         since we override it as a property that dynamically fetches from agent.memory.
+
+        Args:
+            agent_instance: smolagents MultiStepAgent or similar
+            name: Agent name for identification
+            callbacks: Optional list of AgentCallback instances
+            cost_calculator: Optional cost calculator. If not provided, a
+                ``LiteLLMCostCalculator`` is created automatically when litellm
+                is available.
+            model_id: Optional model ID for cost calculation. If not provided,
+                auto-detected from ``agent.model.model_id``.
         """
         self.agent = agent_instance
         self.name = name
         self.callbacks = callbacks or []
         self.messages = None
+        self._cost_calculator = cost_calculator
+        self._model_id = model_id
+        self._auto_calculator = None  # Lazy-initialized
 
     @property
     def logs(self) -> List[Dict[str, Any]]:  # type: ignore[override]
@@ -320,7 +333,33 @@ class SmolAgentAdapter(AgentAdapter):
 
         return base_logs
 
-    def gather_usage(self) -> Usage:
+    def _resolve_model_id(self):
+        """Auto-detect model ID from smolagents agent.
+
+        All smolagents model classes (LiteLLMModel, OpenAIServerModel,
+        TransformersModel, etc.) inherit from ``Model`` which stores
+        ``model_id`` on the instance.
+        """
+        try:
+            return self.agent.model.model_id
+        except AttributeError:
+            return None
+
+    def _resolve_cost_calculator(self):
+        """Return the cost calculator, auto-creating one if litellm is available."""
+        if self._cost_calculator is not None:
+            return self._cost_calculator
+        # Lazy auto-create: try LiteLLMCostCalculator once
+        if self._auto_calculator is None:
+            try:
+                from maseval.interface.usage import LiteLLMCostCalculator
+
+                self._auto_calculator = LiteLLMCostCalculator()
+            except (ImportError, Exception):
+                self._auto_calculator = False  # Sentinel: don't retry
+        return self._auto_calculator if self._auto_calculator is not False else None
+
+    def _gather_usage(self) -> Usage:
         """Gather aggregated token usage across all agent steps.
 
         Walks smolagents' memory steps (ActionStep and PlanningStep) and sums

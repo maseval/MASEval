@@ -118,6 +118,8 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         name: str,
         callbacks: Optional[List[Any]] = None,
         max_iterations: Optional[int] = None,
+        cost_calculator: Any = None,
+        model_id: Optional[str] = None,
     ):
         """Initialize the LlamaIndex adapter.
 
@@ -131,11 +133,17 @@ class LlamaIndexAgentAdapter(AgentAdapter):
                 passing max_steps to it is silently swallowed by **kwargs. The actual
                 iteration limit must be passed here so the adapter forwards it to
                 AgentWorkflow.run(max_iterations=...).
+            cost_calculator: Optional cost calculator. If not provided, a
+                ``LiteLLMCostCalculator`` is created automatically when litellm
+                is available.
+            model_id: Optional model ID for cost calculation. If not provided,
+                auto-detected from ``agent.llm.metadata.model_name``.
         """
-        super().__init__(agent_instance, name, callbacks)
+        super().__init__(agent_instance, name, callbacks, cost_calculator=cost_calculator, model_id=model_id)
         self._last_result = None
         self._message_cache: List[Dict[str, Any]] = []
         self._max_iterations = max_iterations
+        self._auto_calculator = None  # Lazy-initialized
 
     def get_messages(self) -> MessageHistory:
         """Get message history from LlamaIndex.
@@ -216,7 +224,40 @@ class LlamaIndexAgentAdapter(AgentAdapter):
 
         return base_config
 
-    def gather_usage(self) -> Usage:
+    def _resolve_model_id(self):
+        """Auto-detect model ID from LlamaIndex agent.
+
+        LlamaIndex agents store their LLM in ``self.llm``, which has a
+        ``metadata`` property exposing ``LLMMetadata.model_name``.
+        """
+        try:
+            return self.agent.llm.metadata.model_name
+        except AttributeError:
+            pass
+        # For AgentWorkflow, try the first agent's LLM
+        try:
+            if hasattr(self.agent, "agents"):
+                for agent in self.agent.agents:
+                    if hasattr(agent, "llm"):
+                        return agent.llm.metadata.model_name
+        except (AttributeError, StopIteration):
+            pass
+        return None
+
+    def _resolve_cost_calculator(self):
+        """Return the cost calculator, auto-creating one if litellm is available."""
+        if self._cost_calculator is not None:
+            return self._cost_calculator
+        if self._auto_calculator is None:
+            try:
+                from maseval.interface.usage import LiteLLMCostCalculator
+
+                self._auto_calculator = LiteLLMCostCalculator()
+            except (ImportError, Exception):
+                self._auto_calculator = False
+        return self._auto_calculator if self._auto_calculator is not False else None
+
+    def _gather_usage(self) -> Usage:
         """Gather aggregated token usage from LlamaIndex execution logs.
 
         Sums token counts recorded in ``self.logs`` during agent execution.

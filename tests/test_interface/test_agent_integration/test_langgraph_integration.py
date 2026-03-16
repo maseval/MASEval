@@ -376,3 +376,77 @@ def test_langgraph_adapter_gather_usage_before_run():
 
     assert isinstance(usage, Usage)
     assert usage.cost == 0.0
+
+
+# =============================================================================
+# Cost Calculation Tests
+# =============================================================================
+
+
+def test_langgraph_adapter_cost_with_explicit_model_id():
+    """Test that passing model_id + calculator computes cost for LangGraph."""
+    from maseval.interface.agents.langgraph import LangGraphAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage, StaticPricingCalculator
+    from langgraph.graph import StateGraph, END
+    from typing_extensions import TypedDict
+    from langchain_core.messages import AIMessage
+    from langchain_core.messages.ai import UsageMetadata
+
+    class State(TypedDict):
+        messages: list
+
+    def agent_node(state: State) -> State:
+        response = AIMessage(
+            content="Response",
+            usage_metadata=UsageMetadata(input_tokens=1000, output_tokens=500, total_tokens=1500),
+        )
+        return {"messages": state["messages"] + [response]}
+
+    graph = StateGraph(State)  # type: ignore[arg-type]
+    graph.add_node("agent", agent_node)
+    graph.set_entry_point("agent")
+    graph.add_edge("agent", END)
+    compiled = graph.compile()
+
+    calculator = StaticPricingCalculator({"gpt-4o": {"input": 0.00001, "output": 0.00002}})
+    adapter = LangGraphAgentAdapter(agent_instance=compiled, name="test", model_id="gpt-4o", cost_calculator=calculator)
+    adapter.run("Test")
+
+    usage = adapter.gather_usage()
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.cost == pytest.approx(1000 * 0.00001 + 500 * 0.00002)
+
+
+def test_langgraph_adapter_no_cost_without_model_id():
+    """Test that LangGraph adapter cannot auto-detect model_id (by design)."""
+    from maseval.interface.agents.langgraph import LangGraphAgentAdapter
+    from maseval.core.usage import StaticPricingCalculator
+    from langgraph.graph import StateGraph, END
+    from typing_extensions import TypedDict
+    from langchain_core.messages import AIMessage
+    from langchain_core.messages.ai import UsageMetadata
+
+    class State(TypedDict):
+        messages: list
+
+    def agent_node(state: State) -> State:
+        response = AIMessage(
+            content="Response",
+            usage_metadata=UsageMetadata(input_tokens=100, output_tokens=50, total_tokens=150),
+        )
+        return {"messages": state["messages"] + [response]}
+
+    graph = StateGraph(State)  # type: ignore[arg-type]
+    graph.add_node("agent", agent_node)
+    graph.set_entry_point("agent")
+    graph.add_edge("agent", END)
+    compiled = graph.compile()
+
+    calculator = StaticPricingCalculator({"gpt-4o": {"input": 0.001, "output": 0.002}})
+    # No model_id passed — cost should stay 0.0 despite calculator being available
+    adapter = LangGraphAgentAdapter(agent_instance=compiled, name="test", cost_calculator=calculator)
+    adapter.run("Test")
+
+    usage = adapter.gather_usage()
+    assert usage.cost == 0.0
+    assert usage.input_tokens == 100

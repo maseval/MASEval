@@ -600,3 +600,50 @@ def test_e2e_llamaindex_logs_populated_by_real_execution():
     assert log["total_tokens"] == 150
     assert "timestamp" in log
     assert "duration_seconds" in log
+
+
+# =============================================================================
+# Cost Calculation Tests
+# =============================================================================
+
+
+def test_llamaindex_adapter_cost_with_explicit_calculator():
+    """Test that passing a cost_calculator computes cost from token usage."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage, StaticPricingCalculator
+    from unittest.mock import Mock
+
+    mock_agent = Mock(spec=[])
+    adapter = LlamaIndexAgentAdapter(agent_instance=mock_agent, name="test")
+    # Simulate logs from a run
+    adapter.logs = [{"input_tokens": 1000, "output_tokens": 500, "status": "success"}]
+
+    calculator = StaticPricingCalculator({"gpt-4": {"input": 0.00003, "output": 0.00006}})
+    adapter._cost_calculator = calculator
+    adapter._model_id = "gpt-4"
+
+    usage = adapter.gather_usage()
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.cost == pytest.approx(1000 * 0.00003 + 500 * 0.00006)
+
+
+def test_llamaindex_adapter_resolve_model_id():
+    """Test that _resolve_model_id() reads from agent.llm.metadata.model_name."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from unittest.mock import Mock
+
+    mock_agent = Mock()
+    mock_agent.llm.metadata.model_name = "gpt-4o-mini"
+
+    adapter = LlamaIndexAgentAdapter(agent_instance=mock_agent, name="test")
+    assert adapter._resolve_model_id() == "gpt-4o-mini"
+
+
+def test_llamaindex_adapter_resolve_model_id_missing():
+    """Test that _resolve_model_id() returns None when agent has no llm."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from unittest.mock import Mock
+
+    mock_agent = Mock(spec=[])
+    adapter = LlamaIndexAgentAdapter(agent_instance=mock_agent, name="test")
+    assert adapter._resolve_model_id() is None

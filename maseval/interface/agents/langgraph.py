@@ -117,19 +117,39 @@ class LangGraphAgentAdapter(AgentAdapter):
         langgraph to be installed: `pip install maseval[langgraph]`
     """
 
-    def __init__(self, agent_instance: Any, name: str, callbacks: Optional[List[Any]] = None, config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        agent_instance: Any,
+        name: str,
+        callbacks: Optional[List[Any]] = None,
+        config: Optional[Dict[str, Any]] = None,
+        cost_calculator: Any = None,
+        model_id: Optional[str] = None,
+    ):
         """Initialize the LangGraph adapter.
 
         Args:
             agent_instance: Compiled LangGraph graph
             name: Agent name
             callbacks: Optional list of callbacks
-            config: Optional LangGraph config dict (for stateful graphs with checkpointer)
-                   Should include 'configurable': {'thread_id': '...'} for persistent state
+            config: Optional LangGraph config dict (for stateful graphs with checkpointer).
+                Should include ``'configurable': {'thread_id': '...'}`` for persistent state.
+            cost_calculator: Optional cost calculator. If not provided, a
+                ``LiteLLMCostCalculator`` is created automatically when litellm
+                is available.
+            model_id: Model ID for cost calculation. LangGraph graphs can contain
+                multiple models across nodes, so the model ID cannot be auto-detected.
+                Pass the primary model's ID here to enable cost tracking::
+
+                    LangGraphAgentAdapter(
+                        graph, "agent",
+                        model_id="gpt-4o-mini",
+                    )
         """
-        super().__init__(agent_instance, name, callbacks)
+        super().__init__(agent_instance, name, callbacks, cost_calculator=cost_calculator, model_id=model_id)
         self._langgraph_config = config
         self._last_result = None
+        self._auto_calculator = None  # Lazy-initialized
 
     def get_messages(self) -> MessageHistory:
         """Get message history from LangGraph.
@@ -214,7 +234,20 @@ class LangGraphAgentAdapter(AgentAdapter):
 
         return base_config
 
-    def gather_usage(self) -> Usage:
+    def _resolve_cost_calculator(self):
+        """Return the cost calculator, auto-creating one if litellm is available."""
+        if self._cost_calculator is not None:
+            return self._cost_calculator
+        if self._auto_calculator is None:
+            try:
+                from maseval.interface.usage import LiteLLMCostCalculator
+
+                self._auto_calculator = LiteLLMCostCalculator()
+            except (ImportError, Exception):
+                self._auto_calculator = False
+        return self._auto_calculator if self._auto_calculator is not False else None
+
+    def _gather_usage(self) -> Usage:
         """Gather aggregated token usage from LangGraph message metadata.
 
         Walks messages from the last graph execution (or persistent state)

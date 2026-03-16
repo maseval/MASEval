@@ -175,7 +175,9 @@ class CamelAgentAdapter(AgentAdapter):
         camel-ai to be installed: `pip install maseval[camel]`
     """
 
-    def __init__(self, agent_instance: Any, name: str, callbacks: Optional[List[Any]] = None):
+    def __init__(
+        self, agent_instance: Any, name: str, callbacks: Optional[List[Any]] = None, cost_calculator: Any = None, model_id: Optional[str] = None
+    ):
         """Initialize the CAMEL adapter.
 
         Note: We don't call super().__init__() to avoid initializing self.logs as a list,
@@ -185,11 +187,19 @@ class CamelAgentAdapter(AgentAdapter):
             agent_instance: CAMEL ChatAgent instance
             name: Agent name for identification
             callbacks: Optional list of AgentCallback instances
+            cost_calculator: Optional cost calculator. If not provided, a
+                ``LiteLLMCostCalculator`` is created automatically when litellm
+                is available.
+            model_id: Optional model ID for cost calculation. If not provided,
+                auto-detected from ``agent.model_backend.model_type``.
         """
         self.agent = agent_instance
         self.name = name
         self.callbacks = callbacks or []
         self.messages = None
+        self._cost_calculator = cost_calculator
+        self._model_id = model_id
+        self._auto_calculator = None  # Lazy-initialized
         # Store responses from each step() call
         self._responses: List[Any] = []
         # Store errors that occur during execution (for comprehensive logging)
@@ -419,7 +429,36 @@ class CamelAgentAdapter(AgentAdapter):
 
         return base_traces
 
-    def gather_usage(self) -> Usage:
+    def _resolve_model_id(self):
+        """Auto-detect model ID from CAMEL agent.
+
+        CAMEL's ChatAgent stores the model backend in ``model_backend``
+        (or ``model`` for older versions). The backend has a ``model_type``
+        enum whose ``.value`` is the model ID string.
+        """
+        try:
+            backend = getattr(self.agent, "model_backend", None) or getattr(self.agent, "model", None)
+            if backend is not None and hasattr(backend, "model_type"):
+                model_type = backend.model_type
+                return model_type.value if hasattr(model_type, "value") else str(model_type)
+        except Exception:
+            pass
+        return None
+
+    def _resolve_cost_calculator(self):
+        """Return the cost calculator, auto-creating one if litellm is available."""
+        if self._cost_calculator is not None:
+            return self._cost_calculator
+        if self._auto_calculator is None:
+            try:
+                from maseval.interface.usage import LiteLLMCostCalculator
+
+                self._auto_calculator = LiteLLMCostCalculator()
+            except (ImportError, Exception):
+                self._auto_calculator = False
+        return self._auto_calculator if self._auto_calculator is not False else None
+
+    def _gather_usage(self) -> Usage:
         """Gather aggregated token usage across all CAMEL agent responses.
 
         Walks stored ``ChatAgentResponse`` objects and sums their

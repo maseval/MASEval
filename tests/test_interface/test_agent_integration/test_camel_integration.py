@@ -1228,6 +1228,71 @@ def test_e2e_camel_gather_usage_empty_before_run():
     assert usage_after.output_tokens > 0
 
 
+# =============================================================================
+# Cost Calculation Tests
+# =============================================================================
+
+
+def test_camel_adapter_cost_with_explicit_calculator():
+    """Test that passing a cost_calculator computes cost from token usage."""
+    from maseval.interface.agents.camel import CamelAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage, StaticPricingCalculator
+    from unittest.mock import Mock
+
+    mock_agent = Mock()
+    mock_response = Mock()
+    mock_response.info = {"usage": {"prompt_tokens": 1000, "completion_tokens": 500}}
+    mock_response.terminated = False
+    mock_response.msgs = [Mock(content="response")]
+
+    adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test")
+    adapter._responses = [mock_response]
+
+    calculator = StaticPricingCalculator({"gpt-4o-mini": {"input": 0.00001, "output": 0.00002}})
+    adapter._cost_calculator = calculator
+    adapter._model_id = "gpt-4o-mini"
+
+    usage = adapter.gather_usage()
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.cost == pytest.approx(1000 * 0.00001 + 500 * 0.00002)
+
+
+def test_camel_adapter_resolve_model_id():
+    """Test that _resolve_model_id() reads from agent.model_backend.model_type."""
+    from maseval.interface.agents.camel import CamelAgentAdapter
+    from unittest.mock import Mock
+
+    mock_agent = Mock()
+    mock_agent.model_backend.model_type.value = "gpt-4o-mini"
+
+    adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test")
+    assert adapter._resolve_model_id() == "gpt-4o-mini"
+
+
+def test_camel_adapter_cost_auto_detect_model_id():
+    """Test that cost calculation works with auto-detected model_id."""
+    from maseval.interface.agents.camel import CamelAgentAdapter
+    from maseval.core.usage import StaticPricingCalculator
+    from unittest.mock import Mock
+
+    mock_agent = Mock()
+    mock_agent.model_backend.model_type.value = "gpt-4o"
+
+    mock_response = Mock()
+    mock_response.info = {"usage": {"prompt_tokens": 100, "completion_tokens": 50}}
+    mock_response.terminated = False
+
+    adapter = CamelAgentAdapter(agent_instance=mock_agent, name="test")
+    adapter._responses = [mock_response]
+
+    calculator = StaticPricingCalculator({"gpt-4o": {"input": 0.001, "output": 0.002}})
+    adapter._cost_calculator = calculator
+    # model_id not set — should be auto-detected
+
+    usage = adapter.gather_usage()
+    assert usage.cost == pytest.approx(100 * 0.001 + 50 * 0.002)
+
+
 def test_e2e_camel_logs_contain_usage():
     """Verify adapter.logs also contain usage data from real execution."""
     from camel.agents import ChatAgent

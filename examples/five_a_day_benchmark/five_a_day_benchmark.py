@@ -967,7 +967,7 @@ if __name__ == "__main__":
     def _fmt_usage(usage):
         parts = [f"cost=${usage.cost:.6f}"]
         if isinstance(usage, TokenUsage):
-            parts.append(f"in={usage.input_tokens}  out={usage.output_tokens}")
+            parts.append(f"in={usage.input_tokens:>10,}  out={usage.output_tokens:>10,}")
         if usage.units:
             parts.append(f"units={dict(usage.units)}")
         return "  ".join(parts)
