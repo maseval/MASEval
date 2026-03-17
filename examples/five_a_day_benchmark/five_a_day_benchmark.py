@@ -978,7 +978,7 @@ if __name__ == "__main__":
 
     # Group components by category
     if benchmark.usage_by_component:
-        by_category: dict[str, dict[str, object]] = defaultdict(dict)
+        by_category: Dict[str, Dict[str, object]] = defaultdict(dict)
         for key, usage in benchmark.usage_by_component.items():
             category, name = key.split(":", 1)
             by_category[category][name] = usage

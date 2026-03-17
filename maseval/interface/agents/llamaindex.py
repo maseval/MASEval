@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
-from maseval.core.usage import TokenUsage, Usage
+from maseval.core.usage import CostCalculator, TokenUsage, Usage
 
 __all__ = ["LlamaIndexAgentAdapter", "LlamaIndexLLMUser"]
 
@@ -118,7 +118,7 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         name: str,
         callbacks: Optional[List[Any]] = None,
         max_iterations: Optional[int] = None,
-        cost_calculator: Any = None,
+        cost_calculator: Optional[CostCalculator] = None,
         model_id: Optional[str] = None,
     ):
         """Initialize the LlamaIndex adapter.
@@ -143,7 +143,8 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         self._last_result = None
         self._message_cache: List[Dict[str, Any]] = []
         self._max_iterations = max_iterations
-        self._auto_calculator = None  # Lazy-initialized
+        self._auto_calculator: Optional[CostCalculator] = None
+        self._auto_attempted = False
 
     def get_messages(self) -> MessageHistory:
         """Get message history from LlamaIndex.
@@ -224,7 +225,7 @@ class LlamaIndexAgentAdapter(AgentAdapter):
 
         return base_config
 
-    def _resolve_model_id(self):
+    def _resolve_model_id(self) -> Optional[str]:
         """Auto-detect model ID from LlamaIndex agent.
 
         LlamaIndex agents store their LLM in ``self.llm``, which has a
@@ -244,18 +245,14 @@ class LlamaIndexAgentAdapter(AgentAdapter):
             pass
         return None
 
-    def _resolve_cost_calculator(self):
+    def _resolve_cost_calculator(self) -> Optional[CostCalculator]:
         """Return the cost calculator, auto-creating one if litellm is available."""
-        if self._cost_calculator is not None:
-            return self._cost_calculator
-        if self._auto_calculator is None:
-            try:
-                from maseval.interface.usage import LiteLLMCostCalculator
+        from maseval.interface.agents._cost import resolve_auto_cost_calculator
 
-                self._auto_calculator = LiteLLMCostCalculator()
-            except (ImportError, Exception):
-                self._auto_calculator = False
-        return self._auto_calculator if self._auto_calculator is not False else None
+        calculator, self._auto_calculator, self._auto_attempted = resolve_auto_cost_calculator(
+            self._cost_calculator, self._auto_calculator, self._auto_attempted
+        )
+        return calculator
 
     def _gather_usage(self) -> Usage:
         """Gather aggregated token usage from LlamaIndex execution logs.

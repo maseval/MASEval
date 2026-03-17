@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from maseval import AgentAdapter, MessageHistory, LLMUser, User
 from maseval.core.tracing import TraceableMixin
 from maseval.core.config import ConfigurableMixin
-from maseval.core.usage import TokenUsage, Usage
+from maseval.core.usage import CostCalculator, TokenUsage, Usage
 
 __all__ = [
     "CamelAgentAdapter",
@@ -176,7 +176,12 @@ class CamelAgentAdapter(AgentAdapter):
     """
 
     def __init__(
-        self, agent_instance: Any, name: str, callbacks: Optional[List[Any]] = None, cost_calculator: Any = None, model_id: Optional[str] = None
+        self,
+        agent_instance: Any,
+        name: str,
+        callbacks: Optional[List[Any]] = None,
+        cost_calculator: Optional[CostCalculator] = None,
+        model_id: Optional[str] = None,
     ):
         """Initialize the CAMEL adapter.
 
@@ -199,7 +204,8 @@ class CamelAgentAdapter(AgentAdapter):
         self.messages = None
         self._cost_calculator = cost_calculator
         self._model_id = model_id
-        self._auto_calculator = None  # Lazy-initialized
+        self._auto_calculator: Optional[CostCalculator] = None
+        self._auto_attempted = False
         # Store responses from each step() call
         self._responses: List[Any] = []
         # Store errors that occur during execution (for comprehensive logging)
@@ -429,7 +435,7 @@ class CamelAgentAdapter(AgentAdapter):
 
         return base_traces
 
-    def _resolve_model_id(self):
+    def _resolve_model_id(self) -> Optional[str]:
         """Auto-detect model ID from CAMEL agent.
 
         CAMEL's ChatAgent stores the model backend in ``model_backend``
@@ -445,18 +451,14 @@ class CamelAgentAdapter(AgentAdapter):
             pass
         return None
 
-    def _resolve_cost_calculator(self):
+    def _resolve_cost_calculator(self) -> Optional[CostCalculator]:
         """Return the cost calculator, auto-creating one if litellm is available."""
-        if self._cost_calculator is not None:
-            return self._cost_calculator
-        if self._auto_calculator is None:
-            try:
-                from maseval.interface.usage import LiteLLMCostCalculator
+        from maseval.interface.agents._cost import resolve_auto_cost_calculator
 
-                self._auto_calculator = LiteLLMCostCalculator()
-            except (ImportError, Exception):
-                self._auto_calculator = False
-        return self._auto_calculator if self._auto_calculator is not False else None
+        calculator, self._auto_calculator, self._auto_attempted = resolve_auto_cost_calculator(
+            self._cost_calculator, self._auto_calculator, self._auto_attempted
+        )
+        return calculator
 
     def _gather_usage(self) -> Usage:
         """Gather aggregated token usage across all CAMEL agent responses.

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from typing import List, Any, Optional, Dict
 
 from .callback import AgentCallback
@@ -28,16 +29,13 @@ class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
         litellm is installed). This means cost tracking often works with zero
         configuration.
 
-        To override or disable auto-detection, pass explicit values::
+        To override auto-detection, pass explicit values::
 
             adapter = SmolAgentAdapter(
                 agent, name="researcher",
                 cost_calculator=StaticPricingCalculator({...}),
                 model_id="my-custom-model",
             )
-
-        Pass ``cost_calculator=None`` explicitly to disable cost calculation
-        even when auto-detection would otherwise enable it.
     """
 
     def __init__(
@@ -161,7 +159,7 @@ class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
                 if mid:
                     cost = calculator.calculate_cost(usage, mid)
                     if cost is not None:
-                        usage.cost = cost
+                        usage = replace(usage, cost=cost)
         return usage
 
     def _gather_usage(self) -> Usage:

@@ -92,6 +92,11 @@ class Usage:
         if not isinstance(other, Usage):
             return NotImplemented
 
+        # Delegate to TokenUsage.__add__ when the right operand is a
+        # TokenUsage but self is a plain Usage, so token fields are preserved.
+        if type(self) is Usage and isinstance(other, TokenUsage):
+            return TokenUsage.__add__(other, self)
+
         cost = self.cost + other.cost
 
         # Sum units
@@ -228,7 +233,7 @@ class TokenUsage(Usage):
     @classmethod
     def from_chat_response_usage(
         cls,
-        usage_dict: Dict[str, int],
+        usage_dict: Dict[str, Any],
         *,
         cost: float = 0.0,
         provider: Optional[str] = None,

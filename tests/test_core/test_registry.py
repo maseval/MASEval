@@ -262,43 +262,6 @@ class TestComponentRegistryThreadSafety:
 # ==================== Usage Tracking Tests ====================
 
 
-class MockUsageComponent(TraceableMixin):
-    """Component that implements UsageTrackableMixin for testing."""
-
-    def __init__(self, name: str, cost: float = 0.0, input_tokens: int = 0, output_tokens: int = 0):
-        super().__init__()
-        self._name = name
-        self._cost = cost
-        self._input_tokens = input_tokens
-        self._output_tokens = output_tokens
-
-    def gather_traces(self) -> Dict[str, Any]:
-        return {"name": self._name}
-
-    def gather_usage(self):
-        from maseval.core.usage import TokenUsage
-
-        return TokenUsage(
-            cost=self._cost,
-            input_tokens=self._input_tokens,
-            output_tokens=self._output_tokens,
-            total_tokens=self._input_tokens + self._output_tokens,
-        )
-
-
-class MockBrokenUsageComponent(TraceableMixin):
-    """Component whose gather_usage raises an exception."""
-
-    def __init__(self):
-        super().__init__()
-
-    def gather_traces(self) -> Dict[str, Any]:
-        return {}
-
-    def gather_usage(self):
-        raise RuntimeError("Usage collection failed")
-
-
 class UsageAwareComponent(TraceableMixin, UsageTrackableMixin):
     """Component with both tracing and usage tracking."""
 

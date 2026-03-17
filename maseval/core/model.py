@@ -48,7 +48,7 @@ Example:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Optional, Dict, List, Union
 from datetime import datetime
 import time
@@ -316,7 +316,7 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
                 if token_usage.cost == 0.0 and self._cost_calculator is not None:
                     calculated = self._cost_calculator.calculate_cost(token_usage, self.model_id)
                     if calculated is not None:
-                        token_usage.cost = calculated
+                        token_usage = replace(token_usage, cost=calculated)
 
                 self._usage_records.append(token_usage)
 

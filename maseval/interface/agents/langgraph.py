@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
-from maseval.core.usage import TokenUsage, Usage
+from maseval.core.usage import CostCalculator, TokenUsage, Usage
 
 __all__ = ["LangGraphAgentAdapter", "LangGraphLLMUser"]
 
@@ -123,7 +123,7 @@ class LangGraphAgentAdapter(AgentAdapter):
         name: str,
         callbacks: Optional[List[Any]] = None,
         config: Optional[Dict[str, Any]] = None,
-        cost_calculator: Any = None,
+        cost_calculator: Optional[CostCalculator] = None,
         model_id: Optional[str] = None,
     ):
         """Initialize the LangGraph adapter.
@@ -149,7 +149,8 @@ class LangGraphAgentAdapter(AgentAdapter):
         super().__init__(agent_instance, name, callbacks, cost_calculator=cost_calculator, model_id=model_id)
         self._langgraph_config = config
         self._last_result = None
-        self._auto_calculator = None  # Lazy-initialized
+        self._auto_calculator: Optional[CostCalculator] = None
+        self._auto_attempted = False
 
     def get_messages(self) -> MessageHistory:
         """Get message history from LangGraph.
@@ -234,18 +235,14 @@ class LangGraphAgentAdapter(AgentAdapter):
 
         return base_config
 
-    def _resolve_cost_calculator(self):
+    def _resolve_cost_calculator(self) -> Optional[CostCalculator]:
         """Return the cost calculator, auto-creating one if litellm is available."""
-        if self._cost_calculator is not None:
-            return self._cost_calculator
-        if self._auto_calculator is None:
-            try:
-                from maseval.interface.usage import LiteLLMCostCalculator
+        from maseval.interface.agents._cost import resolve_auto_cost_calculator
 
-                self._auto_calculator = LiteLLMCostCalculator()
-            except (ImportError, Exception):
-                self._auto_calculator = False
-        return self._auto_calculator if self._auto_calculator is not False else None
+        calculator, self._auto_calculator, self._auto_attempted = resolve_auto_cost_calculator(
+            self._cost_calculator, self._auto_calculator, self._auto_attempted
+        )
+        return calculator
 
     def _gather_usage(self) -> Usage:
         """Gather aggregated token usage from LangGraph message metadata.

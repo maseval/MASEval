@@ -7,7 +7,7 @@ This module requires smolagents to be installed:
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
-from maseval.core.usage import TokenUsage, Usage
+from maseval.core.usage import CostCalculator, TokenUsage, Usage
 
 __all__ = ["SmolAgentAdapter", "SmolAgentLLMUser"]
 
@@ -102,7 +102,14 @@ class SmolAgentAdapter(AgentAdapter):
         smolagents to be installed: `pip install maseval[smolagents]`
     """
 
-    def __init__(self, agent_instance: Any, name: str, callbacks: Any = None, cost_calculator: Any = None, model_id: Optional[str] = None):
+    def __init__(
+        self,
+        agent_instance: Any,
+        name: str,
+        callbacks: Any = None,
+        cost_calculator: Optional[CostCalculator] = None,
+        model_id: Optional[str] = None,
+    ):
         """Initialize the Smolagent adapter.
 
         Note: We don't call super().__init__() to avoid initializing self.logs as a list,
@@ -124,7 +131,8 @@ class SmolAgentAdapter(AgentAdapter):
         self.messages = None
         self._cost_calculator = cost_calculator
         self._model_id = model_id
-        self._auto_calculator = None  # Lazy-initialized
+        self._auto_calculator: Optional[CostCalculator] = None
+        self._auto_attempted = False
 
     @property
     def logs(self) -> List[Dict[str, Any]]:  # type: ignore[override]
@@ -333,7 +341,7 @@ class SmolAgentAdapter(AgentAdapter):
 
         return base_logs
 
-    def _resolve_model_id(self):
+    def _resolve_model_id(self) -> Optional[str]:
         """Auto-detect model ID from smolagents agent.
 
         All smolagents model classes (LiteLLMModel, OpenAIServerModel,
@@ -345,19 +353,14 @@ class SmolAgentAdapter(AgentAdapter):
         except AttributeError:
             return None
 
-    def _resolve_cost_calculator(self):
+    def _resolve_cost_calculator(self) -> Optional[CostCalculator]:
         """Return the cost calculator, auto-creating one if litellm is available."""
-        if self._cost_calculator is not None:
-            return self._cost_calculator
-        # Lazy auto-create: try LiteLLMCostCalculator once
-        if self._auto_calculator is None:
-            try:
-                from maseval.interface.usage import LiteLLMCostCalculator
+        from maseval.interface.agents._cost import resolve_auto_cost_calculator
 
-                self._auto_calculator = LiteLLMCostCalculator()
-            except (ImportError, Exception):
-                self._auto_calculator = False  # Sentinel: don't retry
-        return self._auto_calculator if self._auto_calculator is not False else None
+        calculator, self._auto_calculator, self._auto_attempted = resolve_auto_cost_calculator(
+            self._cost_calculator, self._auto_calculator, self._auto_attempted
+        )
+        return calculator
 
     def _gather_usage(self) -> Usage:
         """Gather aggregated token usage across all agent steps.
