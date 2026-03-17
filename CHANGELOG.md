@@ -11,13 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Core**
 
-- Usage and cost tracking as a first-class collection axis alongside tracing and configuration. `Usage` and `TokenUsage` data classes record billable resource consumption (tokens, API calls, custom units). `UsageTrackableMixin` enables automatic collection via `gather_usage()`. `ModelAdapter` tracks token usage automatically after each `chat()` call with no changes required from benchmark implementers. (PR: #45)
-- Pluggable cost calculation via `CostCalculator` protocol. `StaticPricingCalculator` computes cost from user-supplied per-token rates (supports USD, EUR, credits, or any unit). Pass a `cost_calculator` to any `ModelAdapter` to fill in `Usage.cost` when the provider doesn't report it. Provider-reported cost always takes precedence. (PR: #45)
-- `LiteLLMCostCalculator` in `maseval.interface.usage` for automatic pricing via LiteLLM's bundled model database. Supports `custom_pricing` overrides and `model_id_map` for remapping adapter model IDs to LiteLLM's naming convention. Requires `litellm`. (PR: #45)
-- Cost calculation for agent adapters. `AgentAdapter` now accepts `cost_calculator` and `model_id` parameters. For smolagents, CAMEL, and LlamaIndex, both the model ID and cost calculator are auto-detected (model ID from the framework's agent object, calculator via `LiteLLMCostCalculator` if litellm is installed). For LangGraph, `model_id` must be passed explicitly since graphs can contain multiple models. Explicit `cost_calculator` and `model_id` always override auto-detection. (PR: #45)
-- `UsageReporter` post-hoc analysis utility for slicing usage data from benchmark reports by task, component, or model. Create via `UsageReporter.from_reports(benchmark.reports)`. (PR: #45)
-- Live usage totals accessible during benchmark execution via `benchmark.usage` (grand total) and `benchmark.usage_by_component` (per-component breakdowns). Totals persist across task repetitions. (PR: #45)
-- `ComponentRegistry` gains usage collection: `collect_usage()`, `total_usage`, and `usage_by_component` properties, parallel to existing trace and config collection. (PR: #45)
+- Usage and cost tracking via `Usage` and `TokenUsage` data classes. `ModelAdapter` tracks token usage automatically after each `chat()` call. Components that implement `UsageTrackableMixin` are collected via `gather_usage()`. Live totals available during benchmark runs via `benchmark.usage` (grand total) and `benchmark.usage_by_component` (per-component breakdowns). Post-hoc analysis via `UsageReporter.from_reports(benchmark.reports)` with breakdowns by task, component, or model. (PR: #45)
+- Pluggable cost calculation via `CostCalculator` protocol. `StaticPricingCalculator` computes cost from user-supplied per-token rates. `LiteLLMCostCalculator` in `maseval.interface.usage` for automatic pricing via LiteLLM's model database (supports `custom_pricing` overrides and `model_id_map`; requires `litellm`). Pass a `cost_calculator` to `ModelAdapter` or `AgentAdapter` to compute `Usage.cost`. Provider-reported cost always takes precedence. (PR: #45)
+- `AgentAdapter` now accepts `cost_calculator` and `model_id` parameters. For smolagents, CAMEL, and LlamaIndex, both are auto-detected from the framework's agent object (`LiteLLMCostCalculator` if litellm is installed). LangGraph requires explicit `model_id` since graphs can contain multiple models. Explicit parameters always override auto-detection. (PR: #45)
 
 - `Task.freeze()` and `Task.unfreeze()` methods to make task data read-only during benchmark runs, preventing accidental mutation of `environment_data`, `user_data`, `evaluation_data`, and `metadata` (including nested dicts). Attribute reassignment is also blocked while frozen. Check state with `Task.is_frozen`. (PR: #42)
 - `TaskFrozenError` exception in `maseval.core.exceptions`, raised when attempting to modify a frozen task. (PR: #42)
@@ -55,8 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Documentation**
 
-- Usage & Cost Tracking guide (`docs/guides/usage-tracking.md`) covering automatic LLM tracking, cost calculators, non-LLM usage, post-hoc analysis with `UsageReporter`, and the data model. (PR: #45)
-- Usage & Cost reference page (`docs/reference/usage.md`) with API documentation for all usage and cost classes. (PR: #45)
+- Usage & Cost Tracking guide (`docs/guides/usage-tracking.md`) and API reference (`docs/reference/usage.md`). (PR: #45)
 
 **Core**
 
