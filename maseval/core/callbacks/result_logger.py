@@ -320,7 +320,7 @@ class FileResultLogger(ResultLogger):
         include_traces: bool = True,
         include_config: bool = True,
         include_eval: bool = True,
-        include_task: bool = False,
+        include_task: bool = True,
         include_usage: bool = True,
         validate_on_completion: bool = True,
     ):
