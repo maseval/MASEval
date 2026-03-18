@@ -961,7 +961,6 @@ if __name__ == "__main__":
     results = benchmark.run(tasks=tasks, agent_data=agent_configs)
 
     # --- Usage summary ---
-    from collections import defaultdict
     from maseval import TokenUsage
 
     def _fmt_usage(usage):
@@ -972,33 +971,17 @@ if __name__ == "__main__":
             parts.append(f"units={dict(usage.units)}")
         return "  ".join(parts)
 
-    print("\n--- Usage Summary ---")
-    total = benchmark.usage
-    print(f"Total: {_fmt_usage(total)}")
-
-    # Group components by category
-    if benchmark.usage_by_component:
-        by_category: Dict[str, Dict[str, object]] = defaultdict(dict)
-        for key, usage in benchmark.usage_by_component.items():
-            category, name = key.split(":", 1)
-            by_category[category][name] = usage
-
-        for category in ["agents", "models", "tools", "simulators", "callbacks"]:
-            if category not in by_category:
-                continue
-            print(f"\n{category.capitalize()}:")
-            for name, usage in by_category[category].items():
-                print(f"  {name:<35} {_fmt_usage(usage)}")
-
-        # Print any remaining categories not in the standard list
-        for category, components in by_category.items():
-            if category in {"agents", "models", "tools", "simulators", "callbacks"}:
-                continue
-            print(f"\n{category.capitalize()}:")
-            for name, usage in components.items():
-                print(f"  {name:<35} {_fmt_usage(usage)}")
-
     reporter = UsageReporter.from_reports(results)
+
+    print("\n--- Usage Summary ---")
+    print(f"Total: {_fmt_usage(reporter.total())}")
+
+    by_component = reporter.by_component()
+    if by_component:
+        print("\nBy component:")
+        for key, usage in by_component.items():
+            print(f"  {key:<35} {_fmt_usage(usage)}")
+
     by_task = reporter.by_task()
     if by_task:
         print("\nPer-task:")
