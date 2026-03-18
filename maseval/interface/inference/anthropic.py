@@ -52,6 +52,7 @@ import json
 from typing import Any, Optional, Dict, List, Union
 
 from maseval.core.model import ModelAdapter, ChatResponse
+from maseval.core.usage import CostCalculator
 from maseval.core.seeding import SeedingError
 
 
@@ -76,6 +77,7 @@ class AnthropicModelAdapter(ModelAdapter):
         default_generation_params: Optional[Dict[str, Any]] = None,
         max_tokens: int = 4096,
         seed: Optional[int] = None,
+        cost_calculator: Optional[CostCalculator] = None,
     ):
         """Initialize Anthropic model adapter.
 
@@ -88,6 +90,8 @@ class AnthropicModelAdapter(ModelAdapter):
                 parameter. Default is 4096.
             seed: Seed for deterministic generation. Note: Anthropic does NOT
                 support seeding. Providing a seed will raise SeedingError.
+            cost_calculator: Optional cost calculator for computing cost from
+                token counts when the provider doesn't report cost directly.
 
         Raises:
             SeedingError: If seed is provided (Anthropic doesn't support seeding).
@@ -98,7 +102,7 @@ class AnthropicModelAdapter(ModelAdapter):
                 f"Model '{model_id}' cannot use seed={seed}. "
                 f"Remove the seed parameter or use a provider that supports seeding."
             )
-        super().__init__(seed=seed)
+        super().__init__(seed=seed, cost_calculator=cost_calculator)
         self._client = client
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}
@@ -344,6 +348,13 @@ class AnthropicModelAdapter(ModelAdapter):
                 "output_tokens": getattr(response.usage, "output_tokens", 0),
                 "total_tokens": (getattr(response.usage, "input_tokens", 0) + getattr(response.usage, "output_tokens", 0)),
             }
+            # Provider-specific detail
+            cached = getattr(response.usage, "cache_read_input_tokens", 0)
+            if cached:
+                usage["cached_input_tokens"] = cached
+            cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0)
+            if cache_creation:
+                usage["cache_creation_input_tokens"] = cache_creation
 
         # Extract stop reason
         stop_reason = None

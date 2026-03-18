@@ -4,9 +4,10 @@ This module requires smolagents to be installed:
     pip install maseval[smolagents]
 """
 
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
+from maseval.core.usage import CostCalculator, TokenUsage, Usage
 
 __all__ = ["SmolAgentAdapter", "SmolAgentLLMUser"]
 
@@ -67,9 +68,12 @@ class SmolAgentAdapter(AgentAdapter):
             for msg in agent_adapter.get_messages():
                 print(f"{msg['role']}: {msg['content']}")
 
-            # Gather execution traces with timing and token usage
+            # Gather aggregated usage
+            usage = agent_adapter.gather_usage()
+            print(f"Total tokens: {usage.total_tokens}")
+
+            # Gather execution traces with timing
             traces = agent_adapter.gather_traces()
-            print(f"Total tokens: {traces['total_tokens']}")
             print(f"Total duration: {traces['total_duration_seconds']}s")
 
             # Use in benchmark
@@ -98,16 +102,37 @@ class SmolAgentAdapter(AgentAdapter):
         smolagents to be installed: `pip install maseval[smolagents]`
     """
 
-    def __init__(self, agent_instance, name: str, callbacks=None):
+    def __init__(
+        self,
+        agent_instance: Any,
+        name: str,
+        callbacks: Any = None,
+        cost_calculator: Optional[CostCalculator] = None,
+        model_id: Optional[str] = None,
+    ):
         """Initialize the Smolagent adapter.
 
         Note: We don't call super().__init__() to avoid initializing self.logs as a list,
         since we override it as a property that dynamically fetches from agent.memory.
+
+        Args:
+            agent_instance: smolagents MultiStepAgent or similar
+            name: Agent name for identification
+            callbacks: Optional list of AgentCallback instances
+            cost_calculator: Optional cost calculator. If not provided, a
+                ``LiteLLMCostCalculator`` is created automatically when litellm
+                is available.
+            model_id: Optional model ID for cost calculation. If not provided,
+                auto-detected from ``agent.model.model_id``.
         """
         self.agent = agent_instance
         self.name = name
         self.callbacks = callbacks or []
         self.messages = None
+        self._cost_calculator = cost_calculator
+        self._model_id = model_id
+        self._auto_calculator: Optional[CostCalculator] = None
+        self._auto_attempted = False
 
     @property
     def logs(self) -> List[Dict[str, Any]]:  # type: ignore[override]
@@ -254,13 +279,12 @@ class SmolAgentAdapter(AgentAdapter):
     def gather_traces(self) -> dict:
         """Gather traces including message history and monitoring data.
 
-        Extends the base class to include smolagents' built-in monitoring data:
-        - Token usage (input, output, total) per step and aggregated
-        - Timing/duration per step and aggregated
-        - Step-level details including actions and observations
+        Extends the base class to include smolagents' per-step monitoring data
+        (token usage, timing, actions, observations). Aggregated usage totals
+        are available via ``gather_usage()``.
 
         Returns:
-            Dict containing messages and monitoring statistics
+            Dict containing messages and per-step monitoring statistics.
         """
         base_logs = super().gather_traces()
         _check_smolagents_installed()
@@ -268,17 +292,14 @@ class SmolAgentAdapter(AgentAdapter):
         # Extract monitoring data from agent's memory steps
         if hasattr(self.agent, "memory") and hasattr(self.agent.memory, "steps"):
             steps_stats = []
-            total_input_tokens = 0
-            total_output_tokens = 0
             total_duration = 0.0
 
-            # Import ActionStep for type checking
             from smolagents.memory import ActionStep, PlanningStep
 
             for step in self.agent.memory.steps:
                 # Process ActionStep and PlanningStep (both have token_usage and timing)
                 if isinstance(step, (ActionStep, PlanningStep)):
-                    step_info = {
+                    step_info: Dict[str, Any] = {
                         "step_number": getattr(step, "step_number", None),
                     }
 
@@ -288,13 +309,11 @@ class SmolAgentAdapter(AgentAdapter):
                         if step.timing.duration is not None:
                             total_duration += step.timing.duration
 
-                    # Add token usage information
+                    # Add per-step token usage
                     if hasattr(step, "token_usage") and step.token_usage:
                         step_info["input_tokens"] = step.token_usage.input_tokens
                         step_info["output_tokens"] = step.token_usage.output_tokens
                         step_info["total_tokens"] = step.token_usage.total_tokens
-                        total_input_tokens += step.token_usage.input_tokens
-                        total_output_tokens += step.token_usage.output_tokens
 
                     # Add action details for ActionStep
                     if isinstance(step, ActionStep):
@@ -312,19 +331,72 @@ class SmolAgentAdapter(AgentAdapter):
 
                     steps_stats.append(step_info)
 
-            # Add aggregated statistics
             base_logs.update(
                 {
                     "total_steps": len(steps_stats),
-                    "total_input_tokens": total_input_tokens,
-                    "total_output_tokens": total_output_tokens,
-                    "total_tokens": total_input_tokens + total_output_tokens,
                     "total_duration_seconds": total_duration,
                     "steps_detail": steps_stats,
                 }
             )
 
         return base_logs
+
+    def _resolve_model_id(self) -> Optional[str]:
+        """Auto-detect model ID from smolagents agent.
+
+        All smolagents model classes (LiteLLMModel, OpenAIServerModel,
+        TransformersModel, etc.) inherit from ``Model`` which stores
+        ``model_id`` on the instance.
+        """
+        try:
+            return self.agent.model.model_id
+        except AttributeError:
+            return None
+
+    def _resolve_cost_calculator(self) -> Optional[CostCalculator]:
+        """Return the cost calculator, auto-creating one if litellm is available."""
+        from maseval.interface.agents._cost import resolve_auto_cost_calculator
+
+        calculator, self._auto_calculator, self._auto_attempted = resolve_auto_cost_calculator(
+            self._cost_calculator, self._auto_calculator, self._auto_attempted
+        )
+        return calculator
+
+    def _gather_usage(self) -> Usage:
+        """Gather aggregated token usage across all agent steps.
+
+        Walks smolagents' memory steps (ActionStep and PlanningStep) and sums
+        their ``token_usage`` into a single ``TokenUsage``.
+
+        Returns:
+            Aggregated token usage, or empty ``Usage`` if no steps or no usage data.
+        """
+        _check_smolagents_installed()
+
+        if not (hasattr(self.agent, "memory") and hasattr(self.agent.memory, "steps")):
+            return Usage()
+
+        from smolagents.memory import ActionStep, PlanningStep
+
+        total_input = 0
+        total_output = 0
+        has_usage = False
+
+        for step in self.agent.memory.steps:
+            if isinstance(step, (ActionStep, PlanningStep)):
+                if hasattr(step, "token_usage") and step.token_usage:
+                    total_input += step.token_usage.input_tokens
+                    total_output += step.token_usage.output_tokens
+                    has_usage = True
+
+        if not has_usage:
+            return Usage()
+
+        return TokenUsage(
+            input_tokens=total_input,
+            output_tokens=total_output,
+            total_tokens=total_input + total_output,
+        )
 
     def gather_config(self) -> dict[str, Any]:
         """Gather configuration from this SmolAgent.

@@ -16,6 +16,7 @@ from .callback_handler import CallbackHandler
 from .callback import BenchmarkCallback
 from .user import User
 from .tracing import TraceableMixin
+from .usage import Usage
 from .registry import ComponentRegistry, RegisterableComponent
 from .context import TaskContext
 from .utils.system_info import gather_benchmark_config
@@ -441,6 +442,36 @@ class Benchmark(ABC):
             The collected configs are available in the results for reproducibility analysis.
         """
         return self._registry.collect_configs()
+
+    def collect_all_usage(self) -> Dict[str, Any]:
+        """Collect usage from all registered components for the current task repetition.
+
+        This method is called automatically by ``run()`` after each task repetition
+        completes. It gathers usage from all registered ``UsageTrackableMixin``
+        components and also accumulates into persistent running totals accessible
+        via ``usage`` and ``usage_by_component``.
+
+        Returns:
+            Structured dictionary containing usage from all registered components.
+        """
+        return self._registry.collect_usage()
+
+    @property
+    def usage(self) -> Usage:
+        """Running usage total across all task repetitions.
+
+        Queryable at any time, including while the benchmark is still running.
+        Returns the grand total of all usage collected so far.
+        """
+        return self._registry.total_usage
+
+    @property
+    def usage_by_component(self) -> Dict[str, Usage]:
+        """Per-component running usage totals across all repetitions.
+
+        Keys are registry keys (e.g., ``"models:main_model"``).
+        """
+        return self._registry.usage_by_component
 
     def _invoke_callbacks(self, method_name: str, *args, suppress_errors: bool = True, **kwargs) -> List[Exception]:
         """Invoke a callback method on all registered callbacks (thread-safe).
@@ -1176,14 +1207,16 @@ class Benchmark(ABC):
 
             final_answers = None
 
-        # 3. Collect traces and configs (always attempt this)
+        # 3. Collect traces, configs, and usage (always attempt this)
+        execution_usage: Optional[Dict[str, Any]] = None
         try:
             execution_configs = self.collect_all_configs()
             execution_traces = self.collect_all_traces()
+            execution_usage = self.collect_all_usage()
             # Store in context for potential timeout errors
             context.set_collected_traces(execution_traces)
         except Exception as e:
-            # If trace/config collection fails, record it but continue
+            # If collection fails, record it but continue
             execution_configs = {
                 "error": f"Failed to collect configs: {e}",
                 "error_type": type(e).__name__,
@@ -1192,6 +1225,11 @@ class Benchmark(ABC):
                 "error": f"Failed to collect traces: {e}",
                 "error_type": type(e).__name__,
             }
+            if execution_usage is None:
+                execution_usage = {
+                    "error": f"Failed to collect usage: {e}",
+                    "error_type": type(e).__name__,
+                }
 
         # 4. Evaluate (skip if task execution failed)
         if execution_status == TaskExecutionStatus.SUCCESS:
@@ -1234,6 +1272,7 @@ class Benchmark(ABC):
             "error": error_info,
             "traces": execution_traces,
             "config": execution_configs,
+            "usage": execution_usage,
             "eval": eval_results,
             "task": {
                 "query": task.query,

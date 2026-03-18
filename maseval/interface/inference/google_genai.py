@@ -47,6 +47,7 @@ Example:
 from typing import Any, Optional, Dict, List, Union
 
 from maseval.core.model import ModelAdapter, ChatResponse
+from maseval.core.usage import CostCalculator
 
 
 class GoogleGenAIModelAdapter(ModelAdapter):
@@ -65,6 +66,7 @@ class GoogleGenAIModelAdapter(ModelAdapter):
         model_id: str,
         default_generation_params: Optional[Dict[str, Any]] = None,
         seed: Optional[int] = None,
+        cost_calculator: Optional[CostCalculator] = None,
     ):
         """Initialize Google GenAI model adapter.
 
@@ -74,8 +76,10 @@ class GoogleGenAIModelAdapter(ModelAdapter):
             default_generation_params: Default parameters for all calls.
                 Common parameters: temperature, max_output_tokens, top_p.
             seed: Seed for deterministic generation. Google GenAI supports this.
+            cost_calculator: Optional cost calculator for computing cost from
+                token counts when the provider doesn't report cost directly.
         """
-        super().__init__(seed=seed)
+        super().__init__(seed=seed, cost_calculator=cost_calculator)
         self._client = client
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}
@@ -291,6 +295,10 @@ class GoogleGenAIModelAdapter(ModelAdapter):
                 "output_tokens": getattr(um, "candidates_token_count", 0),
                 "total_tokens": getattr(um, "total_token_count", 0),
             }
+            # Provider-specific detail
+            thoughts = getattr(um, "thoughts_token_count", 0)
+            if thoughts:
+                usage["reasoning_tokens"] = thoughts
 
         # Extract stop reason
         stop_reason = None

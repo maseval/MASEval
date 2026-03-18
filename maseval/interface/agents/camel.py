@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from maseval import AgentAdapter, MessageHistory, LLMUser, User
 from maseval.core.tracing import TraceableMixin
 from maseval.core.config import ConfigurableMixin
+from maseval.core.usage import CostCalculator, TokenUsage, Usage
 
 __all__ = [
     "CamelAgentAdapter",
@@ -135,9 +136,12 @@ class CamelAgentAdapter(AgentAdapter):
             for msg in agent_adapter.get_messages():
                 print(f"{msg['role']}: {msg['content']}")
 
-            # Gather execution traces with token usage and tool calls
+            # Gather aggregated usage
+            usage = agent_adapter.gather_usage()
+            print(f"Total tokens: {usage.total_tokens}")
+
+            # Gather execution traces with tool call counts
             traces = agent_adapter.gather_traces()
-            print(f"Total tokens: {traces['total_tokens']}")
             print(f"Tool calls: {traces['total_tool_calls']}")
 
             # Gather configuration
@@ -171,7 +175,14 @@ class CamelAgentAdapter(AgentAdapter):
         camel-ai to be installed: `pip install maseval[camel]`
     """
 
-    def __init__(self, agent_instance: Any, name: str, callbacks: Optional[List[Any]] = None):
+    def __init__(
+        self,
+        agent_instance: Any,
+        name: str,
+        callbacks: Optional[List[Any]] = None,
+        cost_calculator: Optional[CostCalculator] = None,
+        model_id: Optional[str] = None,
+    ):
         """Initialize the CAMEL adapter.
 
         Note: We don't call super().__init__() to avoid initializing self.logs as a list,
@@ -181,11 +192,20 @@ class CamelAgentAdapter(AgentAdapter):
             agent_instance: CAMEL ChatAgent instance
             name: Agent name for identification
             callbacks: Optional list of AgentCallback instances
+            cost_calculator: Optional cost calculator. If not provided, a
+                ``LiteLLMCostCalculator`` is created automatically when litellm
+                is available.
+            model_id: Optional model ID for cost calculation. If not provided,
+                auto-detected from ``agent.model_backend.model_type``.
         """
         self.agent = agent_instance
         self.name = name
         self.callbacks = callbacks or []
         self.messages = None
+        self._cost_calculator = cost_calculator
+        self._model_id = model_id
+        self._auto_calculator: Optional[CostCalculator] = None
+        self._auto_attempted = False
         # Store responses from each step() call
         self._responses: List[Any] = []
         # Store errors that occur during execution (for comprehensive logging)
@@ -383,25 +403,16 @@ class CamelAgentAdapter(AgentAdapter):
     def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces from this CAMEL agent.
 
-        Extends the base class to include CAMEL-specific execution data
-        with aggregated statistics from all responses.
+        Extends the base class to include CAMEL-specific per-step execution
+        data. Aggregated usage totals are available via ``gather_usage()``.
 
         Returns:
-            Dictionary containing:
-            - Base traces (type, gathered_at, name, messages, logs, etc.)
-            - total_steps: Number of step() calls made
-            - total_input_tokens: Aggregated input tokens
-            - total_output_tokens: Aggregated output tokens
-            - total_tokens: Aggregated total tokens
-            - total_tool_calls: Total number of tool calls made
-            - last_terminated: Whether the last response indicated termination
+            Dictionary containing base traces plus step count, tool call count,
+            and termination status.
         """
         base_traces = super().gather_traces()
         _check_camel_installed()
 
-        # Calculate aggregated statistics from responses
-        total_input_tokens = 0
-        total_output_tokens = 0
         total_tool_calls = 0
         last_terminated = False
 
@@ -411,30 +422,75 @@ class CamelAgentAdapter(AgentAdapter):
 
             if hasattr(response, "info") and response.info:
                 info = response.info
-
-                # Aggregate token usage
-                if "usage" in info and isinstance(info["usage"], dict):
-                    usage = info["usage"]
-                    total_input_tokens += usage.get("prompt_tokens", 0)
-                    total_output_tokens += usage.get("completion_tokens", 0)
-
-                # Count tool calls
                 if "tool_calls" in info and info["tool_calls"]:
                     total_tool_calls += len(info["tool_calls"])
 
-        # Add aggregated statistics
         base_traces.update(
             {
                 "total_steps": len(self._responses),
-                "total_input_tokens": total_input_tokens,
-                "total_output_tokens": total_output_tokens,
-                "total_tokens": total_input_tokens + total_output_tokens,
                 "total_tool_calls": total_tool_calls,
                 "last_terminated": last_terminated,
             }
         )
 
         return base_traces
+
+    def _resolve_model_id(self) -> Optional[str]:
+        """Auto-detect model ID from CAMEL agent.
+
+        CAMEL's ChatAgent stores the model backend in ``model_backend``
+        (or ``model`` for older versions). The backend has a ``model_type``
+        enum whose ``.value`` is the model ID string.
+        """
+        try:
+            backend = getattr(self.agent, "model_backend", None) or getattr(self.agent, "model", None)
+            if backend is not None and hasattr(backend, "model_type"):
+                model_type = backend.model_type
+                return model_type.value if hasattr(model_type, "value") else str(model_type)
+        except Exception:
+            pass
+        return None
+
+    def _resolve_cost_calculator(self) -> Optional[CostCalculator]:
+        """Return the cost calculator, auto-creating one if litellm is available."""
+        from maseval.interface.agents._cost import resolve_auto_cost_calculator
+
+        calculator, self._auto_calculator, self._auto_attempted = resolve_auto_cost_calculator(
+            self._cost_calculator, self._auto_calculator, self._auto_attempted
+        )
+        return calculator
+
+    def _gather_usage(self) -> Usage:
+        """Gather aggregated token usage across all CAMEL agent responses.
+
+        Walks stored ``ChatAgentResponse`` objects and sums their
+        ``info["usage"]`` dicts (which contain ``prompt_tokens`` and
+        ``completion_tokens``).
+
+        Returns:
+            Aggregated token usage, or empty ``Usage`` if no responses or no usage data.
+        """
+        total_input = 0
+        total_output = 0
+        has_usage = False
+
+        for response in self._responses:
+            if hasattr(response, "info") and response.info:
+                info = response.info
+                if "usage" in info and isinstance(info["usage"], dict):
+                    usage_dict = info["usage"]
+                    total_input += usage_dict.get("prompt_tokens", 0)
+                    total_output += usage_dict.get("completion_tokens", 0)
+                    has_usage = True
+
+        if not has_usage:
+            return Usage()
+
+        return TokenUsage(
+            input_tokens=total_input,
+            output_tokens=total_output,
+            total_tokens=total_input + total_output,
+        )
 
     def gather_config(self) -> Dict[str, Any]:
         """Gather configuration from this CAMEL agent.

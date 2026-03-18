@@ -48,7 +48,7 @@ class DummyModelAdapter(ModelAdapter):
         model_id: str = "test-model",
         responses: Optional[List[Optional[str]]] = None,
         tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
-        usage: Optional[Dict[str, int]] = None,
+        usage: Optional[Dict[str, Any]] = None,
         stop_reason: Optional[str] = None,
         seed: Optional[int] = None,
     ):

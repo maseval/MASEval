@@ -1,28 +1,58 @@
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from typing import List, Any, Optional, Dict
 
 from .callback import AgentCallback
 from .history import MessageHistory
 from .tracing import TraceableMixin
 from .config import ConfigurableMixin
+from .usage import Usage, TokenUsage, UsageTrackableMixin, CostCalculator
 
 
-class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin):
+class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
     """Wraps an agent from any framework to provide a standard interface.
 
     This Adapter provides:
+
     - Unified execution interface via `run()`
     - Callback hooks for monitoring
     - Message history management via getter/setter
     - Framework-agnostic tracing
+    - Automatic cost calculation from token usage (when a cost calculator is available)
+
+    Cost Tracking:
+        Agent adapters track token usage from the underlying framework. To also
+        compute cost, you can pass a ``cost_calculator`` and optionally a ``model_id``.
+
+        Most framework adapters auto-detect both the model ID (from the framework's
+        agent object) and the cost calculator (using ``LiteLLMCostCalculator`` if
+        litellm is installed). This means cost tracking often works with zero
+        configuration.
+
+        To override auto-detection, pass explicit values::
+
+            adapter = SmolAgentAdapter(
+                agent, name="researcher",
+                cost_calculator=StaticPricingCalculator({...}),
+                model_id="my-custom-model",
+            )
     """
 
-    def __init__(self, agent_instance: Any, name: str, callbacks: Optional[List[AgentCallback]] = None):
+    def __init__(
+        self,
+        agent_instance: Any,
+        name: str,
+        callbacks: Optional[List[AgentCallback]] = None,
+        cost_calculator: Optional[CostCalculator] = None,
+        model_id: Optional[str] = None,
+    ):
         self.agent = agent_instance
         self.name = name
         self.callbacks = callbacks or []
         self.messages: Optional[MessageHistory] = None
         self.logs: List[Dict[str, Any]] = []
+        self._cost_calculator = cost_calculator
+        self._model_id = model_id
 
     def run(self, query: str) -> Any:
         """Executes the agent and returns the result."""
@@ -103,6 +133,70 @@ class AgentAdapter(ABC, TraceableMixin, ConfigurableMixin):
             ```
         """
         return self.messages if self.messages is not None else MessageHistory()
+
+    def gather_usage(self) -> Usage:
+        """Gather usage with automatic cost calculation.
+
+        Calls ``_gather_usage()`` for raw token counts, then applies
+        the cost calculator if one is available and cost is still ``0.0``.
+
+        The ``model_id`` used for cost calculation is resolved in order:
+
+        1. Explicit ``model_id`` passed to ``__init__``
+        2. Auto-detected from the framework agent via ``_resolve_model_id()``
+
+        Subclasses should override ``_gather_usage()`` (not this method)
+        to provide framework-specific token extraction.
+
+        Returns:
+            Usage (or TokenUsage) with cost filled in when possible.
+        """
+        usage = self._gather_usage()
+        if isinstance(usage, TokenUsage) and usage.cost == 0.0:
+            calculator = self._resolve_cost_calculator()
+            if calculator is not None:
+                mid = self._model_id or self._resolve_model_id()
+                if mid:
+                    cost = calculator.calculate_cost(usage, mid)
+                    if cost is not None:
+                        usage = replace(usage, cost=cost)
+        return usage
+
+    def _gather_usage(self) -> Usage:
+        """Gather raw token usage from the framework.
+
+        Override this in subclasses to extract token counts from the
+        framework's native data structures.
+
+        Returns:
+            Usage or TokenUsage with token counts (cost may be 0.0).
+        """
+        return Usage()
+
+    def _resolve_model_id(self) -> Optional[str]:
+        """Auto-detect the model ID from the framework agent.
+
+        Override in subclasses to extract the model identifier from
+        the framework's agent object (e.g., ``self.agent.model.model_id``
+        for smolagents).
+
+        Returns:
+            Model ID string, or ``None`` if not detectable.
+        """
+        return None
+
+    def _resolve_cost_calculator(self) -> Optional[CostCalculator]:
+        """Resolve the cost calculator to use.
+
+        Returns the explicit calculator if one was provided, otherwise
+        returns ``None``. Framework-specific subclasses can override this
+        to auto-create a calculator (e.g., ``LiteLLMCostCalculator``)
+        when the required dependencies are available.
+
+        Returns:
+            A CostCalculator, or ``None`` if cost calculation is not available.
+        """
+        return self._cost_calculator
 
     def gather_traces(self) -> Dict[str, Any]:
         """Gather execution traces from this agent.

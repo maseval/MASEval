@@ -50,6 +50,7 @@ Example:
 from typing import Any, Optional, Dict, List, Union
 
 from maseval.core.model import ModelAdapter, ChatResponse
+from maseval.core.usage import CostCalculator
 
 
 class OpenAIModelAdapter(ModelAdapter):
@@ -70,6 +71,7 @@ class OpenAIModelAdapter(ModelAdapter):
         model_id: str,
         default_generation_params: Optional[Dict[str, Any]] = None,
         seed: Optional[int] = None,
+        cost_calculator: Optional[CostCalculator] = None,
     ):
         """Initialize OpenAI model adapter.
 
@@ -81,8 +83,10 @@ class OpenAIModelAdapter(ModelAdapter):
                 Common parameters: temperature, max_tokens, top_p.
             seed: Seed for deterministic generation. OpenAI supports this natively.
                 Note: Determinism is best-effort, not guaranteed by OpenAI.
+            cost_calculator: Optional cost calculator for computing cost from
+                token counts when the provider doesn't report cost directly.
         """
-        super().__init__(seed=seed)
+        super().__init__(seed=seed, cost_calculator=cost_calculator)
         self._client = client
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}
@@ -209,6 +213,20 @@ class OpenAIModelAdapter(ModelAdapter):
                 "output_tokens": getattr(response.usage, "completion_tokens", 0),
                 "total_tokens": getattr(response.usage, "total_tokens", 0),
             }
+            # Provider-specific detail
+            completion_details = getattr(response.usage, "completion_tokens_details", None)
+            if completion_details:
+                reasoning = getattr(completion_details, "reasoning_tokens", 0)
+                if reasoning:
+                    usage["reasoning_tokens"] = reasoning
+                audio = getattr(completion_details, "audio_tokens", 0)
+                if audio:
+                    usage["audio_tokens"] = audio
+            prompt_details = getattr(response.usage, "prompt_tokens_details", None)
+            if prompt_details:
+                cached = getattr(prompt_details, "cached_tokens", 0)
+                if cached:
+                    usage["cached_input_tokens"] = cached
 
         return ChatResponse(
             content=message.content,

@@ -31,10 +31,10 @@ dependencies = [
 # Enable optional dependencies for end users
 [project.optional-dependencies]
 # Agent frameworks
-smolagents = ["smolagents>=1.21.3"]
-langgraph = ["langgraph>=0.6.0"]
-llamaindex = ["llama-index-core>=0.12.0"]
-camel = ["camel-ai>=0.2.0"]
+smolagents = ["smolagents>=1.21.3", "litellm>=1.0.0"]
+langgraph = ["langgraph>=0.6.0", "litellm>=1.0.0"]
+llamaindex = ["llama-index-core>=0.12.0", "litellm>=1.0.0"]
+camel = ["camel-ai>=0.2.0", "litellm>=1.0.0"]
 
 # Inference engines
 anthropic = ["anthropic>=0.40.0"]
@@ -121,6 +121,7 @@ examples = [
     "ipykernel>=6.0.0",
     "ipywidgets>=8.0.0",
     "accelerate>=1.11.0",
+    "RestrictedPython>=7.0",
 ]
 
 # Complete installation with absolutely everything (uses self-reference for DRY)

@@ -265,12 +265,11 @@ mkdocs serve
 
 1. Create a feature branch (never commit to `main`)
 2. Make changes following code style guidelines
-3. Run formatters and linters: `ruff format . && ruff check . --fix`
-4. Run tests: `pytest -v`
-5. Update documentation if needed
-6. Open PR against `main` branch
-7. Request review from `cemde`
-8. Ensure all CI checks pass
+3. Run `just all` before committing. This formats, lints, typechecks, and tests in one step. See the `justfile` for all available recipes.
+4. Update documentation if needed
+5. Open PR against `main` branch
+6. Request review from `cemde`
+7. Ensure all CI checks pass
 
 **CI Pipeline:** GitHub Actions runs formatting checks, linting, and test suite across Python versions and OS. All checks must pass before merge.
 
@@ -301,17 +300,14 @@ Example workflow:
 ## Common Tasks Quick Reference
 
 ```bash
-# Fresh environment setup
-uv sync --all-extras --all-groups
+# Fresh environment setup / Update after pulling changes
+just install # uv sync --all-extras --all-groups
 
-# Before committing
-uv run ruff format . && uv run ruff check . --fix && uv run pytest -v && uv run ty check
+# Before committing (format, lint, typecheck, test)
+just all
 
 # Run example
 uv run python examples/amazon_collab.py
-
-# Update after pulling changes
-uv sync --all-extras --all-groups
 
 # Add optional dependency
 uv add --optional <extra-name> <package-name>
@@ -319,6 +315,8 @@ uv add --optional <extra-name> <package-name>
 # Check specific test file
 uv run pytest tests/test_core/test_agent.py -v
 ```
+
+For more comments see `justfile`.
 
 ## Security and Confidentiality
 

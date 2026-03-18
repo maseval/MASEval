@@ -8,3 +8,4 @@ Guides provide an in-depth exploration of MASEval's features and best practices.
 | [Configuration Gathering](config-gathering.md) | Collect and export configuration for reproducibility          |
 | [Exception Handling](exception-handling.md)    | Distinguish agent errors from infrastructure failures         |
 | [Seeding](seeding.md)                          | Enable reproducible benchmark runs with deterministic seeds   |
+| [Usage & Cost Tracking](usage-tracking.md)     | Track token usage and compute cost across providers           |

@@ -44,6 +44,7 @@ Example:
 from typing import Any, Optional, Dict, List, Union
 
 from maseval.core.model import ModelAdapter, ChatResponse
+from maseval.core.usage import CostCalculator
 
 
 class LiteLLMModelAdapter(ModelAdapter):
@@ -70,6 +71,7 @@ class LiteLLMModelAdapter(ModelAdapter):
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
         seed: Optional[int] = None,
+        cost_calculator: Optional[CostCalculator] = None,
     ):
         """Initialize LiteLLM model adapter.
 
@@ -87,8 +89,12 @@ class LiteLLMModelAdapter(ModelAdapter):
             api_base: Custom API base URL for self-hosted or Azure endpoints.
             seed: Seed for deterministic generation. LiteLLM passes this to
                 the underlying provider. Note: Not all providers support seeding.
+            cost_calculator: Optional cost calculator for computing cost from
+                token counts. Note: LiteLLM already reports cost via
+                ``response._hidden_params.response_cost`` for most models,
+                so a calculator is only needed as a fallback or override.
         """
-        super().__init__(seed=seed)
+        super().__init__(seed=seed, cost_calculator=cost_calculator)
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}
         self._api_key = api_key
@@ -176,6 +182,26 @@ class LiteLLMModelAdapter(ModelAdapter):
                 "output_tokens": getattr(response.usage, "completion_tokens", 0),
                 "total_tokens": getattr(response.usage, "total_tokens", 0),
             }
+            # Provider-specific detail
+            completion_details = getattr(response.usage, "completion_tokens_details", None)
+            if completion_details:
+                reasoning = getattr(completion_details, "reasoning_tokens", 0)
+                if reasoning:
+                    usage["reasoning_tokens"] = reasoning
+            prompt_details = getattr(response.usage, "prompt_tokens_details", None)
+            if prompt_details:
+                cached = getattr(prompt_details, "cached_tokens", 0)
+                if cached:
+                    usage["cached_input_tokens"] = cached
+                cache_creation = getattr(prompt_details, "cache_creation_tokens", 0)
+                if cache_creation:
+                    usage["cache_creation_input_tokens"] = cache_creation
+            # LiteLLM provider-reported cost
+            hidden = getattr(response, "_hidden_params", None)
+            if hidden and isinstance(hidden, dict):
+                cost = hidden.get("response_cost")
+                if isinstance(cost, (int, float)):
+                    usage["cost"] = cost
 
         return ChatResponse(
             content=message.content,

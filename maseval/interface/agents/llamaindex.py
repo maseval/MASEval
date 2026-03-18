@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from maseval import AgentAdapter, MessageHistory, LLMUser
+from maseval.core.usage import CostCalculator, TokenUsage, Usage
 
 __all__ = ["LlamaIndexAgentAdapter", "LlamaIndexLLMUser"]
 
@@ -117,6 +118,8 @@ class LlamaIndexAgentAdapter(AgentAdapter):
         name: str,
         callbacks: Optional[List[Any]] = None,
         max_iterations: Optional[int] = None,
+        cost_calculator: Optional[CostCalculator] = None,
+        model_id: Optional[str] = None,
     ):
         """Initialize the LlamaIndex adapter.
 
@@ -130,11 +133,18 @@ class LlamaIndexAgentAdapter(AgentAdapter):
                 passing max_steps to it is silently swallowed by **kwargs. The actual
                 iteration limit must be passed here so the adapter forwards it to
                 AgentWorkflow.run(max_iterations=...).
+            cost_calculator: Optional cost calculator. If not provided, a
+                ``LiteLLMCostCalculator`` is created automatically when litellm
+                is available.
+            model_id: Optional model ID for cost calculation. If not provided,
+                auto-detected from ``agent.llm.metadata.model_name``.
         """
-        super().__init__(agent_instance, name, callbacks)
+        super().__init__(agent_instance, name, callbacks, cost_calculator=cost_calculator, model_id=model_id)
         self._last_result = None
         self._message_cache: List[Dict[str, Any]] = []
         self._max_iterations = max_iterations
+        self._auto_calculator: Optional[CostCalculator] = None
+        self._auto_attempted = False
 
     def get_messages(self) -> MessageHistory:
         """Get message history from LlamaIndex.
@@ -214,6 +224,64 @@ class LlamaIndexAgentAdapter(AgentAdapter):
             base_config["llamaindex_config"] = llamaindex_config
 
         return base_config
+
+    def _resolve_model_id(self) -> Optional[str]:
+        """Auto-detect model ID from LlamaIndex agent.
+
+        LlamaIndex agents store their LLM in ``self.llm``, which has a
+        ``metadata`` property exposing ``LLMMetadata.model_name``.
+        """
+        try:
+            return self.agent.llm.metadata.model_name
+        except AttributeError:
+            pass
+        # For AgentWorkflow, try the first agent's LLM
+        try:
+            if hasattr(self.agent, "agents"):
+                for agent in self.agent.agents:
+                    if hasattr(agent, "llm"):
+                        return agent.llm.metadata.model_name
+        except (AttributeError, StopIteration):
+            pass
+        return None
+
+    def _resolve_cost_calculator(self) -> Optional[CostCalculator]:
+        """Return the cost calculator, auto-creating one if litellm is available."""
+        from maseval.interface.agents._cost import resolve_auto_cost_calculator
+
+        calculator, self._auto_calculator, self._auto_attempted = resolve_auto_cost_calculator(
+            self._cost_calculator, self._auto_calculator, self._auto_attempted
+        )
+        return calculator
+
+    def _gather_usage(self) -> Usage:
+        """Gather aggregated token usage from LlamaIndex execution logs.
+
+        Sums token counts recorded in ``self.logs`` during agent execution.
+        LlamaIndex does not provide built-in cumulative usage tracking, so
+        this aggregates per-call usage extracted from LLM responses.
+
+        Returns:
+            Aggregated token usage, or empty ``Usage`` if no usage data was recorded.
+        """
+        total_input = 0
+        total_output = 0
+        has_usage = False
+
+        for log_entry in self.logs:
+            if "input_tokens" in log_entry or "output_tokens" in log_entry:
+                total_input += log_entry.get("input_tokens", 0)
+                total_output += log_entry.get("output_tokens", 0)
+                has_usage = True
+
+        if not has_usage:
+            return Usage()
+
+        return TokenUsage(
+            input_tokens=total_input,
+            output_tokens=total_output,
+            total_tokens=total_input + total_output,
+        )
 
     def _run_agent(self, query: str) -> Any:
         """Run the LlamaIndex agent and cache execution state.

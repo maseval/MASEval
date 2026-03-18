@@ -11,9 +11,10 @@ from datetime import datetime
 
 from .tracing import TraceableMixin
 from .config import ConfigurableMixin
+from .usage import Usage, UsageTrackableMixin
 
 # Type alias for components that can be registered
-RegisterableComponent = Union[TraceableMixin, ConfigurableMixin]
+RegisterableComponent = Union[TraceableMixin, ConfigurableMixin, UsageTrackableMixin]
 
 
 class ComponentRegistry:
@@ -48,6 +49,12 @@ class ComponentRegistry:
         self._local = threading.local()
         self._benchmark_config = benchmark_config or {}
 
+        # Persistent usage aggregates (NOT cleared between repetitions).
+        # Protected by a lock since multiple threads may call collect_usage().
+        self._usage_lock = threading.Lock()
+        self._usage_total: Usage = Usage()
+        self._usage_by_component: Dict[str, Usage] = {}
+
     # --- Thread-local state properties ---
 
     @property
@@ -74,6 +81,18 @@ class ComponentRegistry:
             self._local.config_component_id_map = {}
         return self._local.config_component_id_map
 
+    @property
+    def _usage_registry(self) -> Dict[str, UsageTrackableMixin]:
+        if not hasattr(self._local, "usage_registry"):
+            self._local.usage_registry = {}
+        return self._local.usage_registry
+
+    @property
+    def _usage_component_id_map(self) -> Dict[int, str]:
+        if not hasattr(self._local, "usage_component_id_map"):
+            self._local.usage_component_id_map = {}
+        return self._local.usage_component_id_map
+
     # --- Public API ---
 
     def register(self, category: str, name: str, component: RegisterableComponent) -> RegisterableComponent:
@@ -94,7 +113,11 @@ class ComponentRegistry:
         key = f"{category}:{name}"
 
         # Check for duplicate registration under different key
-        existing_key = self._component_id_map.get(component_id) or self._config_component_id_map.get(component_id)
+        existing_key = (
+            self._component_id_map.get(component_id)
+            or self._config_component_id_map.get(component_id)
+            or self._usage_component_id_map.get(component_id)
+        )
         if existing_key and existing_key != key:
             raise ValueError(
                 f"Component is already registered as '{existing_key}' and cannot be "
@@ -114,14 +137,25 @@ class ComponentRegistry:
             self._config_registry[key] = component
             self._config_component_id_map[component_id] = key
 
+        # Register for usage tracking if supported
+        if isinstance(component, UsageTrackableMixin):
+            self._usage_registry[key] = component
+            self._usage_component_id_map[component_id] = key
+
         return component
 
     def clear(self) -> None:
-        """Clear all registrations for the current thread."""
+        """Clear per-repetition registrations for the current thread.
+
+        Does NOT clear persistent usage aggregates (``total_usage``,
+        ``usage_by_component``), which accumulate across all repetitions.
+        """
         self._trace_registry.clear()
         self._component_id_map.clear()
         self._config_registry.clear()
         self._config_component_id_map.clear()
+        self._usage_registry.clear()
+        self._usage_component_id_map.clear()
 
     def collect_traces(self) -> Dict[str, Any]:
         """Collect execution traces from all registered components."""
@@ -237,6 +271,91 @@ class ComponentRegistry:
                     configs[category][comp_name] = error_info
 
         return configs
+
+    def collect_usage(self) -> Dict[str, Any]:
+        """Collect usage from all registered UsageTrackableMixin components.
+
+        Returns a structured dict (same shape as ``collect_traces()`` and
+        ``collect_configs()``). Also accumulates into persistent aggregates
+        (``total_usage``, ``usage_by_component``) that survive ``clear()``.
+        """
+        usage: Dict[str, Any] = {
+            "metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "thread_id": threading.current_thread().ident,
+                "total_components": len(self._usage_registry),
+            },
+            "agents": {},
+            "models": {},
+            "tools": {},
+            "simulators": {},
+            "callbacks": {},
+            "environment": None,
+            "user": None,
+            "other": {},
+        }
+
+        for key, component in self._usage_registry.items():
+            category, comp_name = key.split(":", 1)
+
+            try:
+                component_usage = component.gather_usage()
+
+                # Inject grouping fields from registry context if not set
+                if component_usage.category is None:
+                    component_usage.category = category
+                if component_usage.component_name is None:
+                    component_usage.component_name = comp_name
+
+                usage_dict = component_usage.to_dict()
+
+                # Handle environment and user as direct values (not nested in dict)
+                if category == "environment":
+                    usage["environment"] = usage_dict
+                elif category == "user":
+                    usage["user"] = usage_dict
+                else:
+                    if category not in usage:
+                        usage[category] = {}
+                    usage[category][comp_name] = usage_dict
+
+                # Accumulate into persistent aggregates (thread-safe).
+                with self._usage_lock:
+                    self._usage_total = self._usage_total + component_usage
+                    if key in self._usage_by_component:
+                        self._usage_by_component[key] = self._usage_by_component[key] + component_usage
+                    else:
+                        self._usage_by_component[key] = component_usage
+
+            except Exception as e:
+                error_info = {
+                    "error": f"Failed to gather usage: {e}",
+                    "error_type": type(e).__name__,
+                    "component_type": type(component).__name__,
+                }
+
+                if category == "environment":
+                    usage["environment"] = error_info
+                elif category == "user":
+                    usage["user"] = error_info
+                else:
+                    if category not in usage:
+                        usage[category] = {}
+                    usage[category][comp_name] = error_info
+
+        return usage
+
+    @property
+    def total_usage(self) -> Usage:
+        """Running usage total across all repetitions. Queryable at any time."""
+        with self._usage_lock:
+            return self._usage_total
+
+    @property
+    def usage_by_component(self) -> Dict[str, Usage]:
+        """Per-component running totals across all repetitions."""
+        with self._usage_lock:
+            return dict(self._usage_by_component)
 
     def update_benchmark_config(self, benchmark_config: Dict[str, Any]) -> None:
         """Update the benchmark-level configuration.

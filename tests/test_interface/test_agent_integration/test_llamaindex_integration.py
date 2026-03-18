@@ -393,3 +393,257 @@ def test_llamaindex_adapter_error_logging():
     assert log_entry["error"] == "Test error"
     assert log_entry["error_type"] == "ValueError"
     assert "duration_seconds" in log_entry
+
+
+# =============================================================================
+# gather_usage() Tests
+# =============================================================================
+
+
+def test_llamaindex_adapter_gather_usage_with_logs():
+    """Test that gather_usage() aggregates token usage from execution logs."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage
+    from unittest.mock import Mock
+
+    adapter = LlamaIndexAgentAdapter(Mock(), "test_agent")
+
+    # Simulate logs with token usage (as populated by _run_agent)
+    adapter.logs.append(
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "query": "Query 1",
+            "status": "success",
+            "duration_seconds": 1.0,
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "total_tokens": 150,
+        }
+    )
+    adapter.logs.append(
+        {
+            "timestamp": "2026-01-01T00:00:01",
+            "query": "Query 2",
+            "status": "success",
+            "duration_seconds": 0.5,
+            "input_tokens": 200,
+            "output_tokens": 80,
+            "total_tokens": 280,
+        }
+    )
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.input_tokens == 300  # 100 + 200
+    assert usage.output_tokens == 130  # 50 + 80
+    assert usage.total_tokens == 430
+
+
+def test_llamaindex_adapter_gather_usage_no_logs():
+    """Test that gather_usage() returns empty Usage with no logs."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from maseval.core.usage import Usage
+    from unittest.mock import Mock
+
+    adapter = LlamaIndexAgentAdapter(Mock(), "test_agent")
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, Usage)
+    assert usage.cost == 0.0
+
+
+def test_llamaindex_adapter_gather_usage_logs_without_tokens():
+    """Test that gather_usage() returns empty Usage when logs have no token fields."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from maseval.core.usage import Usage
+    from unittest.mock import Mock
+
+    adapter = LlamaIndexAgentAdapter(Mock(), "test_agent")
+
+    # Log without token fields (error case, or model didn't report usage)
+    adapter.logs.append(
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "query": "Query",
+            "status": "error",
+            "duration_seconds": 0.1,
+            "error": "Something went wrong",
+        }
+    )
+
+    usage = adapter.gather_usage()
+
+    assert isinstance(usage, Usage)
+    assert usage.cost == 0.0
+
+
+# =============================================================================
+# End-to-End Usage Collection Tests
+# (real ReActAgent + AgentWorkflow execution, not pre-populated mock data)
+# =============================================================================
+
+
+def _make_llamaindex_adapter(prompt_tokens_per_call: int = 10, completion_tokens_per_call: int = 20):
+    """Create adapter wrapping a ReActAgent + AgentWorkflow with a mock LLM that reports usage.
+
+    The mock LLM returns CompletionResponse with token usage in raw, using
+    ReAct format ("Thought: ... Answer: ...") so the output parser works.
+    """
+    from types import SimpleNamespace
+    from typing import Any
+    from llama_index.core.base.llms.types import CompletionResponse, CompletionResponseGen
+    from llama_index.core.llms.custom import CustomLLM
+    from llama_index.core.llms import LLMMetadata
+    from llama_index.core.agent.workflow.react_agent import ReActAgent
+    from llama_index.core.agent.workflow import AgentWorkflow
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+
+    pt = prompt_tokens_per_call
+    ct = completion_tokens_per_call
+
+    class _MockLLMWithUsage(CustomLLM):
+        prompt_tokens: int = pt
+        completion_tokens: int = ct
+
+        @property
+        def metadata(self) -> LLMMetadata:
+            return LLMMetadata(num_output=256)
+
+        def complete(self, prompt: str, formatted: bool = False, **kwargs: Any) -> CompletionResponse:
+            usage = SimpleNamespace(
+                prompt_tokens=self.prompt_tokens,
+                completion_tokens=self.completion_tokens,
+                total_tokens=self.prompt_tokens + self.completion_tokens,
+            )
+            return CompletionResponse(
+                text="Thought: I can answer directly.\nAnswer: Mock answer.",
+                raw=SimpleNamespace(usage=usage),
+            )
+
+        def stream_complete(self, prompt: str, formatted: bool = False, **kwargs: Any) -> CompletionResponseGen:
+            raise NotImplementedError
+
+    llm = _MockLLMWithUsage()
+    agent = ReActAgent(name="test_agent", description="test", llm=llm, tools=[], streaming=False)
+    workflow = AgentWorkflow(agents=[agent], root_agent="test_agent")
+    return LlamaIndexAgentAdapter(workflow, "test_agent")
+
+
+def test_e2e_llamaindex_gather_usage_single_run():
+    """Run a real ReActAgent → adapter.run() → gather_usage() returns real token counts."""
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage
+
+    adapter = _make_llamaindex_adapter(prompt_tokens_per_call=10, completion_tokens_per_call=20)
+
+    result = adapter.run("Hello?")
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+    usage = adapter.gather_usage()
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.input_tokens == 10
+    assert usage.output_tokens == 20
+    assert usage.total_tokens == 30
+
+
+def test_e2e_llamaindex_gather_usage_accumulates():
+    """Multiple adapter.run() calls accumulate in gather_usage()."""
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage
+
+    adapter = _make_llamaindex_adapter(prompt_tokens_per_call=15, completion_tokens_per_call=25)
+
+    adapter.run("First query")
+    adapter.run("Second query")
+
+    usage = adapter.gather_usage()
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.input_tokens == 30  # 15 + 15
+    assert usage.output_tokens == 50  # 25 + 25
+    assert usage.total_tokens == 80
+
+
+def test_e2e_llamaindex_gather_usage_empty_before_run():
+    """Verify gather_usage() returns empty Usage before run, real TokenUsage after."""
+    from maseval.core.usage import Usage, TokenUsage as MasevalTokenUsage
+
+    adapter = _make_llamaindex_adapter(prompt_tokens_per_call=50, completion_tokens_per_call=100)
+
+    # Before run: no usage
+    usage_before = adapter.gather_usage()
+    assert isinstance(usage_before, Usage)
+    assert not isinstance(usage_before, MasevalTokenUsage)
+
+    # After run: real usage from the LLM
+    adapter.run("test query")
+    usage_after = adapter.gather_usage()
+    assert isinstance(usage_after, MasevalTokenUsage)
+    assert usage_after.input_tokens == 50
+    assert usage_after.output_tokens == 100
+    assert usage_after.total_tokens == 150
+
+
+def test_e2e_llamaindex_logs_populated_by_real_execution():
+    """Verify adapter.logs is populated by _run_agent, not manually."""
+    adapter = _make_llamaindex_adapter(prompt_tokens_per_call=50, completion_tokens_per_call=100)
+
+    assert len(adapter.logs) == 0
+
+    adapter.run("Test query")
+
+    assert len(adapter.logs) == 1
+    log = adapter.logs[0]
+    assert log["status"] == "success"
+    assert log["input_tokens"] == 50
+    assert log["output_tokens"] == 100
+    assert log["total_tokens"] == 150
+    assert "timestamp" in log
+    assert "duration_seconds" in log
+
+
+# =============================================================================
+# Cost Calculation Tests
+# =============================================================================
+
+
+def test_llamaindex_adapter_cost_with_explicit_calculator():
+    """Test that passing a cost_calculator computes cost from token usage."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from maseval.core.usage import TokenUsage as MasevalTokenUsage, StaticPricingCalculator
+    from unittest.mock import Mock
+
+    mock_agent = Mock(spec=[])
+    adapter = LlamaIndexAgentAdapter(agent_instance=mock_agent, name="test")
+    # Simulate logs from a run
+    adapter.logs = [{"input_tokens": 1000, "output_tokens": 500, "status": "success"}]
+
+    calculator = StaticPricingCalculator({"gpt-4": {"input": 0.00003, "output": 0.00006}})
+    adapter._cost_calculator = calculator
+    adapter._model_id = "gpt-4"
+
+    usage = adapter.gather_usage()
+    assert isinstance(usage, MasevalTokenUsage)
+    assert usage.cost == pytest.approx(1000 * 0.00003 + 500 * 0.00006)
+
+
+def test_llamaindex_adapter_resolve_model_id():
+    """Test that _resolve_model_id() reads from agent.llm.metadata.model_name."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from unittest.mock import Mock
+
+    mock_agent = Mock()
+    mock_agent.llm.metadata.model_name = "gpt-4o-mini"
+
+    adapter = LlamaIndexAgentAdapter(agent_instance=mock_agent, name="test")
+    assert adapter._resolve_model_id() == "gpt-4o-mini"
+
+
+def test_llamaindex_adapter_resolve_model_id_missing():
+    """Test that _resolve_model_id() returns None when agent has no llm."""
+    from maseval.interface.agents.llamaindex import LlamaIndexAgentAdapter
+    from unittest.mock import Mock
+
+    mock_agent = Mock(spec=[])
+    adapter = LlamaIndexAgentAdapter(agent_instance=mock_agent, name="test")
+    assert adapter._resolve_model_id() is None

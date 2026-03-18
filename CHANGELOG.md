@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Core**
 
+- Usage and cost tracking via `Usage` and `TokenUsage` data classes. `ModelAdapter` tracks token usage automatically after each `chat()` call. Components that implement `UsageTrackableMixin` are collected via `gather_usage()`. Live totals available during benchmark runs via `benchmark.usage` (grand total) and `benchmark.usage_by_component` (per-component breakdowns). Post-hoc analysis via `UsageReporter.from_reports(benchmark.reports)` with breakdowns by task, component, or model. (PR: #45)
+- Pluggable cost calculation via `CostCalculator` protocol. `StaticPricingCalculator` computes cost from user-supplied per-token rates. `LiteLLMCostCalculator` in `maseval.interface.usage` for automatic pricing via LiteLLM's model database (supports `custom_pricing` overrides and `model_id_map`; requires `litellm`). Pass a `cost_calculator` to `ModelAdapter` or `AgentAdapter` to compute `Usage.cost`. Provider-reported cost always takes precedence. (PR: #45)
+- `AgentAdapter` now accepts `cost_calculator` and `model_id` parameters. For smolagents, CAMEL, and LlamaIndex, both are auto-detected from the framework's agent object (`LiteLLMCostCalculator` if litellm is installed). LangGraph requires explicit `model_id` since graphs can contain multiple models. Explicit parameters always override auto-detection. (PR: #45)
+
 - `Task.freeze()` and `Task.unfreeze()` methods to make task data read-only during benchmark runs, preventing accidental mutation of `environment_data`, `user_data`, `evaluation_data`, and `metadata` (including nested dicts). Attribute reassignment is also blocked while frozen. Check state with `Task.is_frozen`. (PR: #42)
 - `TaskFrozenError` exception in `maseval.core.exceptions`, raised when attempting to modify a frozen task. (PR: #42)
 
@@ -39,9 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Examples**
 
+- Added usage tracking to the 5-A-Day benchmark: `five_a_day_benchmark.ipynb` (section 2.7) and `five_a_day_benchmark.py` (post-run usage summary with per-component and per-task breakdowns). (PR: #45)
+
 - MMLU benchmark example at `examples/mmlu_benchmark/` for evaluating HuggingFace models on MMLU with optional DISCO prediction (`--disco_model_path`, `--disco_transform_path`). Supports local data, HuggingFace dataset repos, and DISCO weights from .pkl/.npz or HF repos. (PR: #34)
 - Added a dedicated runnable CONVERSE default benchmark example at `examples/converse_benchmark/default_converse_benchmark.py` for quick start with `DefaultAgentConverseBenchmark`. (PR: #28)
 - Gaia2 benchmark example with Google GenAI and OpenAI model support (PR: #26)
+
+**Documentation**
+
+- Usage & Cost Tracking guide (`docs/guides/usage-tracking.md`) and API reference (`docs/reference/usage.md`). (PR: #45)
 
 **Core**
 
@@ -107,8 +117,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `SmolAgentUser` → `SmolAgentLLMUser`
   - `LangGraphUser` → `LangGraphLLMUser`
   - `LlamaIndexUser` → `LlamaIndexLLMUser`
-
-**Documentation**
 
 - All benchmarks except MACS are now labeled as **Beta** in docs, BENCHMARKS.md, and benchmark index, with a warning that results have not yet been validated against original implementations. (PR: #39)
 
