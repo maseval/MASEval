@@ -954,9 +954,9 @@ if __name__ == "__main__":
     benchmark = FiveADayBenchmark(
         callbacks=[logger],
         seed=args.seed,  # Use benchmark's seeding system
-        fail_on_setup_error=True,
-        fail_on_task_error=True,
-        fail_on_evaluation_error=True,
+        fail_on_setup_error=False,
+        fail_on_task_error=False,
+        fail_on_evaluation_error=False,
     )
     results = benchmark.run(tasks=tasks, agent_data=agent_configs)
 

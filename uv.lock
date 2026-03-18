@@ -3515,6 +3515,7 @@ anthropic = [
 ]
 camel = [
     { name = "camel-ai" },
+    { name = "litellm" },
 ]
 disco = [
     { name = "aiohttp" },
@@ -3594,11 +3595,13 @@ langfuse = [
 ]
 langgraph = [
     { name = "langgraph" },
+    { name = "litellm" },
 ]
 litellm = [
     { name = "litellm" },
 ]
 llamaindex = [
+    { name = "litellm" },
     { name = "llama-index-core" },
 ]
 lm-eval = [
@@ -3631,6 +3634,7 @@ openai = [
     { name = "openai" },
 ]
 smolagents = [
+    { name = "litellm" },
     { name = "smolagents" },
 ]
 tau2 = [
@@ -3695,8 +3699,12 @@ requires-dist = [
     { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=3.3.4" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=0.6.0" },
     { name = "levenshtein", marker = "extra == 'multiagentbench'", specifier = ">=0.20.0" },
+    { name = "litellm", marker = "extra == 'camel'", specifier = ">=1.0.0" },
+    { name = "litellm", marker = "extra == 'langgraph'", specifier = ">=1.0.0" },
     { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.0.0" },
+    { name = "litellm", marker = "extra == 'llamaindex'", specifier = ">=1.0.0" },
     { name = "litellm", marker = "extra == 'multiagentbench'", specifier = ">=1.0.0" },
+    { name = "litellm", marker = "extra == 'smolagents'", specifier = ">=1.0.0" },
     { name = "llama-index-core", marker = "extra == 'llamaindex'", specifier = ">=0.12.0" },
     { name = "lm-eval", marker = "extra == 'disco'", git = "https://github.com/arubique/lm-evaluation-harness.git?rev=main" },
     { name = "lm-eval", marker = "extra == 'lm-eval'", git = "https://github.com/arubique/lm-evaluation-harness.git?rev=main" },
