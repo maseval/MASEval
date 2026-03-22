@@ -26,6 +26,7 @@ dependencies = [
     "tqdm>=4.66.0",
     "rich>=14.1.0",
     "pydantic>=2.10.6",
+    "instructor>=1.14.5",
 ]
 
 # Enable optional dependencies for end users

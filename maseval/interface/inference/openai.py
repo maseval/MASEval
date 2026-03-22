@@ -91,6 +91,9 @@ class OpenAIModelAdapter(ModelAdapter):
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}
 
+        # Instructor-patched client created lazily in _structured_chat
+        self._instructor_client = None
+
     @property
     def model_id(self) -> str:
         return self._model_id
@@ -284,6 +287,45 @@ class OpenAIModelAdapter(ModelAdapter):
             usage=usage,
             model=response.get("model", self._model_id),
             stop_reason=choice.get("finish_reason"),
+        )
+
+    def _structured_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: type,
+        max_retries: int = 3,
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> "ChatResponse":
+        """Use instructor for structured output with validation and retries."""
+        if self._instructor_client is None:
+            from maseval.core.instructor import create_instructor_client
+
+            self._instructor_client = create_instructor_client(self._client, provider="openai")
+
+        params = dict(self._default_generation_params)
+        if generation_params:
+            params.update(generation_params)
+        params.update(kwargs)
+
+        if self._seed is not None and "seed" not in params:
+            params["seed"] = self._seed
+
+        result = self._instructor_client.chat.completions.create(
+            model=self._model_id,
+            messages=messages,
+            response_model=response_model,
+            max_retries=max_retries,
+            **params,
+        )
+
+        return ChatResponse(
+            content=result.model_dump_json(),
+            structured_response=result,
+            role="assistant",
+            model=self._model_id,
         )
 
     def gather_config(self) -> Dict[str, Any]:

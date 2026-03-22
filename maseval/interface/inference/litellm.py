@@ -212,6 +212,58 @@ class LiteLLMModelAdapter(ModelAdapter):
             stop_reason=getattr(choice, "finish_reason", None),
         )
 
+    def _get_instructor_client(self) -> Any:
+        """Lazily create instructor-patched LiteLLM client."""
+        if not hasattr(self, "_instructor_client") or self._instructor_client is None:
+            try:
+                import litellm
+            except ImportError as e:
+                raise ImportError("LiteLLM is not installed. Install with: uv add maseval[litellm]") from e
+            from maseval.core.instructor import create_instructor_client
+
+            self._instructor_client = create_instructor_client(litellm.completion, provider="litellm")
+        return self._instructor_client
+
+    def _structured_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: type,
+        max_retries: int = 3,
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> "ChatResponse":
+        """Use instructor for structured output with validation and retries."""
+        client = self._get_instructor_client()
+
+        params = dict(self._default_generation_params)
+        if generation_params:
+            params.update(generation_params)
+        params.update(kwargs)
+
+        if self._seed is not None and "seed" not in params:
+            params["seed"] = self._seed
+        if self._api_key:
+            params["api_key"] = self._api_key
+        if self._api_base:
+            params["api_base"] = self._api_base
+
+        result = client.chat.completions.create(
+            model=self._model_id,
+            messages=messages,
+            response_model=response_model,
+            max_retries=max_retries,
+            **params,
+        )
+
+        return ChatResponse(
+            content=result.model_dump_json(),
+            structured_response=result,
+            role="assistant",
+            model=self._model_id,
+        )
+
     def gather_config(self) -> Dict[str, Any]:
         """Gather configuration from this LiteLLM model adapter.
 

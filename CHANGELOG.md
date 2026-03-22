@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Core**
 
+- Instructor library (`instructor>=1.14.0`) as core dependency for structured LLM output handling with automatic validation and retries. (PR: #PR_NUMBER_PLACEHOLDER)
+- `response_model` parameter on `ModelAdapter.chat()` — pass a Pydantic `BaseModel` class to get validated structured outputs via `ChatResponse.structured_response`. Supported on OpenAI, Anthropic, Google GenAI, and LiteLLM adapters. (PR: #PR_NUMBER_PLACEHOLDER)
+- `maseval.core.instructor` module with `create_instructor_client()` and `flatten_model_schema()` helpers for creating instructor-patched clients and generating provider-compatible JSON schemas. (PR: #PR_NUMBER_PLACEHOLDER)
+
+### Changed
+
+**Core**
+
+- Simulators (`ToolLLMSimulator`, `UserLLMSimulator`, `AgenticUserLLMSimulator`) now use instructor for structured output parsing with automatic validation and retries, replacing manual JSON extraction and retry loops. (PR: #PR_NUMBER_PLACEHOLDER)
+
+**Benchmarks**
+
+- Tau2 benchmark uses `flatten_model_schema()` from `maseval.core.instructor` for tool parameter schema generation, replacing the manual `_flatten_schema()` function. (PR: #PR_NUMBER_PLACEHOLDER)
+
 - Usage and cost tracking via `Usage` and `TokenUsage` data classes. `ModelAdapter` tracks token usage automatically after each `chat()` call. Components that implement `UsageTrackableMixin` are collected via `gather_usage()`. Live totals available during benchmark runs via `benchmark.usage` (grand total) and `benchmark.usage_by_component` (per-component breakdowns). Post-hoc analysis via `UsageReporter.from_reports(benchmark.reports)` with breakdowns by task, component, or model. (PR: #45)
 - Pluggable cost calculation via `CostCalculator` protocol. `StaticPricingCalculator` computes cost from user-supplied per-token rates. `LiteLLMCostCalculator` in `maseval.interface.usage` for automatic pricing via LiteLLM's model database (supports `custom_pricing` overrides and `model_id_map`; requires `litellm`). Pass a `cost_calculator` to `ModelAdapter` or `AgentAdapter` to compute `Usage.cost`. Provider-reported cost always takes precedence. (PR: #45)
 - `AgentAdapter` now accepts `cost_calculator` and `model_id` parameters. For smolagents, CAMEL, and LlamaIndex, both are auto-detected from the framework's agent object (`LiteLLMCostCalculator` if litellm is installed). LangGraph requires explicit `model_id` since graphs can contain multiple models. Explicit parameters always override auto-detection. (PR: #45)

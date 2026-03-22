@@ -116,6 +116,41 @@ class DummyModelAdapter(ModelAdapter):
             stop_reason=self._stop_reason,
         )
 
+    def _structured_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: type,
+        max_retries: int = 3,
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        """Mock structured chat that parses response content via response_model.
+
+        Simulates instructor behavior: retries on validation failure by calling
+        _chat_impl again up to max_retries times. Raises on exhaustion.
+        """
+        last_error = None
+        for _ in range(max_retries):
+            result = self._chat_impl(messages, generation_params, tools, tool_choice, **kwargs)
+            if result.content and response_model is not None:
+                try:
+                    structured = response_model.model_validate_json(result.content)
+                    return ChatResponse(
+                        content=result.content,
+                        tool_calls=result.tool_calls,
+                        role=result.role,
+                        model=result.model,
+                        usage=result.usage,
+                        stop_reason=result.stop_reason,
+                        structured_response=structured,
+                    )
+                except Exception as e:
+                    last_error = e
+                    continue
+        raise ValueError(f"Failed to validate response after {max_retries} retries: {last_error}")
+
 
 class CountingFakeModelAdapter(ModelAdapter):
     """Model adapter that returns different responses on successive calls.

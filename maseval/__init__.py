@@ -31,7 +31,11 @@ from .core.simulator import (
     SimulatorError,
     ToolSimulatorError,
     UserSimulatorError,
+    ToolSimulatorResponse,
+    UserSimulatorResponse,
+    AgenticUserSimulatorResponse,
 )
+from .core.instructor import create_instructor_client, flatten_model_schema
 from .core.model import ModelAdapter, ChatResponse
 from .core.user import User, LLMUser, AgenticLLMUser, TerminationReason
 from .core.evaluator import Evaluator
@@ -108,6 +112,13 @@ __all__ = [
     # Model adapters
     "ModelAdapter",
     "ChatResponse",
+    # Instructor integration
+    "create_instructor_client",
+    "flatten_model_schema",
+    # Simulator response models
+    "ToolSimulatorResponse",
+    "UserSimulatorResponse",
+    "AgenticUserSimulatorResponse",
     # Exceptions and validation
     "MASEvalError",
     "AgentError",

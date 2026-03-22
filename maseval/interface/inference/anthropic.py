@@ -108,6 +108,9 @@ class AnthropicModelAdapter(ModelAdapter):
         self._default_generation_params = default_generation_params or {}
         self._max_tokens = max_tokens
 
+        # Instructor-patched client created lazily in _structured_chat
+        self._instructor_client = None
+
     @property
     def model_id(self) -> str:
         return self._model_id
@@ -368,6 +371,45 @@ class AnthropicModelAdapter(ModelAdapter):
             usage=usage,
             model=getattr(response, "model", self._model_id),
             stop_reason=stop_reason,
+        )
+
+    def _structured_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: type,
+        max_retries: int = 3,
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> "ChatResponse":
+        """Use instructor for structured output with validation and retries."""
+        if self._instructor_client is None:
+            from instructor import from_anthropic
+
+            self._instructor_client = from_anthropic(self._client)
+
+        params = dict(self._default_generation_params)
+        if generation_params:
+            params.update(generation_params)
+        params.update(kwargs)
+
+        max_tokens = params.pop("max_tokens", self._max_tokens)
+        params["max_tokens"] = max_tokens
+
+        result = self._instructor_client.chat.completions.create(
+            model=self._model_id,
+            response_model=response_model,
+            messages=messages,
+            max_retries=max_retries,
+            **params,
+        )
+
+        return ChatResponse(
+            content=result.model_dump_json(),
+            structured_response=result,
+            role="assistant",
+            model=self._model_id,
         )
 
     def gather_config(self) -> Dict[str, Any]:
