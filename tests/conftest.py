@@ -1,7 +1,18 @@
 """Shared fixtures for MASEval tests."""
 
+import os
+
 import pytest
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+# Load .env for local development (CI injects secrets via environment).
+if not os.environ.get("CI"):
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
 
 from maseval import (
     Benchmark,

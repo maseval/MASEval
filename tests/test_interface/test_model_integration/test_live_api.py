@@ -37,6 +37,12 @@ requires_openai = pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reaso
 requires_anthropic = pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set")
 requires_google = pytest.mark.skipif(not os.environ.get("GOOGLE_API_KEY"), reason="GOOGLE_API_KEY not set")
 
+# Model IDs used across tests. Update here when models are rotated.
+OPENAI_MODEL = "gpt-4o-mini"
+ANTHROPIC_MODEL = "claude-haiku-4-5"
+GOOGLE_MODEL = "gemini-2.0-flash"
+LITELLM_MODEL = "gpt-4o-mini"
+
 
 # Shared response model used across all structured output tests.
 class Capital(BaseModel):
@@ -78,7 +84,7 @@ class TestOpenAILiveAPI:
         from maseval.interface.inference.openai import OpenAIModelAdapter
 
         client = OpenAI()
-        adapter = OpenAIModelAdapter(client=client, model_id="gpt-4o-mini")
+        adapter = OpenAIModelAdapter(client=client, model_id=OPENAI_MODEL)
         response = adapter.chat(
             [{"role": "user", "content": "Say 'test' and nothing else."}],
             generation_params={"max_tokens": 10},
@@ -102,7 +108,7 @@ class TestOpenAILiveAPI:
         from maseval.interface.inference.openai import OpenAIModelAdapter
 
         client = OpenAI()
-        adapter = OpenAIModelAdapter(client=client, model_id="gpt-4o-mini")
+        adapter = OpenAIModelAdapter(client=client, model_id=OPENAI_MODEL)
         response = adapter.chat(
             [{"role": "user", "content": "What is the weather in Paris? You must use the get_weather tool."}],
             tools=[WEATHER_TOOL],
@@ -128,7 +134,7 @@ class TestOpenAILiveAPI:
         from maseval.interface.inference.openai import OpenAIModelAdapter
 
         client = OpenAI()
-        adapter = OpenAIModelAdapter(client=client, model_id="gpt-4o-mini")
+        adapter = OpenAIModelAdapter(client=client, model_id=OPENAI_MODEL)
         response = adapter.chat(
             [{"role": "user", "content": "What is the capital of France?"}],
             response_model=Capital,
@@ -156,7 +162,7 @@ class TestAnthropicLiveAPI:
         from maseval.interface.inference.anthropic import AnthropicModelAdapter
 
         client = Anthropic()
-        adapter = AnthropicModelAdapter(client=client, model_id="claude-3-5-haiku-20241022", max_tokens=10)
+        adapter = AnthropicModelAdapter(client=client, model_id=ANTHROPIC_MODEL, max_tokens=10)
         response = adapter.chat(
             [{"role": "user", "content": "Say 'test' and nothing else."}],
         )
@@ -179,7 +185,7 @@ class TestAnthropicLiveAPI:
         from maseval.interface.inference.anthropic import AnthropicModelAdapter
 
         client = Anthropic()
-        adapter = AnthropicModelAdapter(client=client, model_id="claude-3-5-haiku-20241022", max_tokens=100)
+        adapter = AnthropicModelAdapter(client=client, model_id=ANTHROPIC_MODEL, max_tokens=100)
         response = adapter.chat(
             [{"role": "user", "content": "What is the weather in Paris? You must use the get_weather tool."}],
             tools=[WEATHER_TOOL],
@@ -204,7 +210,7 @@ class TestAnthropicLiveAPI:
         from maseval.interface.inference.anthropic import AnthropicModelAdapter
 
         client = Anthropic()
-        adapter = AnthropicModelAdapter(client=client, model_id="claude-3-5-haiku-20241022", max_tokens=100)
+        adapter = AnthropicModelAdapter(client=client, model_id=ANTHROPIC_MODEL, max_tokens=100)
         response = adapter.chat(
             [{"role": "user", "content": "What is the capital of France?"}],
             response_model=Capital,
@@ -231,7 +237,7 @@ class TestGoogleGenAILiveAPI:
         from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
 
         client = genai.Client()
-        adapter = GoogleGenAIModelAdapter(client=client, model_id="gemini-2.0-flash")
+        adapter = GoogleGenAIModelAdapter(client=client, model_id=GOOGLE_MODEL)
         response = adapter.chat(
             [{"role": "user", "content": "Say 'test' and nothing else."}],
             generation_params={"max_output_tokens": 10},
@@ -253,7 +259,7 @@ class TestGoogleGenAILiveAPI:
         from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
 
         client = genai.Client()
-        adapter = GoogleGenAIModelAdapter(client=client, model_id="gemini-2.0-flash")
+        adapter = GoogleGenAIModelAdapter(client=client, model_id=GOOGLE_MODEL)
         response = adapter.chat(
             [{"role": "user", "content": "What is the weather in Paris? You must use the get_weather tool."}],
             tools=[WEATHER_TOOL],
@@ -278,11 +284,10 @@ class TestGoogleGenAILiveAPI:
         from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
 
         client = genai.Client()
-        adapter = GoogleGenAIModelAdapter(client=client, model_id="gemini-2.0-flash")
+        adapter = GoogleGenAIModelAdapter(client=client, model_id=GOOGLE_MODEL)
         response = adapter.chat(
             [{"role": "user", "content": "What is the capital of France?"}],
             response_model=Capital,
-            generation_params={"max_output_tokens": 50},
         )
 
         assert isinstance(response.structured_response, Capital)
@@ -309,7 +314,7 @@ class TestLiteLLMLiveAPI:
         pytest.importorskip("litellm")
         from maseval.interface.inference.litellm import LiteLLMModelAdapter
 
-        adapter = LiteLLMModelAdapter(model_id="gpt-4o-mini")
+        adapter = LiteLLMModelAdapter(model_id=LITELLM_MODEL)
         response = adapter.chat(
             [{"role": "user", "content": "Say 'test' and nothing else."}],
             generation_params={"max_tokens": 10},
@@ -331,7 +336,7 @@ class TestLiteLLMLiveAPI:
         pytest.importorskip("litellm")
         from maseval.interface.inference.litellm import LiteLLMModelAdapter
 
-        adapter = LiteLLMModelAdapter(model_id="gpt-4o-mini")
+        adapter = LiteLLMModelAdapter(model_id=LITELLM_MODEL)
         response = adapter.chat(
             [{"role": "user", "content": "What is the weather in Paris? You must use the get_weather tool."}],
             tools=[WEATHER_TOOL],
@@ -356,7 +361,7 @@ class TestLiteLLMLiveAPI:
         pytest.importorskip("litellm")
         from maseval.interface.inference.litellm import LiteLLMModelAdapter
 
-        adapter = LiteLLMModelAdapter(model_id="gpt-4o-mini")
+        adapter = LiteLLMModelAdapter(model_id=LITELLM_MODEL)
         response = adapter.chat(
             [{"role": "user", "content": "What is the capital of France?"}],
             response_model=Capital,
