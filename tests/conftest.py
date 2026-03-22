@@ -147,7 +147,7 @@ class DummyModelAdapter(ModelAdapter):
             result = self._chat_impl(messages, generation_params, tools, tool_choice, **kwargs)
             if result.content and response_model is not None:
                 try:
-                    structured = response_model.model_validate_json(result.content)
+                    structured = response_model.model_validate_json(result.content)  # ty: ignore[unresolved-attribute]
                     return ChatResponse(
                         content=result.content,
                         tool_calls=result.tool_calls,

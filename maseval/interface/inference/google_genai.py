@@ -345,14 +345,14 @@ class GoogleGenAIModelAdapter(ModelAdapter):
 
         result = self._instructor_client.chat.completions.create(
             model=self._model_id,
-            response_model=response_model,
-            messages=messages,
+            response_model=response_model,  # ty: ignore[invalid-argument-type]
+            messages=messages,  # ty: ignore[invalid-argument-type]
             max_retries=max_retries,
             **params,
         )
 
         return ChatResponse(
-            content=result.model_dump_json(),
+            content=result.model_dump_json(),  # ty: ignore[possibly-missing-attribute]
             structured_response=result,
             role="assistant",
             model=self._model_id,

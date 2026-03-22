@@ -75,7 +75,7 @@ def flatten_model_schema(model: type) -> Dict[str, Any]:
     """
     import instructor
 
-    schema_obj = instructor.openai_schema(model)
+    schema_obj = instructor.openai_schema(model)  # ty: ignore[invalid-argument-type]
     schema = schema_obj.openai_schema["parameters"]
 
     # instructor's openai_schema still produces anyOf for Optional fields.
