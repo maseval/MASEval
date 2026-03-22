@@ -133,59 +133,6 @@ def is_tool(tool_type: ToolType = ToolType.READ) -> Callable[[Callable], Callabl
 
 
 # =============================================================================
-# JSON Schema Helpers (for get_tool_metadata)
-# =============================================================================
-
-
-def _resolve_node(node: Any, defs: Dict[str, Any]) -> Any:
-    """Resolve a JSON schema node, inlining ``$ref`` references and simplifying ``anyOf``."""
-    if not isinstance(node, dict):
-        return node
-
-    if "$ref" in node:
-        ref_name = node["$ref"].rsplit("/", 1)[-1]
-        if ref_name in defs:
-            return _resolve_node(dict(defs[ref_name]), defs)
-        return node
-
-    # Simplify anyOf (typically Optional[X] -> X with nullable flag)
-    if "anyOf" in node:
-        variants = node["anyOf"]
-        non_null = [v for v in variants if not (isinstance(v, dict) and v.get("type") == "null")]
-        if len(non_null) == 1:
-            resolved = _resolve_node(non_null[0], defs)
-            resolved["nullable"] = True
-            if "description" in node and "description" not in resolved:
-                resolved["description"] = node["description"]
-            return resolved
-        if non_null:
-            return _resolve_node(non_null[0], defs)
-
-    out: Dict[str, Any] = {}
-    for key, value in node.items():
-        if key in ("$defs", "title", "default"):
-            continue
-        if isinstance(value, dict):
-            out[key] = _resolve_node(value, defs)
-        elif isinstance(value, list):
-            out[key] = [_resolve_node(v, defs) if isinstance(v, dict) else v for v in value]
-        else:
-            out[key] = value
-    return out
-
-
-def _resolve_schema_properties(schema: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract resolved per-parameter schemas from a JSON Schema ``properties`` block."""
-    defs = schema.get("$defs", {})
-    properties = schema.get("properties", {})
-
-    resolved: Dict[str, Any] = {}
-    for name, prop in properties.items():
-        resolved[name] = _resolve_node(prop, defs)
-    return resolved
-
-
-# =============================================================================
 # ToolKit Base Class
 # =============================================================================
 
@@ -413,10 +360,11 @@ class ToolKitBase(Generic[T], metaclass=ToolKitMeta):
             model_fields[param_name] = (anno, default)
 
         params_model = create_model("parameters", **model_fields)
-        schema = params_model.model_json_schema()
 
         # Resolve $ref/$defs and extract per-parameter schemas
-        inputs = _resolve_schema_properties(schema)
+        from maseval.core.instructor import flatten_model_schema
+
+        inputs = flatten_model_schema(params_model).get("properties", {})
 
         return {
             "description": description,

@@ -84,6 +84,9 @@ class GoogleGenAIModelAdapter(ModelAdapter):
         self._model_id = model_id
         self._default_generation_params = default_generation_params or {}
 
+        # Instructor-patched client created lazily in _structured_chat
+        self._instructor_client = None
+
     @property
     def model_id(self) -> str:
         return self._model_id
@@ -314,6 +317,45 @@ class GoogleGenAIModelAdapter(ModelAdapter):
             usage=usage,
             model=self._model_id,
             stop_reason=stop_reason,
+        )
+
+    def _structured_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: type,
+        max_retries: int = 3,
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> "ChatResponse":
+        """Use instructor for structured output with validation and retries."""
+        if self._instructor_client is None:
+            from instructor import from_genai
+
+            self._instructor_client = from_genai(self._client)
+
+        params = dict(self._default_generation_params)
+        if generation_params:
+            params.update(generation_params)
+        params.update(kwargs)
+
+        if self._seed is not None and "seed" not in params:
+            params["seed"] = self._seed
+
+        result = self._instructor_client.chat.completions.create(
+            model=self._model_id,
+            response_model=response_model,  # ty: ignore[invalid-argument-type]
+            messages=messages,  # ty: ignore[invalid-argument-type]
+            max_retries=max_retries,
+            **params,
+        )
+
+        return ChatResponse(
+            content=result.model_dump_json(),  # ty: ignore[possibly-missing-attribute]
+            structured_response=result,
+            role="assistant",
+            model=self._model_id,
         )
 
     def gather_config(self) -> Dict[str, Any]:
