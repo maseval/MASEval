@@ -2421,6 +2421,15 @@ wheels = [
 ]
 
 [[package]]
+name = "jsonref"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/0d/c1f3277e90ccdb50d33ed5ba1ec5b3f0a242ed8c1b1a85d3afeb68464dca/jsonref-1.1.0.tar.gz", hash = "sha256:32fe8e1d85af0fdefbebce950af85590b22b60f9e95443176adbde4e1ecea552", size = 8814, upload-time = "2023-01-16T16:10:04.455Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/ec/e1db9922bceb168197a558a2b8c03a7963f1afe93517ddd3cf99f202f996/jsonref-1.1.0-py3-none-any.whl", hash = "sha256:590dc7773df6c21cbf948b5dac07a72a251db28b0238ceecce0a2abfa8ec30a9", size = 9425, upload-time = "2023-01-16T16:10:02.255Z" },
+]
+
+[[package]]
 name = "jsonschema"
 version = "4.25.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3513,6 +3522,7 @@ all = [
     { name = "ipywidgets" },
     { name = "javascript" },
     { name = "jsonlines" },
+    { name = "jsonref" },
     { name = "jupyter" },
     { name = "keybert" },
     { name = "langchain" },
@@ -3600,6 +3610,7 @@ examples = [
     { name = "ipython", version = "9.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "ipywidgets" },
     { name = "jsonlines" },
+    { name = "jsonref" },
     { name = "jupyter" },
     { name = "langchain" },
     { name = "langchain-google-genai" },
@@ -3633,6 +3644,7 @@ gaia2 = [
 ]
 google-genai = [
     { name = "google-genai" },
+    { name = "jsonref" },
 ]
 langfuse = [
     { name = "langfuse" },
@@ -3737,6 +3749,7 @@ requires-dist = [
     { name = "ipywidgets", marker = "extra == 'examples'", specifier = ">=8.0.0" },
     { name = "javascript", marker = "extra == 'multiagentbench'", specifier = ">=1!1.2.0" },
     { name = "jsonlines", marker = "extra == 'disco'", specifier = ">=4.0.0" },
+    { name = "jsonref", marker = "extra == 'google-genai'", specifier = ">=1.1.0" },
     { name = "jupyter", marker = "extra == 'examples'", specifier = ">=1.0.0" },
     { name = "keybert", marker = "extra == 'multiagentbench'", specifier = ">=0.8.0" },
     { name = "langchain", marker = "extra == 'examples'", specifier = ">=0.3.27" },

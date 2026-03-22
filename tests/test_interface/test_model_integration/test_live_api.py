@@ -8,6 +8,7 @@ Each test validates:
 
 - ``ChatResponse`` fields are populated correctly (content, role, usage, stop_reason)
 - Tool calling produces properly structured ``tool_calls`` dicts
+- Structured output via ``response_model`` returns validated Pydantic instances
 - The adapter's format conversions survive a real API round-trip
 
 These tests require API keys and incur small costs (~$0.001 per run).
@@ -28,12 +29,22 @@ import json
 import os
 
 import pytest
+from pydantic import BaseModel, Field
 
 pytestmark = [pytest.mark.interface, pytest.mark.credentialed]
 
 requires_openai = pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set")
 requires_anthropic = pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set")
 requires_google = pytest.mark.skipif(not os.environ.get("GOOGLE_API_KEY"), reason="GOOGLE_API_KEY not set")
+
+
+# Shared response model used across all structured output tests.
+class Capital(BaseModel):
+    """A country's capital city."""
+
+    city: str = Field(description="Name of the capital city")
+    country: str = Field(description="Name of the country")
+
 
 # Shared tool definition used across all provider tests.
 WEATHER_TOOL = {
@@ -110,6 +121,25 @@ class TestOpenAILiveAPI:
         assert isinstance(args, dict)
         assert "city" in args
 
+    @requires_openai
+    def test_structured_output(self):
+        """Structured output via response_model returns a validated Pydantic instance."""
+        from openai import OpenAI
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        client = OpenAI()
+        adapter = OpenAIModelAdapter(client=client, model_id="gpt-4o-mini")
+        response = adapter.chat(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            response_model=Capital,
+            generation_params={"max_tokens": 50},
+        )
+
+        assert isinstance(response.structured_response, Capital)
+        assert response.structured_response.city.lower() == "paris"
+        assert response.structured_response.country.lower() == "france"
+        assert response.content is not None  # JSON serialization of the model
+
 
 # =============================================================================
 # Anthropic
@@ -167,6 +197,24 @@ class TestAnthropicLiveAPI:
         assert isinstance(args, dict)
         assert "city" in args
 
+    @requires_anthropic
+    def test_structured_output(self):
+        """Structured output via response_model returns a validated Pydantic instance."""
+        from anthropic import Anthropic
+        from maseval.interface.inference.anthropic import AnthropicModelAdapter
+
+        client = Anthropic()
+        adapter = AnthropicModelAdapter(client=client, model_id="claude-3-5-haiku-20241022", max_tokens=100)
+        response = adapter.chat(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            response_model=Capital,
+        )
+
+        assert isinstance(response.structured_response, Capital)
+        assert response.structured_response.city.lower() == "paris"
+        assert response.structured_response.country.lower() == "france"
+        assert response.content is not None
+
 
 # =============================================================================
 # Google GenAI
@@ -222,6 +270,25 @@ class TestGoogleGenAILiveAPI:
         args = json.loads(tc["function"]["arguments"])
         assert isinstance(args, dict)
         assert "city" in args
+
+    @requires_google
+    def test_structured_output(self):
+        """Structured output via response_model returns a validated Pydantic instance."""
+        from google import genai
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        client = genai.Client()
+        adapter = GoogleGenAIModelAdapter(client=client, model_id="gemini-2.0-flash")
+        response = adapter.chat(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            response_model=Capital,
+            generation_params={"max_output_tokens": 50},
+        )
+
+        assert isinstance(response.structured_response, Capital)
+        assert response.structured_response.city.lower() == "paris"
+        assert response.structured_response.country.lower() == "france"
+        assert response.content is not None
 
 
 # =============================================================================
@@ -282,3 +349,21 @@ class TestLiteLLMLiveAPI:
         args = json.loads(tc["function"]["arguments"])
         assert isinstance(args, dict)
         assert "city" in args
+
+    @requires_openai
+    def test_structured_output(self):
+        """Structured output via response_model returns a validated Pydantic instance."""
+        pytest.importorskip("litellm")
+        from maseval.interface.inference.litellm import LiteLLMModelAdapter
+
+        adapter = LiteLLMModelAdapter(model_id="gpt-4o-mini")
+        response = adapter.chat(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            response_model=Capital,
+            generation_params={"max_tokens": 50},
+        )
+
+        assert isinstance(response.structured_response, Capital)
+        assert response.structured_response.city.lower() == "paris"
+        assert response.structured_response.country.lower() == "france"
+        assert response.content is not None

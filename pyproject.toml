@@ -40,7 +40,10 @@ camel = ["camel-ai>=0.2.0", "litellm>=1.0.0"]
 # Inference engines
 anthropic = ["anthropic>=0.40.0"]
 openai = ["openai>=1.107.2"]
-google-genai = ["google-genai>=1.37.0"]
+google-genai = [
+    "google-genai>=1.37.0",
+    "jsonref>=1.1.0",
+]
 transformers = ["transformers>=4.37.0"]
 litellm = ["litellm>=1.0.0"]
 
