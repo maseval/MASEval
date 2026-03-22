@@ -177,3 +177,14 @@ class TestCreateInstructorClient:
         assert hasattr(patched, "chat")
         assert hasattr(patched.chat, "completions")
         assert callable(patched.chat.completions.create)
+
+    def test_mode_override(self):
+        """Mode parameter is passed through to instructor."""
+        from openai import OpenAI
+
+        client = OpenAI(api_key="test-key-not-real")
+        # JSON mode is valid for OpenAI
+        patched = create_instructor_client(client, provider="openai", mode="json")
+
+        assert hasattr(patched, "chat")
+        assert callable(patched.chat.completions.create)
