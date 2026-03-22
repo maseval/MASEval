@@ -79,6 +79,20 @@ CONVERSE evaluates contextual safety in agent-to-agent conversations. It focuses
 
 ---
 
+## 6. ColBench
+
+ColBench (Collaborative Agent Bench) evaluates LLM agents on multi-turn collaborative artifact creation. An agent interacts with a simulated human collaborator over multiple dialogue turns to gather requirements, ask clarifying questions, and produce a final artifact (Python code) that satisfies hidden constraints,  testing an agent's ability to perform effective information gathering and reasoning across turns.
+
+### Source and License
+
+- **Original Repository:** [https://github.com/facebookresearch/sweet_rl](https://github.com/facebookresearch/sweet_rl)
+- **Paper:** [SWEET-RL: Training Multi-Turn LLM Agents on Collaborative Reasoning Tasks](https://arxiv.org/abs/2503.15478)
+- **Dataset:** [facebook/collaborative_agent_bench](https://huggingface.co/datasets/facebook/collaborative_agent_bench)
+- **Code License:** MIT (as provided by the upstream repository)
+- **Data License:** CC-BY-NC; data is an output of Llama 3.1 and subject to the [Llama 3.1 license](https://huggingface.co/meta-llama/Llama-3.1-8B/blob/main/LICENSE)
+
+---
+
 ## 6. [Name of Next Benchmark]
 
 (Description for the next benchmark...)
