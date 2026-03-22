@@ -237,12 +237,17 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
                 - "none": Model won't use tools
                 - "required": Model must use a tool
                 - {"type": "function", "function": {"name": "..."}}: Use specific tool
-            response_model: Optional Pydantic BaseModel class. When provided,
-                the model's response is validated against this schema and
-                returned in ``ChatResponse.structured_response``. Uses
-                instructor for automatic validation and retries.
-            max_retries: Number of retries on validation failure when using
-                ``response_model``. Default is 3. Ignored without ``response_model``.
+            response_model: Optional Pydantic BaseModel class for structured
+                output. When provided, the response is validated against this
+                schema and returned in ``ChatResponse.structured_response``.
+                Powered by `instructor <https://github.com/567-labs/instructor>`_:
+                the Pydantic model is converted to a tool/function schema and
+                sent to the provider to guide generation, then the response is
+                parsed back into a Pydantic instance and validated client-side.
+                On validation failure, instructor re-prompts automatically.
+            max_retries: Number of client-side retries on validation failure
+                when using ``response_model``. Default is 3. Ignored without
+                ``response_model``.
             **kwargs: Additional provider-specific arguments.
 
         Returns:
