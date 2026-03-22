@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**Core**
+
+- Fixed `MessageHistory.to_list()` returning a reference to the internal list instead of a copy, causing simulator logs to contain future conversation messages that hadn't occurred at the time of logging. (PR: #PR_NUMBER_PLACEHOLDER)
+
 ### Added
 
 **Core**

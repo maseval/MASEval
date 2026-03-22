@@ -110,7 +110,7 @@ class MessageHistory:
         Returns:
             List of message dictionaries in OpenAI format
         """
-        return self._messages
+        return list(self._messages)
 
     def add_message(
         self,
