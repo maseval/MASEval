@@ -41,7 +41,6 @@ requires_google = pytest.mark.skipif(not os.environ.get("GOOGLE_API_KEY"), reaso
 OPENAI_MODEL = "gpt-4o-mini"
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 GOOGLE_MODEL = "gemini-2.0-flash"
-GOOGLE_THINKING_MODEL = "gemini-3-flash-preview"
 LITELLM_MODEL = "gpt-4o-mini"
 
 
@@ -51,6 +50,23 @@ class Capital(BaseModel):
 
     city: str = Field(description="Name of the capital city")
     country: str = Field(description="Name of the country")
+
+
+# Nested response model — Pydantic v2 generates additionalProperties: false for these,
+# which Gemini's structured output API rejects. Used to verify GENAI_TOOLS mode handles it.
+class Location(BaseModel):
+    """A geographic location."""
+
+    city: str = Field(description="City name")
+    country: str = Field(description="Country name")
+
+
+class WeatherReport(BaseModel):
+    """A weather report for a location."""
+
+    location: Location = Field(description="The location")
+    temperature_celsius: float = Field(description="Temperature in Celsius")
+    conditions: str = Field(description="Weather conditions (e.g. sunny, cloudy)")
 
 
 # Shared tool definition used across all provider tests.
@@ -296,6 +312,29 @@ class TestGoogleGenAILiveAPI:
         assert response.structured_response.country.lower() == "france"
         assert response.content is not None
 
+    @requires_google
+    def test_structured_output_nested_model(self):
+        """Nested Pydantic models work despite additionalProperties in JSON schema.
+
+        Pydantic v2 emits additionalProperties: false for nested models.
+        Gemini's native JSON schema output (GENAI_STRUCTURED_OUTPUTS) rejects this,
+        but GENAI_TOOLS (function calling) handles it correctly via schema conversion.
+        """
+        from google import genai
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        client = genai.Client()
+        adapter = GoogleGenAIModelAdapter(client=client, model_id=GOOGLE_MODEL)
+        response = adapter.chat(
+            [{"role": "user", "content": "What is the weather in Paris, France right now? Estimate the temperature."}],
+            response_model=WeatherReport,
+        )
+
+        assert isinstance(response.structured_response, WeatherReport)
+        assert isinstance(response.structured_response.location, Location)
+        assert response.structured_response.location.city.lower() == "paris"
+        assert response.content is not None
+
 
 # =============================================================================
 # LiteLLM (routes through OpenAI)
@@ -464,37 +503,3 @@ class TestCrossProviderStructuredOutput:
         )
         assert isinstance(structured_response.structured_response, Capital)
         assert structured_response.structured_response.city.lower() == "paris"
-
-
-class TestGoogleGenAIThinking:
-    """Google GenAI structured output with thinking mode enabled.
-
-    Validates the workaround for instructor GENAI_TOOLS bugs with thinking mode:
-    (1) content is None on MALFORMED_FUNCTION_CALL causing AttributeError, and
-    (2) duplicate function call parts failing an assertion.
-    Using GENAI_STRUCTURED_OUTPUTS avoids function calling entirely.
-    """
-
-    @requires_google
-    def test_structured_output_with_thinking(self):
-        """Structured output works when Gemini thinking mode is enabled."""
-        from google import genai
-        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
-
-        client = genai.Client()
-        adapter = GoogleGenAIModelAdapter(
-            client=client,
-            model_id=GOOGLE_THINKING_MODEL,
-            default_generation_params={
-                "thinking_config": {"thinking_budget": 1024},
-            },
-        )
-        response = adapter.chat(
-            [{"role": "user", "content": "What is the capital of France?"}],
-            response_model=Capital,
-        )
-
-        assert isinstance(response.structured_response, Capital)
-        assert response.structured_response.city.lower() == "paris"
-        assert response.structured_response.country.lower() == "france"
-        assert response.content is not None

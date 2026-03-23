@@ -331,15 +331,9 @@ class GoogleGenAIModelAdapter(ModelAdapter):
     ) -> "ChatResponse":
         """Use instructor for structured output with validation and retries."""
         if self._instructor_client is None:
-            import instructor
             from instructor import from_genai
 
-            # Use GENAI_STRUCTURED_OUTPUTS (native JSON schema output) instead of
-            # GENAI_TOOLS (function calling). GENAI_TOOLS triggers instructor bugs when
-            # Gemini thinking mode is enabled: (1) content is None on MALFORMED_FUNCTION_CALL
-            # causing an AttributeError in parse_genai_tools, and (2) duplicate function call
-            # parts fail an assertion. GENAI_STRUCTURED_OUTPUTS avoids function calling entirely.
-            self._instructor_client = from_genai(self._client, mode=instructor.Mode.GENAI_STRUCTURED_OUTPUTS)
+            self._instructor_client = from_genai(self._client)
 
         params = dict(self._default_generation_params)
         if generation_params:

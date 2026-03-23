@@ -2429,11 +2429,15 @@ class TestGoogleGenAIStructuredChat:
         # thinking_config must NOT be in generation_config
         assert "thinking_config" not in gen_config
 
-    def test_structured_chat_uses_structured_outputs_mode(self):
-        """Instructor client is created with GENAI_STRUCTURED_OUTPUTS mode."""
+    def test_structured_chat_uses_default_genai_tools_mode(self):
+        """Instructor client uses default GENAI_TOOLS mode, not GENAI_STRUCTURED_OUTPUTS.
+
+        GENAI_STRUCTURED_OUTPUTS passes Pydantic schemas directly to Gemini's native
+        JSON schema output, which rejects additionalProperties (emitted by Pydantic v2).
+        GENAI_TOOLS uses map_to_genai_schema() which strips unsupported fields.
+        """
         pytest.importorskip("google.genai")
         pytest.importorskip("instructor")
-        import instructor
         from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
 
         class MockClient:
@@ -2461,8 +2465,59 @@ class TestGoogleGenAIStructuredChat:
             )
 
             mock_from_genai.assert_called_once()
-            call_kwargs = mock_from_genai.call_args
-            assert call_kwargs.kwargs.get("mode") == instructor.Mode.GENAI_STRUCTURED_OUTPUTS
+            # Must NOT pass mode=GENAI_STRUCTURED_OUTPUTS — only GENAI_TOOLS
+            # handles additionalProperties in Pydantic schemas correctly.
+            _, call_kwargs = mock_from_genai.call_args
+            assert "mode" not in call_kwargs
+
+    def test_structured_chat_with_dict_field_model(self):
+        """Response models with Dict[str, Any] fields (like ToolSimulatorResponse) work.
+
+        Dict fields cause Pydantic v2 to emit additionalProperties in the JSON schema.
+        This must not be passed raw to the Gemini API.
+        """
+        pytest.importorskip("google.genai")
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        class MockClient:
+            class Models:
+                def generate_content(self, model, contents, config=None):
+                    class Response:
+                        text = "ok"
+
+                    return Response()
+
+            def __init__(self):
+                self.models = self.Models()
+
+        adapter = GoogleGenAIModelAdapter(client=MockClient(), model_id="gemini-pro")
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        # Use a model with Dict[str, Any] — same pattern as ToolSimulatorResponse
+        from typing import Any, Dict
+
+        from pydantic import BaseModel, Field
+
+        class ToolOutput(BaseModel):
+            text: str = Field(default="", description="Description")
+            details: Dict[str, Any] = Field(default_factory=dict, description="Structured data")
+
+        response = adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=ToolOutput,
+            generation_params={"temperature": 0.5},
+        )
+
+        # Verify the call went through with correct kwargs structure
+        call_kwargs = mock_instructor.chat.completions.create.call_args.kwargs
+        assert call_kwargs["response_model"] is ToolOutput
+        gen_config = call_kwargs.get("generation_config", {})
+        assert gen_config.get("temperature") == 0.5
+        assert response.structured_response is mock_result
 
 
 @pytest.mark.interface
