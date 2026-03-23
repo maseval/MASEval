@@ -27,6 +27,7 @@ Prerequisites::
 
 import json
 import os
+from typing import Any, Dict
 
 import pytest
 from pydantic import BaseModel, Field
@@ -41,6 +42,7 @@ requires_google = pytest.mark.skipif(not os.environ.get("GOOGLE_API_KEY"), reaso
 OPENAI_MODEL = "gpt-4o-mini"
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 GOOGLE_MODEL = "gemini-2.0-flash"
+GOOGLE_THINKING_MODEL = "gemini-2.5-flash"
 LITELLM_MODEL = "gpt-4o-mini"
 
 
@@ -316,9 +318,8 @@ class TestGoogleGenAILiveAPI:
     def test_structured_output_nested_model(self):
         """Nested Pydantic models work despite additionalProperties in JSON schema.
 
-        Pydantic v2 emits additionalProperties: false for nested models.
-        Gemini's native JSON schema output (GENAI_STRUCTURED_OUTPUTS) rejects this,
-        but GENAI_TOOLS (function calling) handles it correctly via schema conversion.
+        Pydantic v2 emits additionalProperties for nested models and Dict fields.
+        The adapter strips it via _clean_schema_model before the SDK sees it.
         """
         from google import genai
         from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
@@ -333,6 +334,68 @@ class TestGoogleGenAILiveAPI:
         assert isinstance(response.structured_response, WeatherReport)
         assert isinstance(response.structured_response.location, Location)
         assert response.structured_response.location.city.lower() == "paris"
+        assert response.content is not None
+
+    @requires_google
+    def test_structured_output_with_thinking(self):
+        """Structured output works with Gemini thinking mode enabled.
+
+        GENAI_TOOLS + thinking causes upstream instructor bugs (AttributeError on
+        MALFORMED_FUNCTION_CALL, AssertionError on duplicate parts).
+        GENAI_STRUCTURED_OUTPUTS avoids these by parsing completion.text directly.
+        """
+        from google import genai
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        client = genai.Client()
+        adapter = GoogleGenAIModelAdapter(
+            client=client,
+            model_id=GOOGLE_THINKING_MODEL,
+            default_generation_params={
+                "thinking_config": {"thinking_budget": 1024},
+            },
+        )
+        response = adapter.chat(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            response_model=Capital,
+        )
+
+        assert isinstance(response.structured_response, Capital)
+        assert response.structured_response.city.lower() == "paris"
+        assert response.structured_response.country.lower() == "france"
+        assert response.content is not None
+
+    @requires_google
+    def test_structured_output_dict_field_with_thinking(self):
+        """Dict[str, Any] fields + thinking mode work together.
+
+        This is the exact scenario from the ToolLLMSimulator bug: a response model
+        with Dict[str, Any] (additionalProperties) used with a thinking-enabled model.
+        """
+        from google import genai
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        from pydantic import BaseModel, Field
+
+        class ToolOutput(BaseModel):
+            text: str = Field(default="", description="Description")
+            details: Dict[str, Any] = Field(default_factory=dict, description="Structured data")
+
+        client = genai.Client()
+        adapter = GoogleGenAIModelAdapter(
+            client=client,
+            model_id=GOOGLE_THINKING_MODEL,
+            default_generation_params={
+                "thinking_config": {"thinking_budget": 1024},
+            },
+        )
+        response = adapter.chat(
+            [{"role": "user", "content": "Simulate a weather API response for Paris."}],
+            response_model=ToolOutput,
+        )
+
+        assert isinstance(response.structured_response, ToolOutput)
+        assert len(response.structured_response.text) > 0
         assert response.content is not None
 
 

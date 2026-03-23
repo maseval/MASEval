@@ -319,6 +319,38 @@ class GoogleGenAIModelAdapter(ModelAdapter):
             stop_reason=stop_reason,
         )
 
+    @staticmethod
+    def _clean_schema_model(model: type) -> type:
+        """Create a subclass that strips additionalProperties from its JSON schema.
+
+        Gemini's structured output API rejects additionalProperties (which Pydantic v2
+        emits by default). This creates a thin subclass that overrides model_json_schema()
+        to remove it. The returned class preserves the original name (for instructor's
+        function naming) and isinstance() checks (it's a subclass).
+        """
+
+        class CleanSchemaModel(model):  # ty: ignore[unsupported-base]
+            @classmethod
+            def model_json_schema(cls, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+                schema = super().model_json_schema(*args, **kwargs)  # ty: ignore[unresolved-attribute]
+                GoogleGenAIModelAdapter._strip_additional_properties(schema)
+                return schema
+
+        CleanSchemaModel.__name__ = model.__name__
+        CleanSchemaModel.__qualname__ = model.__qualname__
+        return CleanSchemaModel
+
+    @staticmethod
+    def _strip_additional_properties(obj: Any) -> None:
+        """Recursively remove additionalProperties from a JSON schema dict."""
+        if isinstance(obj, dict):
+            obj.pop("additionalProperties", None)
+            for value in obj.values():
+                GoogleGenAIModelAdapter._strip_additional_properties(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                GoogleGenAIModelAdapter._strip_additional_properties(item)
+
     def _structured_chat(
         self,
         messages: List[Dict[str, Any]],
@@ -331,9 +363,16 @@ class GoogleGenAIModelAdapter(ModelAdapter):
     ) -> "ChatResponse":
         """Use instructor for structured output with validation and retries."""
         if self._instructor_client is None:
+            import instructor
             from instructor import from_genai
 
-            self._instructor_client = from_genai(self._client)
+            # Use GENAI_STRUCTURED_OUTPUTS (native JSON schema output) instead of
+            # GENAI_TOOLS (function calling). GENAI_TOOLS has upstream instructor bugs
+            # with Gemini thinking mode: (1) AttributeError when content is None on
+            # MALFORMED_FUNCTION_CALL, and (2) AssertionError on duplicate function call
+            # parts. These are not retried by instructor (only ValidationError is).
+            # GENAI_STRUCTURED_OUTPUTS parses via completion.text, avoiding both issues.
+            self._instructor_client = from_genai(self._client, mode=instructor.Mode.GENAI_STRUCTURED_OUTPUTS)
 
         params = dict(self._default_generation_params)
         if generation_params:
@@ -358,9 +397,15 @@ class GoogleGenAIModelAdapter(ModelAdapter):
         if gen_config:
             instructor_kwargs["generation_config"] = gen_config
 
+        # Wrap the response model to strip additionalProperties from its JSON schema.
+        # Pydantic v2 emits additionalProperties by default, but Gemini's structured
+        # output API rejects it. GENAI_TOOLS handles this via map_to_genai_schema(),
+        # but GENAI_STRUCTURED_OUTPUTS passes the raw Pydantic class to the SDK.
+        clean_model = self._clean_schema_model(response_model)
+
         result = self._instructor_client.chat.completions.create(
             model=self._model_id,
-            response_model=response_model,  # ty: ignore[invalid-argument-type]
+            response_model=clean_model,  # ty: ignore[invalid-argument-type]
             messages=messages,  # ty: ignore[invalid-argument-type]
             max_retries=max_retries,
             **instructor_kwargs,
