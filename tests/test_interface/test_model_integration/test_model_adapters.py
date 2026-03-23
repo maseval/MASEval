@@ -2390,6 +2390,80 @@ class TestGoogleGenAIStructuredChat:
         gen_config = call_kwargs.kwargs.get("generation_config", {})
         assert gen_config.get("seed") == 99
 
+    def test_structured_chat_separates_instructor_top_level_keys(self):
+        """thinking_config stays top-level, generation params go into generation_config."""
+        pytest.importorskip("google.genai")
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        class MockClient:
+            class Models:
+                def generate_content(self, model, contents, config=None):
+                    class Response:
+                        text = "ok"
+
+                    return Response()
+
+            def __init__(self):
+                self.models = self.Models()
+
+        adapter = GoogleGenAIModelAdapter(client=MockClient(), model_id="gemini-pro", seed=42)
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+            generation_params={"temperature": 0.5, "thinking_config": {"thinking_budget": 1024}},
+        )
+
+        call_kwargs = mock_instructor.chat.completions.create.call_args.kwargs
+        # thinking_config must be top-level (instructor pops it from kwargs directly)
+        assert call_kwargs.get("thinking_config") == {"thinking_budget": 1024}
+        # generation params must be nested inside generation_config
+        gen_config = call_kwargs.get("generation_config", {})
+        assert gen_config.get("temperature") == 0.5
+        assert gen_config.get("seed") == 42
+        # thinking_config must NOT be in generation_config
+        assert "thinking_config" not in gen_config
+
+    def test_structured_chat_uses_structured_outputs_mode(self):
+        """Instructor client is created with GENAI_STRUCTURED_OUTPUTS mode."""
+        pytest.importorskip("google.genai")
+        pytest.importorskip("instructor")
+        import instructor
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        class MockClient:
+            class Models:
+                def generate_content(self, model, contents, config=None):
+                    class Response:
+                        text = "ok"
+
+                    return Response()
+
+            def __init__(self):
+                self.models = self.Models()
+
+        adapter = GoogleGenAIModelAdapter(client=MockClient(), model_id="gemini-pro")
+        assert adapter._instructor_client is None
+
+        with patch("instructor.from_genai") as mock_from_genai:
+            mock_instructor = MagicMock()
+            mock_instructor.chat.completions.create.return_value = _make_mock_instructor_result()
+            mock_from_genai.return_value = mock_instructor
+
+            adapter._structured_chat(
+                messages=[{"role": "user", "content": "Hi"}],
+                response_model=object,
+            )
+
+            mock_from_genai.assert_called_once()
+            call_kwargs = mock_from_genai.call_args
+            assert call_kwargs.kwargs.get("mode") == instructor.Mode.GENAI_STRUCTURED_OUTPUTS
+
 
 @pytest.mark.interface
 class TestLiteLLMStructuredChat:

@@ -41,6 +41,7 @@ requires_google = pytest.mark.skipif(not os.environ.get("GOOGLE_API_KEY"), reaso
 OPENAI_MODEL = "gpt-4o-mini"
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 GOOGLE_MODEL = "gemini-2.0-flash"
+GOOGLE_THINKING_MODEL = "gemini-3-flash-preview"
 LITELLM_MODEL = "gpt-4o-mini"
 
 
@@ -366,6 +367,131 @@ class TestLiteLLMLiveAPI:
             [{"role": "user", "content": "What is the capital of France?"}],
             response_model=Capital,
             generation_params={"max_tokens": 50},
+        )
+
+        assert isinstance(response.structured_response, Capital)
+        assert response.structured_response.city.lower() == "paris"
+        assert response.structured_response.country.lower() == "france"
+        assert response.content is not None
+
+
+# =============================================================================
+# Cross-provider parameterized tests
+# =============================================================================
+
+
+def _make_openai_adapter(**kwargs):
+    from openai import OpenAI
+    from maseval.interface.inference.openai import OpenAIModelAdapter
+
+    return OpenAIModelAdapter(client=OpenAI(), model_id=OPENAI_MODEL, **kwargs)
+
+
+def _make_anthropic_adapter(**kwargs):
+    from anthropic import Anthropic
+    from maseval.interface.inference.anthropic import AnthropicModelAdapter
+
+    return AnthropicModelAdapter(client=Anthropic(), model_id=ANTHROPIC_MODEL, max_tokens=100, **kwargs)
+
+
+def _make_google_adapter(**kwargs):
+    from google import genai
+    from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+    return GoogleGenAIModelAdapter(client=genai.Client(), model_id=GOOGLE_MODEL, **kwargs)
+
+
+def _make_litellm_adapter(**kwargs):
+    pytest.importorskip("litellm")
+    from maseval.interface.inference.litellm import LiteLLMModelAdapter
+
+    return LiteLLMModelAdapter(model_id=LITELLM_MODEL, **kwargs)
+
+
+# Each entry: (factory, env_var, max_tokens_param_name, supports_seed)
+_ADAPTER_CONFIGS = [
+    pytest.param(_make_openai_adapter, "OPENAI_API_KEY", "max_tokens", True, id="openai"),
+    pytest.param(_make_anthropic_adapter, "ANTHROPIC_API_KEY", "max_tokens", False, id="anthropic"),
+    pytest.param(_make_google_adapter, "GOOGLE_API_KEY", "max_output_tokens", True, id="google"),
+    pytest.param(_make_litellm_adapter, "OPENAI_API_KEY", "max_tokens", True, id="litellm"),
+]
+
+
+class TestCrossProviderStructuredOutput:
+    """Parameterized structured output tests across all adapters."""
+
+    @pytest.mark.parametrize("factory,env_var,max_tok_key,supports_seed", _ADAPTER_CONFIGS)
+    def test_structured_output_with_generation_params(self, factory, env_var, max_tok_key, supports_seed):
+        """Structured output works with temperature and seed across all providers."""
+        if not os.environ.get(env_var):
+            pytest.skip(f"{env_var} not set")
+        adapter = factory(seed=42) if supports_seed else factory()
+        response = adapter.chat(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            response_model=Capital,
+            generation_params={"temperature": 0.0, max_tok_key: 100},
+        )
+        assert isinstance(response.structured_response, Capital)
+        assert response.structured_response.city.lower() == "paris"
+        assert response.structured_response.country.lower() == "france"
+
+    @pytest.mark.parametrize("factory,env_var,max_tok_key,supports_seed", _ADAPTER_CONFIGS)
+    def test_tool_call_then_structured_output(self, factory, env_var, max_tok_key, supports_seed):
+        """Tool calling and structured output both work on the same adapter instance."""
+        if not os.environ.get(env_var):
+            pytest.skip(f"{env_var} not set")
+        adapter = factory()
+
+        # Tool call
+        tool_response = adapter.chat(
+            [{"role": "user", "content": "What is the weather in Paris? You must use the get_weather tool."}],
+            tools=[WEATHER_TOOL],
+            generation_params={max_tok_key: 100},
+        )
+        assert tool_response.tool_calls is not None
+        assert len(tool_response.tool_calls) >= 1
+        assert tool_response.tool_calls[0]["function"]["name"] == "get_weather"
+
+        args = json.loads(tool_response.tool_calls[0]["function"]["arguments"])
+        assert isinstance(args, dict)
+        assert "city" in args
+
+        # Structured output on the same adapter
+        structured_response = adapter.chat(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            response_model=Capital,
+            generation_params={max_tok_key: 100},
+        )
+        assert isinstance(structured_response.structured_response, Capital)
+        assert structured_response.structured_response.city.lower() == "paris"
+
+
+class TestGoogleGenAIThinking:
+    """Google GenAI structured output with thinking mode enabled.
+
+    Validates the workaround for instructor GENAI_TOOLS bugs with thinking mode:
+    (1) content is None on MALFORMED_FUNCTION_CALL causing AttributeError, and
+    (2) duplicate function call parts failing an assertion.
+    Using GENAI_STRUCTURED_OUTPUTS avoids function calling entirely.
+    """
+
+    @requires_google
+    def test_structured_output_with_thinking(self):
+        """Structured output works when Gemini thinking mode is enabled."""
+        from google import genai
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        client = genai.Client()
+        adapter = GoogleGenAIModelAdapter(
+            client=client,
+            model_id=GOOGLE_THINKING_MODEL,
+            default_generation_params={
+                "thinking_config": {"thinking_budget": 1024},
+            },
+        )
+        response = adapter.chat(
+            [{"role": "user", "content": "What is the capital of France?"}],
+            response_model=Capital,
         )
 
         assert isinstance(response.structured_response, Capital)
