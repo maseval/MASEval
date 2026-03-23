@@ -343,12 +343,27 @@ class GoogleGenAIModelAdapter(ModelAdapter):
         if self._seed is not None and "seed" not in params:
             params["seed"] = self._seed
 
+        # Instructor's genai handler expects generation params (temperature, seed, etc.)
+        # inside a "generation_config" dict, not as top-level kwargs. Top-level kwargs
+        # pass through to generate_content() which rejects them. Separate params that
+        # instructor handles as top-level kwargs from those that must be in generation_config.
+        _INSTRUCTOR_TOP_LEVEL_KEYS = {"thinking_config", "safety_settings", "config"}
+        instructor_kwargs: Dict[str, Any] = {}
+        gen_config: Dict[str, Any] = {}
+        for key, value in params.items():
+            if key in _INSTRUCTOR_TOP_LEVEL_KEYS:
+                instructor_kwargs[key] = value
+            else:
+                gen_config[key] = value
+        if gen_config:
+            instructor_kwargs["generation_config"] = gen_config
+
         result = self._instructor_client.chat.completions.create(
             model=self._model_id,
             response_model=response_model,  # ty: ignore[invalid-argument-type]
             messages=messages,  # ty: ignore[invalid-argument-type]
             max_retries=max_retries,
-            **params,
+            **instructor_kwargs,
         )
 
         return ChatResponse(

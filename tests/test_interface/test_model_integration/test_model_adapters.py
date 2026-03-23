@@ -2385,7 +2385,10 @@ class TestGoogleGenAIStructuredChat:
         )
 
         call_kwargs = mock_instructor.chat.completions.create.call_args
-        assert call_kwargs.kwargs.get("seed") == 99
+        # Generation params should be nested inside generation_config for the
+        # Google GenAI instructor adapter (not passed as top-level kwargs).
+        gen_config = call_kwargs.kwargs.get("generation_config", {})
+        assert gen_config.get("seed") == 99
 
 
 @pytest.mark.interface
