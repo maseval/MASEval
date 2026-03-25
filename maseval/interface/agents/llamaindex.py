@@ -211,14 +211,12 @@ class LlamaIndexAgentAdapter(AgentAdapter):
                     for tool in tools
                 ]
 
-        # Check if it's a workflow
+        # Check if it's a workflow — let errors propagate so they're
+        # visible in the registry's error output.
         if hasattr(self.agent, "get_config"):
-            try:
-                workflow_config = self.agent.get_config()
-                if workflow_config:
-                    llamaindex_config["workflow_config"] = workflow_config
-            except Exception:
-                pass
+            workflow_config = self.agent.get_config()
+            if workflow_config:
+                llamaindex_config["workflow_config"] = workflow_config
 
         if llamaindex_config:
             base_config["llamaindex_config"] = llamaindex_config

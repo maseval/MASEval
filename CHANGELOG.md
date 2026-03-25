@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed `MessageHistory.to_list()` returning a reference to the internal list instead of a copy, causing simulator logs to contain future conversation messages that hadn't occurred at the time of logging. (PR: #PR_NUMBER_PLACEHOLDER)
 
+**Interface**
+
+- Agent adapter `gather_config()` in smolagents, langgraph, and llamaindex no longer silently swallows exceptions, ensuring config collection errors are visible instead of producing incomplete configuration data. (PR: #53)
+
 ### Added
 
 **Core**
