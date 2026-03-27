@@ -7,6 +7,7 @@ Organization:
 - inference/: Model inference adapters (OpenAI, Google, HuggingFace, etc.)
 - agents/: Agent framework adapters (smolagents, langgraph, etc.)
 - logging/: Logging platform adapters (wandb, langfuse, etc.)
+- environments/: Environment integrations (ARE, etc.)
 
 Canonical rules:
 - Keep adapters thin: translate between MASEval internal abstractions and the external API.
@@ -17,7 +18,7 @@ packaging extras, and testing.
 """
 
 # Import subpackages
-from . import inference, agents
+from . import inference, agents, environments
 from . import logging as logging_  # Rename to avoid conflict with stdlib
 
-__all__ = ["inference", "agents", "logging_"]
+__all__ = ["inference", "agents", "logging_", "environments"]
