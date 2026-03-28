@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import json
 import os
 from datetime import datetime
+from pydantic import BaseModel, Field
+
 from .model import ModelAdapter
 from .tracing import TraceableMixin
 from .exceptions import EnvironmentError, UserError
@@ -10,21 +12,24 @@ import uuid
 from enum import Enum
 
 
-def _extract_json_object(output: str) -> str:
-    """Extract a JSON object from LLM output that may contain surrounding noise.
+class ToolSimulatorResponse(BaseModel):
+    """Expected output format for ToolLLMSimulator."""
 
-    LLMs may wrap valid JSON in markdown fences, prepend reasoning/thinking
-    tokens, or append stop/EOS tokens. This function extracts the substring
-    from the first '{' to the last '}' so that json.loads can parse it.
+    text: str = Field(default="", description="Human-readable description of the tool's output")
+    details: Dict[str, Any] = Field(default_factory=dict, description="Structured tool output data")
 
-    Falls back to the stripped output if no braces are found, letting
-    json.loads raise a clear error on truly invalid output.
-    """
-    json_start = output.find("{")
-    json_end = output.rfind("}")
-    if json_start != -1 and json_end != -1 and json_end > json_start:
-        return output[json_start : json_end + 1]
-    return output.strip()
+
+class UserSimulatorResponse(BaseModel):
+    """Expected output format for UserLLMSimulator."""
+
+    text: str = Field(default="", description="The user's response text")
+
+
+class AgenticUserSimulatorResponse(BaseModel):
+    """Expected output format for AgenticUserLLMSimulator."""
+
+    text: str = Field(default="", description="The user's response text")
+    tool_calls: List[Dict[str, Any]] = Field(default_factory=list, description="List of tool calls")
 
 
 class SimulatorError(Exception):
@@ -151,6 +156,9 @@ class LLMSimulator(ABC, TraceableMixin):
     # Override in subclasses to specify component name for error messages
     _component_name: Optional[str] = None
 
+    # Override in subclasses to specify the Pydantic response model
+    _response_model: Optional[type] = None
+
     def __init__(
         self,
         model: ModelAdapter,
@@ -164,7 +172,8 @@ class LLMSimulator(ABC, TraceableMixin):
         Args:
             model (ModelAdapter): The language model to use for generation.
             template (str, optional): A prompt template.
-            max_try (int, optional): Maximum number of model calls to attempt. Defaults to 3.
+            max_try (int, optional): Maximum number of retries for structured output
+                validation via instructor. Defaults to 3.
             generation_params (Dict[str, Any], optional): Default generation parameters for the model. This overwrites the ModelAdapter's defaults if provided.
                 Both can be overridden at call time. Defaults to None.
         """
@@ -206,103 +215,68 @@ class LLMSimulator(ABC, TraceableMixin):
             component=self._component_name,
         )
 
+    def _parse_structured_response(self, response: Any) -> Any:
+        """Convert instructor-validated response to expected return format.
+
+        Override in subclasses to convert the Pydantic model instance
+        to the format expected by callers.
+        """
+        return response
+
     def __call__(self, generation_params: Optional[Dict[str, Any]] = None, **kwargs) -> Any:
         """
-        Generates a simulated output.
+        Generates a simulated output using instructor for structured output.
         """
         prompt = self._fill_prompt_template(**kwargs)
 
         request_id = str(uuid.uuid4())
-        attempts = 0
-        parsed_result = None
 
         # merging of LLM default and call-time generation params done here, so subclasses
         # can just call super().__call__(generation_params=...) and have it handled
         generation_params = self.generation_params | (generation_params or {})
 
-        # For each attempt, append a separate history entry with the request id.
-        while attempts < self.max_try and parsed_result is None:
-            attempts += 1
-            raw_output = None
-            entry = {
-                "id": request_id,
-                "timestamp": datetime.now().isoformat(),
-                "input": kwargs,
-                "prompt": prompt,
-                "generation_params": generation_params,
-                "raw_output": None,
-                "parsed_output": None,
-                "status": None,
-                "error": None,
-            }
+        entry = {
+            "id": request_id,
+            "timestamp": datetime.now().isoformat(),
+            "input": kwargs,
+            "prompt": prompt,
+            "generation_params": generation_params,
+            "raw_output": None,
+            "parsed_output": None,
+            "status": None,
+            "error": None,
+        }
 
-            try:
-                raw_output = self.model.generate(prompt, generation_params=generation_params)
-                entry["raw_output"] = raw_output
-            except Exception as e:
-                # record model call error attempt by updating the pre-created entry
-                entry["raw_output"] = None
-                entry["status"] = SimulatorCallStatus.ModelCallError.value
-                entry["error"] = str(e)
-                # rich.print(
-                #     f"[yellow]Warning:[/yellow] Attempt {attempts} failed to call model: {e}"
-                #     + (" Retrying..." if attempts < self.max_try else "")
-                # )
-                self.logs.append(entry)
-                continue
-
-            # try parsing the raw output
-            try:
-                parsed_result = self._parse_output(raw_output)
-                # update the existing entry with successful result
-                entry["parsed_output"] = parsed_result
-                entry["status"] = SimulatorCallStatus.Successful.value
-
-            except (json.JSONDecodeError, AttributeError) as e:
-                # update the existing entry with parsing error info
-                entry["status"] = SimulatorCallStatus.ModelParsingError.value
-                entry["error"] = str(e)
-                # rich.print(
-                #     f"[yellow]Warning:[/yellow] Attempt {attempts} failed to parse LLM output: {e}"
-                #     + (" Retrying..." if attempts < self.max_try else "")
-                # )
+        try:
+            chat_result = self.model.chat(
+                messages=[{"role": "user", "content": prompt}],
+                response_model=self._response_model,
+                max_retries=self.max_try,
+                generation_params=generation_params,
+            )
+            parsed_result = self._parse_structured_response(chat_result.structured_response)
+            entry["raw_output"] = chat_result.content
+            entry["parsed_output"] = parsed_result
+            entry["status"] = SimulatorCallStatus.Successful.value
+            self.logs.append(entry)
+            return parsed_result
+        except Exception as e:
+            entry["raw_output"] = None
+            entry["status"] = SimulatorCallStatus.ModelCallError.value
+            entry["error"] = str(e)
             self.logs.append(entry)
 
-        if parsed_result is not None:
-            return parsed_result
-
-        # All attempts failed - raise exception with details
-        last_error = None
-        for log in reversed(self.logs):
-            if log.get("id") == request_id and log.get("error"):
-                last_error = log["error"]
-                break
-
-        raise self._create_error(
-            message=f"{self.__class__.__name__} failed to parse model output after {self.max_try} attempts",
-            attempts=self.max_try,
-            last_error=last_error,
-            logs=[log for log in self.logs if log.get("id") == request_id],
-        )
-
-    def _call_model_and_parse(self, prompt: str) -> Any:
-        """
-        Calls the model with the given prompt and attempts to parse the output.
-        """
-        raw_output = self.model.generate(prompt)
-        return self._parse_output(raw_output)
+            raise self._create_error(
+                message=f"{self.__class__.__name__} failed: {e}",
+                attempts=self.max_try,
+                last_error=str(e),
+                logs=[log for log in self.logs if log.get("id") == request_id],
+            )
 
     @abstractmethod
     def _fill_prompt_template(self, **kwargs) -> str:
         """
         Fills the prompt template with the provided arguments.
-        """
-        pass
-
-    @abstractmethod
-    def _parse_output(self, output: str) -> Any:
-        """
-        Parses the raw output from the model.
         """
         pass
 
@@ -350,6 +324,8 @@ class ToolLLMSimulator(LLMSimulator):
     Raises ToolSimulatorError on failure, which is classified as
     ENVIRONMENT_ERROR (not the agent's fault).
     """
+
+    _response_model = ToolSimulatorResponse
 
     def __init__(
         self,
@@ -405,13 +381,8 @@ class ToolLLMSimulator(LLMSimulator):
     def __call__(self, generation_params: Optional[Dict[str, Any]] = None, **actual_inputs: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:  # type: ignore[override]
         return super().__call__(generation_params=generation_params, **actual_inputs)
 
-    def _parse_output(self, output: str) -> tuple[str, Dict[str, Any]]:  # type: ignore[override]
-        # LLMs may wrap valid JSON in markdown fences, prepend reasoning/thinking
-        # tokens, or append stop tokens. Extract the outermost { ... } span to
-        # robustly parse the expected JSON object.
-        text_stripped = _extract_json_object(output)
-        output_data = json.loads(text_stripped)
-        return output_data.get("text", ""), output_data.get("details", {})
+    def _parse_structured_response(self, response: ToolSimulatorResponse) -> Tuple[str, Dict[str, Any]]:  # type: ignore[override]
+        return response.text, response.details
 
     def _fill_prompt_template(self, **kwargs) -> str:
         """
@@ -439,6 +410,7 @@ class UserLLMSimulator(LLMSimulator):
     """
 
     _component_name = "user_simulator"
+    _response_model = UserSimulatorResponse
 
     def __init__(
         self,
@@ -525,31 +497,8 @@ class UserLLMSimulator(LLMSimulator):
         """
         return super().__call__(generation_params=generation_params, conversation_history=conversation_history)
 
-    def _parse_output(self, output: str) -> str:  # type: ignore[override]
-        """
-        Parses the raw JSON output from the model.
-        """
-        # LLMs may wrap valid JSON in markdown fences, prepend reasoning/thinking
-        # tokens, or append stop tokens. Extract the outermost { ... } span.
-        text_stripped = _extract_json_object(output)
-        try:
-            output_data = json.loads(text_stripped)
-        except json.JSONDecodeError as e:
-            raise json.JSONDecodeError(
-                f"UserLLMSimulator failed to decode JSON from model output. Extracted: {text_stripped[:200]!r}",
-                e.doc,
-                e.pos,
-            ) from e
-        text = output_data.get("text", "")
-
-        # Stop tokens may appear outside the JSON object (e.g. "} </stop>").
-        # The upstream User._check_stop_token checks the parsed text string,
-        # so we need to preserve the stop token if it was in the raw output
-        # but ended up outside the extracted JSON.
-        if self.stop_token and self.stop_token in output and self.stop_token not in text:
-            text = text + " " + self.stop_token
-
-        return text
+    def _parse_structured_response(self, response: UserSimulatorResponse) -> str:  # type: ignore[override]
+        return response.text
 
     def _fill_prompt_template(self, **kwargs) -> str:
         """
@@ -588,6 +537,7 @@ class AgenticUserLLMSimulator(LLMSimulator):
     """A simulator that uses an LLM to act as an agentic user (capable of using tools)."""
 
     _component_name = "user_simulator"
+    _response_model = AgenticUserSimulatorResponse
 
     def __init__(
         self,
@@ -653,29 +603,8 @@ class AgenticUserLLMSimulator(LLMSimulator):
         """
         return super().__call__(generation_params=generation_params, conversation_history=conversation_history)
 
-    def _parse_output(self, output: str) -> Tuple[str, List[Dict[str, Any]]]:  # type: ignore[override]
-        """Parse the raw JSON output from the model."""
-        # LLMs may wrap valid JSON in markdown fences, prepend reasoning/thinking
-        # tokens, or append stop tokens. Extract the outermost { ... } span.
-        text_stripped = _extract_json_object(output)
-        try:
-            output_data = json.loads(text_stripped)
-        except json.JSONDecodeError as e:
-            raise json.JSONDecodeError(
-                f"AgenticUserLLMSimulator failed to decode JSON from model output. Extracted: {text_stripped[:200]!r}",
-                e.doc,
-                e.pos,
-            ) from e
-
-        text = output_data.get("text", "")
-        tool_calls = output_data.get("tool_calls", [])
-
-        # Preserve stop token if it appeared outside the JSON object
-        # (see UserLLMSimulator._parse_output for rationale).
-        if self.stop_token and self.stop_token in output and self.stop_token not in text:
-            text = text + " " + self.stop_token
-
-        return text, tool_calls
+    def _parse_structured_response(self, response: AgenticUserSimulatorResponse) -> Tuple[str, List[Dict[str, Any]]]:  # type: ignore[override]
+        return response.text, response.tool_calls
 
     def _fill_prompt_template(self, **kwargs) -> str:
         """Fill the prompt template with the message history, user profile, and tools."""

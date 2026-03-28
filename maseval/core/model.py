@@ -79,6 +79,8 @@ class ChatResponse:
         model: The model ID that generated this response, if available.
         stop_reason: Why the model stopped generating. Common values:
             'end_turn', 'tool_use', 'max_tokens', 'stop_sequence'.
+        structured_response: The validated Pydantic model instance when
+            ``response_model`` was used with ``chat()``. None otherwise.
 
     Example:
         ```python
@@ -103,6 +105,7 @@ class ChatResponse:
     usage: Optional[Dict[str, Any]] = None
     model: Optional[str] = None
     stop_reason: Optional[str] = None
+    structured_response: Optional[Any] = None
 
     def to_message(self) -> Dict[str, Any]:
         """Convert this response to an OpenAI-compatible message dict.
@@ -210,6 +213,8 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
         generation_params: Optional[Dict[str, Any]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        response_model: Optional[type] = None,
+        max_retries: int = 3,
         **kwargs: Any,
     ) -> ChatResponse:
         """Send messages to the model and get a response.
@@ -232,6 +237,17 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
                 - "none": Model won't use tools
                 - "required": Model must use a tool
                 - {"type": "function", "function": {"name": "..."}}: Use specific tool
+            response_model: Optional Pydantic BaseModel class for structured
+                output. When provided, the response is validated against this
+                schema and returned in ``ChatResponse.structured_response``.
+                Powered by `instructor <https://github.com/567-labs/instructor>`_:
+                the Pydantic model is converted to a tool/function schema and
+                sent to the provider to guide generation, then the response is
+                parsed back into a Pydantic instance and validated client-side.
+                On validation failure, instructor re-prompts automatically.
+            max_retries: Number of client-side retries on validation failure
+                when using ``response_model``. Default is 3. Ignored without
+                ``response_model``.
             **kwargs: Additional provider-specific arguments.
 
         Returns:
@@ -282,13 +298,24 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
             messages_list = messages
 
         try:
-            result = self._chat_impl(
-                messages_list,
-                generation_params=generation_params,
-                tools=tools,
-                tool_choice=tool_choice,
-                **kwargs,
-            )
+            if response_model is not None:
+                result = self._structured_chat(
+                    messages_list,
+                    response_model=response_model,
+                    max_retries=max_retries,
+                    generation_params=generation_params,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    **kwargs,
+                )
+            else:
+                result = self._chat_impl(
+                    messages_list,
+                    generation_params=generation_params,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    **kwargs,
+                )
             duration = time.time() - start_time
 
             self.logs.append(
@@ -365,6 +392,41 @@ class ModelAdapter(ABC, TraceableMixin, ConfigurableMixin, UsageTrackableMixin):
         Returns:
             ChatResponse with the model's output.
         """
+
+    def _structured_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: type,
+        max_retries: int = 3,
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        """Internal structured chat using instructor.
+
+        Subclasses that support instructor should override this method
+        with their instructor-patched client. The base class raises
+        ``NotImplementedError`` — no silent fallback to unstructured output.
+
+        Args:
+            messages: List of message dicts.
+            response_model: Pydantic model class for response validation.
+            max_retries: Number of retries on validation failure.
+            generation_params: Generation parameters.
+            tools: Tool definitions, if any.
+            tool_choice: Tool choice setting, if any.
+            **kwargs: Additional arguments.
+
+        Returns:
+            ChatResponse with ``structured_response`` populated.
+
+        Raises:
+            NotImplementedError: If the adapter does not support ``response_model``.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support response_model. Override _structured_chat() with an instructor-patched client."
+        )
 
     def generate(
         self,

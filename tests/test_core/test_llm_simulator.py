@@ -1,23 +1,76 @@
 """Test LLM Simulator functionality.
 
-These tests verify that LLMSimulator retry logic and tracing work correctly.
+These tests verify that LLMSimulator structured output and tracing work correctly.
+Simulators use instructor for structured output via response_model, so retries
+happen inside the model adapter's _structured_chat method, not in the simulator loop.
 """
 
 import pytest
 from maseval.core.simulator import (
     ToolLLMSimulator,
+    UserLLMSimulator,
+    AgenticUserLLMSimulator,
     SimulatorCallStatus,
     ToolSimulatorError,
+    UserSimulatorError,
+    ToolSimulatorResponse,
+    UserSimulatorResponse,
+    AgenticUserSimulatorResponse,
 )
 
 
 @pytest.mark.core
+class TestSimulatorResponseModels:
+    """Test that simulator response Pydantic models work correctly."""
+
+    def test_tool_simulator_response_model(self):
+        resp = ToolSimulatorResponse(text="success", details={"key": "value"})
+        assert resp.text == "success"
+        assert resp.details == {"key": "value"}
+
+    def test_user_simulator_response_model(self):
+        resp = UserSimulatorResponse(text="I need help")
+        assert resp.text == "I need help"
+
+    def test_agentic_user_simulator_response_model(self):
+        resp = AgenticUserSimulatorResponse(
+            text="Let me check",
+            tool_calls=[{"name": "check_status", "arguments": {}}],
+        )
+        assert resp.text == "Let me check"
+        assert len(resp.tool_calls) == 1
+
+
+@pytest.mark.core
 class TestLLMSimulator:
-    """Tests for LLMSimulator retry and tracing."""
+    """Tests for LLMSimulator structured output and tracing."""
+
+    def test_llm_simulator_success(self, dummy_model):
+        """Test that simulator succeeds with valid JSON."""
+        from conftest import DummyModelAdapter
+
+        model = DummyModelAdapter(responses=['{"text": "Tool executed successfully", "details": {"result": "success"}}'])
+
+        simulator = ToolLLMSimulator(
+            model=model,
+            tool_name="test_tool",
+            tool_description="A test tool",
+            tool_inputs={"param": {"type": "string"}},
+            max_try=3,
+        )
+
+        result = simulator(actual_inputs={"param": "test"})
+
+        assert result is not None
+        assert isinstance(result, tuple)
+        text, details = result
+        assert text == "Tool executed successfully"
+        assert details.get("result") == "success"
+        assert len(simulator.logs) == 1
+        assert simulator.logs[0]["status"] == SimulatorCallStatus.Successful.value
 
     def test_llm_simulator_retry_logic(self, dummy_model):
-        """Test that simulator retries on parsing errors."""
-        # Model returns invalid JSON first, then valid
+        """Test that instructor retries on invalid JSON and eventually succeeds."""
         from conftest import DummyModelAdapter
 
         model = DummyModelAdapter(
@@ -37,21 +90,19 @@ class TestLLMSimulator:
 
         result = simulator(actual_inputs={"param": "test"})
 
-        # Should eventually succeed - ToolLLMSimulator returns (text, details) tuple
+        # Should succeed after instructor retries internally
         assert result is not None
         assert isinstance(result, tuple)
         text, details = result
-        assert isinstance(details, dict)
         assert details.get("result") == "success"
 
-        # Should have 2 attempts captured in logs (1 fail, 1 success)
-        assert len(simulator.logs) == 2
+        # Simulator sees 1 successful call (retries are internal to _structured_chat)
+        assert len(simulator.logs) == 1
 
-    def test_llm_simulator_parsing_error_retry(self, dummy_model):
-        """Test that parsing errors trigger retries and raise SimulatorError on exhaustion."""
+    def test_llm_simulator_parsing_error_raises(self, dummy_model):
+        """Test that all-invalid JSON raises SimulatorError after retries."""
         from conftest import DummyModelAdapter
 
-        # All responses are invalid JSON
         model = DummyModelAdapter(responses=["bad", "bad", "bad"])
 
         simulator = ToolLLMSimulator(
@@ -62,45 +113,18 @@ class TestLLMSimulator:
             max_try=3,
         )
 
-        # Should raise ToolSimulatorError after max_try attempts
-        with pytest.raises(ToolSimulatorError) as exc_info:
+        with pytest.raises(ToolSimulatorError):
             simulator(actual_inputs={"param": "test"})
 
-        # Verify exception details
-        err = exc_info.value
-        assert err.attempts == 3
-        assert err.last_error is not None
-        assert len(err.logs) == 3  # All 3 attempts in exception logs
-        assert len(simulator.logs) == 3  # All 3 attempts logged in simulator
-
-    def test_llm_simulator_max_attempts_respected(self, dummy_model):
-        """Test that max_try limit is respected."""
-        from conftest import DummyModelAdapter
-
-        model = DummyModelAdapter(responses=["invalid"] * 10)
-
-        simulator = ToolLLMSimulator(
-            model=model,
-            tool_name="test_tool",
-            tool_description="A test tool",
-            tool_inputs={"param": {"type": "string"}},
-            max_try=2,  # Only allow 2 attempts
-        )
-
-        # Should raise after 2 attempts
-        with pytest.raises(ToolSimulatorError) as exc_info:
-            simulator(actual_inputs={"param": "test"})
-
-        # Should stop after 2 attempts, not continue to 10
-        err = exc_info.value
-        assert len(simulator.logs) == 2
-        assert err.attempts == 2
+        # Simulator logs 1 entry (the failed call)
+        assert len(simulator.logs) == 1
+        assert simulator.logs[0]["status"] == SimulatorCallStatus.ModelCallError.value
 
     def test_llm_simulator_history_structure(self, dummy_model):
         """Test that history entries have correct structure."""
         from conftest import DummyModelAdapter
 
-        model = DummyModelAdapter(responses=['{"result": "success"}'])
+        model = DummyModelAdapter(responses=['{"text": "ok", "details": {}}'])
 
         simulator = ToolLLMSimulator(
             model=model,
@@ -112,7 +136,6 @@ class TestLLMSimulator:
 
         _ = simulator(actual_inputs={"param": "test"})
 
-        # Check log entry structure
         entry = simulator.logs[0]
         assert "id" in entry
         assert "timestamp" in entry
@@ -126,7 +149,7 @@ class TestLLMSimulator:
         """Test that status is correctly tracked."""
         from conftest import DummyModelAdapter
 
-        model = DummyModelAdapter(responses=['{"result": "success"}'])
+        model = DummyModelAdapter(responses=['{"text": "ok", "details": {}}'])
 
         simulator = ToolLLMSimulator(
             model=model,
@@ -145,7 +168,7 @@ class TestLLMSimulator:
         """Test that gather_traces includes complete history."""
         from conftest import DummyModelAdapter
 
-        model = DummyModelAdapter(responses=['{"result": "success"}'])
+        model = DummyModelAdapter(responses=['{"text": "ok", "details": {}}'])
 
         simulator = ToolLLMSimulator(
             model=model,
@@ -173,8 +196,6 @@ class TestUserLLMSimulatorValidation:
 
     def test_stop_token_without_condition_raises(self, dummy_model):
         """ValueError raised when stop_token set but early_stopping_condition is None."""
-        from maseval.core.simulator import UserLLMSimulator
-
         with pytest.raises(ValueError, match="must both be set or both be None"):
             UserLLMSimulator(
                 model=dummy_model,
@@ -185,8 +206,6 @@ class TestUserLLMSimulatorValidation:
 
     def test_condition_without_stop_token_raises(self, dummy_model):
         """ValueError raised when early_stopping_condition set but stop_token is None."""
-        from maseval.core.simulator import UserLLMSimulator
-
         with pytest.raises(ValueError, match="must both be set or both be None"):
             UserLLMSimulator(
                 model=dummy_model,
@@ -196,9 +215,6 @@ class TestUserLLMSimulatorValidation:
             )
 
     def test_both_none_is_valid(self, dummy_model):
-        """No error when both stop_token and early_stopping_condition are None."""
-        from maseval.core.simulator import UserLLMSimulator
-
         simulator = UserLLMSimulator(
             model=dummy_model,
             user_profile={"name": "test"},
@@ -208,9 +224,6 @@ class TestUserLLMSimulatorValidation:
         assert simulator.early_stopping_condition is None
 
     def test_both_set_is_valid(self, dummy_model):
-        """No error when both stop_token and early_stopping_condition are set."""
-        from maseval.core.simulator import UserLLMSimulator
-
         simulator = UserLLMSimulator(
             model=dummy_model,
             user_profile={"name": "test"},
@@ -222,21 +235,13 @@ class TestUserLLMSimulatorValidation:
         assert simulator.early_stopping_condition == "all goals accomplished"
 
 
-# =============================================================================
-# UserLLMSimulator Response Tests
-# =============================================================================
-
-
 @pytest.mark.core
 class TestUserLLMSimulatorResponse:
     """Tests for UserLLMSimulator response generation."""
 
     def test_user_simulator_generates_response(self, dummy_model):
-        """UserLLMSimulator generates a response from conversation history."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import UserLLMSimulator
 
-        # UserLLMSimulator expects JSON output with "text" field
         model = DummyModelAdapter(responses=['{"text": "I need help with my order."}'])
 
         simulator = UserLLMSimulator(
@@ -252,9 +257,7 @@ class TestUserLLMSimulatorResponse:
         assert result == "I need help with my order."
 
     def test_user_simulator_fills_template(self, dummy_model):
-        """UserLLMSimulator fills prompt template with profile and scenario."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import UserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "Test response"}'])
 
@@ -264,18 +267,14 @@ class TestUserLLMSimulatorResponse:
             scenario="Account inquiry scenario",
         )
 
-        # Call to trigger prompt filling
         simulator(conversation_history=[{"role": "agent", "content": "Hello"}])
 
-        # Check that the prompt was filled (via logs)
         assert len(simulator.logs) > 0
         prompt = simulator.logs[0].get("prompt", "")
         assert "Jane" in prompt or "12345" in prompt or "Account inquiry" in prompt
 
     def test_user_simulator_with_early_stopping(self, dummy_model):
-        """UserLLMSimulator includes early stopping instructions when configured."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import UserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "Thanks, goodbye! </end>"}'])
 
@@ -290,7 +289,6 @@ class TestUserLLMSimulatorResponse:
         result = simulator(conversation_history=[{"role": "agent", "content": "Your issue is fixed."}])
 
         assert result is not None
-        # The prompt should include early stopping instructions
         prompt = simulator.logs[0].get("prompt", "")
         assert "</end>" in prompt or "issue is resolved" in prompt
 
@@ -305,9 +303,6 @@ class TestAgenticUserLLMSimulatorValidation:
     """Tests for AgenticUserLLMSimulator initialization and validation."""
 
     def test_agentic_user_simulator_initialization(self, dummy_model):
-        """AgenticUserLLMSimulator initializes with required parameters."""
-        from maseval.core.simulator import AgenticUserLLMSimulator
-
         simulator = AgenticUserLLMSimulator(
             model=dummy_model,
             user_profile={"name": "test", "phone": "555-1234"},
@@ -319,9 +314,6 @@ class TestAgenticUserLLMSimulatorValidation:
         assert simulator.tools == []
 
     def test_agentic_user_simulator_with_tools(self, dummy_model):
-        """AgenticUserLLMSimulator initializes with tools."""
-        from maseval.core.simulator import AgenticUserLLMSimulator
-
         tools = [
             {"name": "check_balance", "description": "Check account balance", "inputs": {}},
             {"name": "make_payment", "description": "Make a payment", "inputs": {"amount": {"type": "number"}}},
@@ -338,10 +330,6 @@ class TestAgenticUserLLMSimulatorValidation:
         assert simulator.tools[0]["name"] == "check_balance"
 
     def test_agentic_user_stop_token_validation(self, dummy_model):
-        """AgenticUserLLMSimulator validates stop_token and early_stopping_condition."""
-        from maseval.core.simulator import AgenticUserLLMSimulator
-
-        # stop_token without condition should raise
         with pytest.raises(ValueError, match="must both be set or both be None"):
             AgenticUserLLMSimulator(
                 model=dummy_model,
@@ -350,7 +338,6 @@ class TestAgenticUserLLMSimulatorValidation:
                 stop_token="</stop>",
             )
 
-        # condition without stop_token should raise
         with pytest.raises(ValueError, match="must both be set or both be None"):
             AgenticUserLLMSimulator(
                 model=dummy_model,
@@ -360,9 +347,6 @@ class TestAgenticUserLLMSimulatorValidation:
             )
 
     def test_agentic_user_both_early_stopping_params_valid(self, dummy_model):
-        """AgenticUserLLMSimulator accepts both early stopping params together."""
-        from maseval.core.simulator import AgenticUserLLMSimulator
-
         simulator = AgenticUserLLMSimulator(
             model=dummy_model,
             user_profile={"name": "test"},
@@ -380,18 +364,15 @@ class TestAgenticUserLLMSimulatorResponse:
     """Tests for AgenticUserLLMSimulator response generation."""
 
     def test_agentic_user_generates_text_response(self, dummy_model):
-        """AgenticUserLLMSimulator generates text response from JSON output."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "I need to check my balance.", "tool_calls": []}'])
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "John"},
             scenario="Account inquiry",
         )
-        simulator.model = model  # Override with our test model
 
         result = simulator(conversation_history=[{"role": "agent", "content": "How can I help?"}])
 
@@ -401,21 +382,18 @@ class TestAgenticUserLLMSimulatorResponse:
         assert tool_calls == []
 
     def test_agentic_user_generates_tool_calls(self, dummy_model):
-        """AgenticUserLLMSimulator generates tool calls from JSON output."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "Let me check.", "tool_calls": [{"name": "check_signal", "arguments": {}}]}'])
 
         tools = [{"name": "check_signal", "description": "Check phone signal"}]
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Jane"},
             scenario="Phone issue",
             tools=tools,
         )
-        simulator.model = model
 
         result = simulator(conversation_history=[{"role": "agent", "content": "What's the problem?"}])
 
@@ -424,45 +402,20 @@ class TestAgenticUserLLMSimulatorResponse:
         assert len(tool_calls) == 1
         assert tool_calls[0]["name"] == "check_signal"
 
-    def test_agentic_user_parses_markdown_json(self, dummy_model):
-        """AgenticUserLLMSimulator parses JSON wrapped in markdown code blocks."""
-        from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator
-
-        # Response wrapped in markdown code block
-        model = DummyModelAdapter(responses=['```json\n{"text": "Parsed correctly", "tool_calls": []}\n```'])
-
-        simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
-            user_profile={"name": "Test"},
-            scenario="Test",
-        )
-        simulator.model = model
-
-        result = simulator(conversation_history=[])
-
-        text, tool_calls = result
-        assert text == "Parsed correctly"
-
     def test_agentic_user_invalid_json_raises(self, dummy_model):
-        """AgenticUserLLMSimulator raises on invalid JSON after retries."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator, UserSimulatorError
 
         model = DummyModelAdapter(responses=["not valid json", "still not valid", "nope"])
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Test"},
             scenario="Test",
             max_try=3,
         )
-        simulator.model = model
 
-        with pytest.raises(UserSimulatorError) as exc_info:
+        with pytest.raises(UserSimulatorError):
             simulator(conversation_history=[])
-
-        assert exc_info.value.attempts == 3
 
 
 @pytest.mark.core
@@ -470,18 +423,15 @@ class TestAgenticUserLLMSimulatorPrompt:
     """Tests for AgenticUserLLMSimulator prompt template filling."""
 
     def test_prompt_includes_user_profile(self, dummy_model):
-        """Prompt template includes user profile information."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "test", "tool_calls": []}'])
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Alice", "customer_id": "C12345"},
             scenario="Customer support call",
         )
-        simulator.model = model
 
         simulator(conversation_history=[{"role": "agent", "content": "Hello"}])
 
@@ -489,18 +439,15 @@ class TestAgenticUserLLMSimulatorPrompt:
         assert "Alice" in prompt or "C12345" in prompt
 
     def test_prompt_includes_scenario(self, dummy_model):
-        """Prompt template includes scenario description."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "test", "tool_calls": []}'])
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Test"},
             scenario="Billing dispute about overcharges",
         )
-        simulator.model = model
 
         simulator(conversation_history=[])
 
@@ -508,9 +455,7 @@ class TestAgenticUserLLMSimulatorPrompt:
         assert "Billing dispute" in prompt or "overcharges" in prompt
 
     def test_prompt_includes_tool_instructions(self, dummy_model):
-        """Prompt template includes tool instructions when tools are provided."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "test", "tool_calls": []}'])
 
@@ -519,12 +464,11 @@ class TestAgenticUserLLMSimulatorPrompt:
         ]
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Test"},
             scenario="Test",
             tools=tools,
         )
-        simulator.model = model
 
         simulator(conversation_history=[])
 
@@ -532,20 +476,17 @@ class TestAgenticUserLLMSimulatorPrompt:
         assert "toggle_wifi" in prompt or "Toggle WiFi" in prompt
 
     def test_prompt_includes_early_stopping_instructions(self, dummy_model):
-        """Prompt template includes early stopping instructions when configured."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "test", "tool_calls": []}'])
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Test"},
             scenario="Test",
             stop_token="</complete>",
             early_stopping_condition="problem is solved",
         )
-        simulator.model = model
 
         simulator(conversation_history=[])
 
@@ -553,18 +494,15 @@ class TestAgenticUserLLMSimulatorPrompt:
         assert "</complete>" in prompt or "problem is solved" in prompt
 
     def test_prompt_includes_conversation_history(self, dummy_model):
-        """Prompt template includes formatted conversation history."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "test", "tool_calls": []}'])
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Test"},
             scenario="Test",
         )
-        simulator.model = model
 
         history = [
             {"role": "agent", "content": "Welcome to support."},
@@ -583,18 +521,15 @@ class TestAgenticUserLLMSimulatorTracing:
     """Tests for AgenticUserLLMSimulator tracing and logging."""
 
     def test_logs_successful_calls(self, dummy_model):
-        """AgenticUserLLMSimulator logs successful calls."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator, SimulatorCallStatus
 
         model = DummyModelAdapter(responses=['{"text": "Success", "tool_calls": []}'])
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Test"},
             scenario="Test",
         )
-        simulator.model = model
 
         simulator(conversation_history=[])
 
@@ -602,40 +537,35 @@ class TestAgenticUserLLMSimulatorTracing:
         assert simulator.logs[0]["status"] == SimulatorCallStatus.Successful.value
 
     def test_logs_failed_calls(self, dummy_model):
-        """AgenticUserLLMSimulator logs failed parsing attempts."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator, SimulatorCallStatus, UserSimulatorError
 
         model = DummyModelAdapter(responses=["bad json", "still bad"])
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Test"},
             scenario="Test",
             max_try=2,
         )
-        simulator.model = model
 
         with pytest.raises(UserSimulatorError):
             simulator(conversation_history=[])
 
-        assert len(simulator.logs) == 2
-        for log in simulator.logs:
-            assert log["status"] == SimulatorCallStatus.ModelParsingError.value
+        # With instructor-based retries, the simulator logs 1 entry
+        # (retries happen inside _structured_chat)
+        assert len(simulator.logs) == 1
+        assert simulator.logs[0]["status"] == SimulatorCallStatus.ModelCallError.value
 
     def test_gather_traces_returns_complete_info(self, dummy_model):
-        """gather_traces returns complete tracing information."""
         from conftest import DummyModelAdapter
-        from maseval.core.simulator import AgenticUserLLMSimulator
 
         model = DummyModelAdapter(responses=['{"text": "test", "tool_calls": []}'])
 
         simulator = AgenticUserLLMSimulator(
-            model=dummy_model,
+            model=model,
             user_profile={"name": "Test"},
             scenario="Test",
         )
-        simulator.model = model
 
         simulator(conversation_history=[])
 

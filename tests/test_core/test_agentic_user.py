@@ -30,11 +30,36 @@ class MockModelAdapter(ModelAdapter):
         response_text = self.responses[self.call_count % len(self.responses)]
         self.call_count += 1
 
-        # Create ChatResponse with the text content
         chat_response = ChatResponse()
         chat_response.content = response_text
         chat_response.tool_calls = None
         return chat_response
+
+    def _structured_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: type,
+        max_retries: int = 3,
+        generation_params: Optional[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[Union[str, Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        """Mock structured chat with retry."""
+        last_error = None
+        for _ in range(max_retries):
+            result = self._chat_impl(messages, generation_params, tools, tool_choice, **kwargs)
+            if result.content and response_model is not None:
+                try:
+                    structured = response_model.model_validate_json(result.content)  # ty: ignore[unresolved-attribute]
+                    return ChatResponse(
+                        content=result.content,
+                        structured_response=structured,
+                    )
+                except Exception as e:
+                    last_error = e
+                    continue
+        raise ValueError(f"Failed to validate response after {max_retries} retries: {last_error}")
 
 
 class DummyAgenticLLMUser(AgenticLLMUser):

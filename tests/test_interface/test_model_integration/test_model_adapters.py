@@ -10,6 +10,8 @@ These tests verify that each adapter correctly wraps its underlying client
 and provides adapter-specific configuration.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 
@@ -1479,7 +1481,7 @@ class TestModelAdapterSeedPropagation:
     def test_litellm_adapter_passes_seed_to_api(self):
         """LiteLLM adapter includes seed in API call."""
         pytest.importorskip("litellm")
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock
         from maseval.interface.inference import LiteLLMModelAdapter
 
         mock_response = MagicMock()
@@ -1504,7 +1506,7 @@ class TestModelAdapterSeedPropagation:
     def test_litellm_adapter_no_seed_when_not_set(self):
         """LiteLLM adapter doesn't include seed when not set."""
         pytest.importorskip("litellm")
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock
         from maseval.interface.inference import LiteLLMModelAdapter
 
         mock_response = MagicMock()
@@ -1529,7 +1531,7 @@ class TestModelAdapterSeedPropagation:
     def test_litellm_user_seed_overrides_adapter_seed(self):
         """LiteLLM user-provided seed in generation_params takes precedence."""
         pytest.importorskip("litellm")
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock
         from maseval.interface.inference import LiteLLMModelAdapter
 
         mock_response = MagicMock()
@@ -1767,3 +1769,894 @@ class TestCrossAdapterConsistency:
         # LiteLLM
         litellm_config = LiteLLMModelAdapter(model_id="gpt-3.5-turbo", default_generation_params=params).gather_config()
         assert "default_generation_params" in litellm_config
+
+
+# ==================== Google GenAI Message Conversion Tests ====================
+
+
+@pytest.mark.interface
+class TestGoogleGenAIMessageConversion:
+    """Test GoogleGenAIModelAdapter._convert_messages for edge cases."""
+
+    def _make_adapter(self):
+        """Create an adapter with a no-op client for testing _convert_messages."""
+        pytest.importorskip("google.genai")
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        class MockClient:
+            class Models:
+                def generate_content(self, model, contents, config=None):
+                    class Response:
+                        text = "ok"
+                        candidates = []
+                        usage_metadata = None
+
+                    return Response()
+
+            def __init__(self):
+                self.models = self.Models()
+
+        return GoogleGenAIModelAdapter(client=MockClient(), model_id="gemini-pro")
+
+    def test_system_message_extracted(self):
+        """System messages become system_instruction, not contents."""
+        adapter = self._make_adapter()
+        system, contents = adapter._convert_messages(
+            [
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Hi"},
+            ]
+        )
+        assert system == "You are helpful."
+        assert len(contents) == 1
+        assert contents[0]["role"] == "user"
+
+    def test_assistant_text_only(self):
+        """Assistant messages map to 'model' role."""
+        adapter = self._make_adapter()
+        _, contents = adapter._convert_messages(
+            [
+                {"role": "user", "content": "Hi"},
+                {"role": "assistant", "content": "Hello!"},
+            ]
+        )
+        assert contents[1]["role"] == "model"
+        assert contents[1]["parts"] == [{"text": "Hello!"}]
+
+    def test_assistant_with_tool_calls(self):
+        """Assistant tool_calls are converted to function_call parts."""
+        adapter = self._make_adapter()
+        _, contents = adapter._convert_messages(
+            [
+                {"role": "user", "content": "Weather?"},
+                {
+                    "role": "assistant",
+                    "content": "Let me check.",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"city": "Paris"}',
+                            },
+                        }
+                    ],
+                },
+            ]
+        )
+        model_msg = contents[1]
+        assert model_msg["role"] == "model"
+        assert len(model_msg["parts"]) == 2
+        assert model_msg["parts"][0] == {"text": "Let me check."}
+        assert model_msg["parts"][1]["function_call"]["name"] == "get_weather"
+        assert model_msg["parts"][1]["function_call"]["args"] == {"city": "Paris"}
+
+    def test_assistant_with_invalid_json_arguments(self):
+        """Invalid JSON in tool call arguments falls back to empty dict."""
+        adapter = self._make_adapter()
+        _, contents = adapter._convert_messages(
+            [
+                {"role": "user", "content": "Go"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "do_thing",
+                                "arguments": "not json at all",
+                            },
+                        }
+                    ],
+                },
+            ]
+        )
+        fc = contents[1]["parts"][0]["function_call"]
+        assert fc["args"] == {}
+
+    def test_tool_response_messages(self):
+        """Tool messages are converted to function_response parts."""
+        adapter = self._make_adapter()
+        _, contents = adapter._convert_messages(
+            [
+                {"role": "user", "content": "Weather?"},
+                {"role": "tool", "name": "get_weather", "tool_call_id": "call_1", "content": "72°F"},
+            ]
+        )
+        assert contents[1]["role"] == "function"
+        fr = contents[1]["parts"][0]["function_response"]
+        assert fr["name"] == "get_weather"
+        assert fr["response"] == {"result": "72°F"}
+
+    def test_consecutive_tool_responses_merged(self):
+        """Consecutive tool messages are merged into a single function contents entry."""
+        adapter = self._make_adapter()
+        _, contents = adapter._convert_messages(
+            [
+                {"role": "user", "content": "Do both"},
+                {"role": "tool", "name": "tool_a", "tool_call_id": "c1", "content": "result_a"},
+                {"role": "tool", "name": "tool_b", "tool_call_id": "c2", "content": "result_b"},
+            ]
+        )
+        # Should be merged into one function entry
+        assert len(contents) == 2  # user + merged function
+        assert contents[1]["role"] == "function"
+        assert len(contents[1]["parts"]) == 2
+
+
+# ==================== OpenAI Edge Case Tests ====================
+
+
+@pytest.mark.interface
+class TestOpenAIAdapterEdgeCases:
+    """Test OpenAI adapter edge cases for uncovered lines."""
+
+    def test_parse_dict_response_no_choices(self):
+        """Dict response without choices returns string representation."""
+        pytest.importorskip("openai")
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        class MockClient:
+            class Chat:
+                class Completions:
+                    def create(self, **kwargs):
+                        return {"data": "some raw response"}
+
+                completions = Completions()
+
+            chat = Chat()
+
+        adapter = OpenAIModelAdapter(client=MockClient(), model_id="gpt-4")
+        response = adapter.chat([{"role": "user", "content": "Hi"}])
+        assert response.content is not None
+
+    def test_parse_dict_response_completion_style(self):
+        """Dict response with 'text' in choice (completion-style) is parsed."""
+        pytest.importorskip("openai")
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        class MockClient:
+            class Chat:
+                class Completions:
+                    def create(self, **kwargs):
+                        return {"choices": [{"text": "Completion text", "finish_reason": "stop"}]}
+
+                completions = Completions()
+
+            chat = Chat()
+
+        adapter = OpenAIModelAdapter(client=MockClient(), model_id="gpt-4")
+        response = adapter.chat([{"role": "user", "content": "Hi"}])
+        assert response.content == "Completion text"
+
+    def test_parse_dict_response_unknown_choice_format(self):
+        """Dict response with neither 'message' nor 'text' falls back to str."""
+        pytest.importorskip("openai")
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        class MockClient:
+            class Chat:
+                class Completions:
+                    def create(self, **kwargs):
+                        return {"choices": [{"unknown_key": "val"}]}
+
+                completions = Completions()
+
+            chat = Chat()
+
+        adapter = OpenAIModelAdapter(client=MockClient(), model_id="gpt-4")
+        response = adapter.chat([{"role": "user", "content": "Hi"}])
+        assert response.content is not None
+
+    def test_callable_client_fallback(self):
+        """Adapter falls back to calling client directly if no known methods exist."""
+        pytest.importorskip("openai")
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        class CallableClient:
+            """Client without chat.completions but is callable."""
+
+            def __call__(self, **kwargs):
+                return {"choices": [{"message": {"content": "Direct call"}}]}
+
+        adapter = OpenAIModelAdapter(client=CallableClient(), model_id="gpt-4")
+        response = adapter.chat([{"role": "user", "content": "Hi"}])
+        assert response.content == "Direct call"
+
+    def test_non_callable_client_raises(self):
+        """Adapter raises TypeError if client has no suitable method."""
+        pytest.importorskip("openai")
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        class BadClient:
+            """Client with no usable methods and not callable."""
+
+            pass
+
+        adapter = OpenAIModelAdapter(client=BadClient(), model_id="gpt-4")
+        with pytest.raises(TypeError, match="Unable to call client"):
+            adapter.chat([{"role": "user", "content": "Hi"}])
+
+
+# ==================== Anthropic Edge Case Tests ====================
+
+
+@pytest.mark.interface
+class TestAnthropicAdapterEdgeCases:
+    """Test Anthropic adapter edge cases."""
+
+    def test_convert_tool_choice_unknown_string(self):
+        """Unknown tool_choice string defaults to auto."""
+        pytest.importorskip("anthropic")
+        from maseval.interface.inference.anthropic import AnthropicModelAdapter
+
+        class MockClient:
+            class Messages:
+                def create(self, **kwargs):
+                    class TextBlock:
+                        type = "text"
+                        text = "ok"
+
+                    class Response:
+                        content = [TextBlock()]
+                        usage = None
+                        model = "claude-sonnet-4-5-20250514"
+                        stop_reason = "end_turn"
+
+                    return Response()
+
+            messages = Messages()
+
+        adapter = AnthropicModelAdapter(client=MockClient(), model_id="claude-sonnet-4-5-20250514")
+        result = adapter._convert_tool_choice("some_unknown_value")
+        assert result == {"type": "auto"}
+
+    def test_convert_messages_assistant_tool_calls_invalid_json(self):
+        """Invalid JSON in assistant tool call arguments falls back to empty dict."""
+        pytest.importorskip("anthropic")
+        from maseval.interface.inference.anthropic import AnthropicModelAdapter
+
+        class MockClient:
+            class Messages:
+                def create(self, **kwargs):
+                    class TextBlock:
+                        type = "text"
+                        text = "ok"
+
+                    class Response:
+                        content = [TextBlock()]
+                        usage = None
+                        model = "claude-sonnet-4-5-20250514"
+                        stop_reason = "end_turn"
+
+                    return Response()
+
+            messages = Messages()
+
+        adapter = AnthropicModelAdapter(client=MockClient(), model_id="claude-sonnet-4-5-20250514")
+        _, converted = adapter._convert_messages(
+            [
+                {"role": "user", "content": "Go"},
+                {
+                    "role": "assistant",
+                    "content": "Using tool",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "do_thing",
+                                "arguments": "not valid json {{{",
+                            },
+                        }
+                    ],
+                },
+            ]
+        )
+        # Should have tool_use block with empty input dict
+        assistant_msg = converted[1]
+        tool_block = [b for b in assistant_msg["content"] if b["type"] == "tool_use"][0]
+        assert tool_block["input"] == {}
+
+
+# ==================== ModelAdapter.chat() with response_model Tests ====================
+
+
+@pytest.mark.core
+class TestModelAdapterStructuredChat:
+    """Test that ModelAdapter.chat() routes to _structured_chat when response_model is given."""
+
+    def test_chat_routes_to_structured_chat(self):
+        """chat() with response_model calls _structured_chat, not _chat_impl."""
+        from conftest import DummyModelAdapter
+        from pydantic import BaseModel
+
+        class SimpleResponse(BaseModel):
+            answer: str
+
+        model = DummyModelAdapter(responses=['{"answer": "42"}'])
+        response = model.chat(
+            [{"role": "user", "content": "What is 6*7?"}],
+            response_model=SimpleResponse,
+        )
+
+        assert response.structured_response is not None
+        assert isinstance(response.structured_response, SimpleResponse)
+        assert response.structured_response.answer == "42"
+
+    def test_chat_without_response_model_uses_chat_impl(self):
+        """chat() without response_model uses _chat_impl directly."""
+        from conftest import DummyModelAdapter
+
+        model = DummyModelAdapter(responses=["plain text"])
+        response = model.chat([{"role": "user", "content": "Hi"}])
+
+        assert response.content == "plain text"
+        assert response.structured_response is None
+
+    def test_chat_with_message_history(self):
+        """chat() accepts MessageHistory and converts to list."""
+        from conftest import DummyModelAdapter
+        from maseval.core.history import MessageHistory
+
+        history = MessageHistory()
+        history.add_message("user", "Hello!")
+
+        model = DummyModelAdapter(responses=["Hi there!"])
+        response = model.chat(history)
+
+        assert response.content == "Hi there!"
+
+    def test_base_structured_chat_raises_not_implemented(self):
+        """Base ModelAdapter._structured_chat raises NotImplementedError."""
+        from maseval.core.model import ModelAdapter, ChatResponse
+
+        class MinimalAdapter(ModelAdapter):
+            @property
+            def model_id(self):
+                return "minimal"
+
+            def _chat_impl(self, messages, generation_params=None, tools=None, tool_choice=None, **kwargs):
+                return ChatResponse(content="text")
+
+        adapter = MinimalAdapter()
+        with pytest.raises(NotImplementedError, match="does not support response_model"):
+            adapter.chat(
+                [{"role": "user", "content": "Hi"}],
+                response_model=object,
+            )
+
+
+# ==================== Adapter _structured_chat Tests ====================
+#
+# These tests inject a mock _instructor_client to exercise the adapter's
+# _structured_chat code path without requiring real API credentials.
+# This covers parameter merging, seed propagation, and response wrapping.
+# =========================================================================
+
+
+def _make_mock_instructor_result():
+    """Create a mock Pydantic-like result object."""
+    result = MagicMock()
+    result.model_dump_json.return_value = '{"answer": "42"}'
+    return result
+
+
+@pytest.mark.interface
+class TestOpenAIStructuredChat:
+    """Test OpenAIModelAdapter._structured_chat with mocked instructor."""
+
+    def test_structured_chat_returns_chat_response(self):
+        """_structured_chat returns ChatResponse with structured_response."""
+        pytest.importorskip("openai")
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        class MockClient:
+            class Chat:
+                class Completions:
+                    def create(self, **kwargs):
+                        return {"choices": [{"message": {"content": "ok"}}]}
+
+                completions = Completions()
+
+            chat = Chat()
+
+        adapter = OpenAIModelAdapter(client=MockClient(), model_id="gpt-4")
+
+        # Inject mock instructor client
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        response = adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+            generation_params={"temperature": 0.5},
+        )
+
+        assert response.content == '{"answer": "42"}'
+        assert response.structured_response is mock_result
+        assert response.model == "gpt-4"
+        mock_instructor.chat.completions.create.assert_called_once()
+
+    def test_structured_chat_propagates_seed(self):
+        """_structured_chat includes seed in params."""
+        pytest.importorskip("openai")
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        class MockClient:
+            class Chat:
+                class Completions:
+                    def create(self, **kwargs):
+                        return {"choices": [{"message": {"content": "ok"}}]}
+
+                completions = Completions()
+
+            chat = Chat()
+
+        adapter = OpenAIModelAdapter(client=MockClient(), model_id="gpt-4", seed=42)
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+        )
+
+        call_kwargs = mock_instructor.chat.completions.create.call_args
+        assert call_kwargs.kwargs.get("seed") == 42
+
+
+@pytest.mark.interface
+class TestAnthropicStructuredChat:
+    """Test AnthropicModelAdapter._structured_chat with mocked instructor."""
+
+    def test_structured_chat_returns_chat_response(self):
+        """_structured_chat returns ChatResponse with structured_response."""
+        pytest.importorskip("anthropic")
+        from maseval.interface.inference.anthropic import AnthropicModelAdapter
+
+        class MockClient:
+            class Messages:
+                def create(self, **kwargs):
+                    class TextBlock:
+                        type = "text"
+                        text = "ok"
+
+                    class Response:
+                        content = [TextBlock()]
+                        usage = None
+                        model = "claude-sonnet-4-5-20250514"
+                        stop_reason = "end_turn"
+
+                    return Response()
+
+            messages = Messages()
+
+        adapter = AnthropicModelAdapter(client=MockClient(), model_id="claude-sonnet-4-5-20250514")
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        response = adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+            generation_params={"temperature": 0.5},
+        )
+
+        assert response.content == '{"answer": "42"}'
+        assert response.structured_response is mock_result
+        assert response.model == "claude-sonnet-4-5-20250514"
+
+    def test_structured_chat_uses_max_tokens(self):
+        """_structured_chat passes max_tokens from adapter default."""
+        pytest.importorskip("anthropic")
+        from maseval.interface.inference.anthropic import AnthropicModelAdapter
+
+        class MockClient:
+            class Messages:
+                def create(self, **kwargs):
+                    class TextBlock:
+                        type = "text"
+                        text = "ok"
+
+                    class Response:
+                        content = [TextBlock()]
+                        usage = None
+                        model = "claude-sonnet-4-5-20250514"
+                        stop_reason = "end_turn"
+
+                    return Response()
+
+            messages = Messages()
+
+        adapter = AnthropicModelAdapter(
+            client=MockClient(),
+            model_id="claude-sonnet-4-5-20250514",
+            max_tokens=500,
+        )
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+        )
+
+        call_kwargs = mock_instructor.chat.completions.create.call_args
+        assert call_kwargs.kwargs.get("max_tokens") == 500
+
+
+@pytest.mark.interface
+class TestGoogleGenAIStructuredChat:
+    """Test GoogleGenAIModelAdapter._structured_chat with mocked instructor."""
+
+    def test_structured_chat_returns_chat_response(self):
+        """_structured_chat returns ChatResponse with structured_response."""
+        pytest.importorskip("google.genai")
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        class MockClient:
+            class Models:
+                def generate_content(self, model, contents, config=None):
+                    class Response:
+                        text = "ok"
+
+                    return Response()
+
+            def __init__(self):
+                self.models = self.Models()
+
+        adapter = GoogleGenAIModelAdapter(client=MockClient(), model_id="gemini-pro")
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        response = adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+            generation_params={"temperature": 0.5},
+        )
+
+        assert response.content == '{"answer": "42"}'
+        assert response.structured_response is mock_result
+        assert response.model == "gemini-pro"
+
+    def test_structured_chat_propagates_seed(self):
+        """_structured_chat includes seed in params."""
+        pytest.importorskip("google.genai")
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        class MockClient:
+            class Models:
+                def generate_content(self, model, contents, config=None):
+                    class Response:
+                        text = "ok"
+
+                    return Response()
+
+            def __init__(self):
+                self.models = self.Models()
+
+        adapter = GoogleGenAIModelAdapter(client=MockClient(), model_id="gemini-pro", seed=99)
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+        )
+
+        call_kwargs = mock_instructor.chat.completions.create.call_args
+        # Generation params should be nested inside generation_config for the
+        # Google GenAI instructor adapter (not passed as top-level kwargs).
+        gen_config = call_kwargs.kwargs.get("generation_config", {})
+        assert gen_config.get("seed") == 99
+
+    def test_structured_chat_separates_instructor_top_level_keys(self):
+        """thinking_config stays top-level, generation params go into generation_config."""
+        pytest.importorskip("google.genai")
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        class MockClient:
+            class Models:
+                def generate_content(self, model, contents, config=None):
+                    class Response:
+                        text = "ok"
+
+                    return Response()
+
+            def __init__(self):
+                self.models = self.Models()
+
+        adapter = GoogleGenAIModelAdapter(client=MockClient(), model_id="gemini-pro", seed=42)
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+            generation_params={"temperature": 0.5, "thinking_config": {"thinking_budget": 1024}},
+        )
+
+        call_kwargs = mock_instructor.chat.completions.create.call_args.kwargs
+        # thinking_config must be top-level (instructor pops it from kwargs directly)
+        assert call_kwargs.get("thinking_config") == {"thinking_budget": 1024}
+        # generation params must be nested inside generation_config
+        gen_config = call_kwargs.get("generation_config", {})
+        assert gen_config.get("temperature") == 0.5
+        assert gen_config.get("seed") == 42
+        # thinking_config must NOT be in generation_config
+        assert "thinking_config" not in gen_config
+
+    def test_structured_chat_uses_genai_structured_outputs_mode(self):
+        """Instructor client uses GENAI_STRUCTURED_OUTPUTS mode.
+
+        GENAI_TOOLS has upstream bugs with thinking mode (AttributeError on
+        MALFORMED_FUNCTION_CALL, AssertionError on duplicate parts).
+        GENAI_STRUCTURED_OUTPUTS parses via completion.text, avoiding both.
+        """
+        pytest.importorskip("google.genai")
+        pytest.importorskip("instructor")
+        import instructor
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        class MockClient:
+            class Models:
+                def generate_content(self, model, contents, config=None):
+                    class Response:
+                        text = "ok"
+
+                    return Response()
+
+            def __init__(self):
+                self.models = self.Models()
+
+        adapter = GoogleGenAIModelAdapter(client=MockClient(), model_id="gemini-pro")
+        assert adapter._instructor_client is None
+
+        with patch("instructor.from_genai") as mock_from_genai:
+            mock_instructor = MagicMock()
+            mock_instructor.chat.completions.create.return_value = _make_mock_instructor_result()
+            mock_from_genai.return_value = mock_instructor
+
+            adapter._structured_chat(
+                messages=[{"role": "user", "content": "Hi"}],
+                response_model=object,
+            )
+
+            mock_from_genai.assert_called_once()
+            call_kwargs = mock_from_genai.call_args
+            assert call_kwargs.kwargs.get("mode") == instructor.Mode.GENAI_STRUCTURED_OUTPUTS
+
+    def test_clean_schema_model_strips_additional_properties(self):
+        """_clean_schema_model strips additionalProperties from JSON schema.
+
+        Pydantic v2 emits additionalProperties for Dict fields and nested models.
+        Gemini's structured output API rejects it. The clean model must strip it
+        while preserving parsing and isinstance() behavior.
+        """
+        pytest.importorskip("google.genai")
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        from typing import Any, Dict
+
+        from pydantic import BaseModel, Field
+
+        class Inner(BaseModel):
+            name: str
+
+        class Outer(BaseModel):
+            text: str = Field(default="")
+            details: Dict[str, Any] = Field(default_factory=dict)
+            inner: Inner = Field(default_factory=lambda: Inner(name=""))
+
+        # Original schema has additionalProperties
+        original_schema = Outer.model_json_schema()
+        assert any("additionalProperties" in str(v) for v in original_schema.values()) or "additionalProperties" in str(
+            original_schema.get("$defs", {})
+        )
+
+        # Cleaned model's schema does not
+        CleanOuter = GoogleGenAIModelAdapter._clean_schema_model(Outer)
+        clean_schema = CleanOuter.model_json_schema()  # ty: ignore[unresolved-attribute]
+        assert "additionalProperties" not in str(clean_schema)
+
+        # Parsing still works and returns instances of the original class
+        instance = CleanOuter.model_validate({"text": "hi", "details": {"k": "v"}, "inner": {"name": "test"}})  # ty: ignore[unresolved-attribute]
+        assert isinstance(instance, Outer)
+        assert instance.text == "hi"
+        assert instance.details == {"k": "v"}
+        assert instance.inner.name == "test"
+
+    def test_structured_chat_passes_clean_model_to_instructor(self):
+        """_structured_chat wraps the response model to strip additionalProperties."""
+        pytest.importorskip("google.genai")
+        from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
+
+        from typing import Any, Dict
+
+        from pydantic import BaseModel, Field
+
+        class ToolOutput(BaseModel):
+            text: str = Field(default="", description="Description")
+            details: Dict[str, Any] = Field(default_factory=dict, description="Structured data")
+
+        class MockClient:
+            class Models:
+                def generate_content(self, model, contents, config=None):
+                    class Response:
+                        text = "ok"
+
+                    return Response()
+
+            def __init__(self):
+                self.models = self.Models()
+
+        adapter = GoogleGenAIModelAdapter(client=MockClient(), model_id="gemini-pro")
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=ToolOutput,
+            generation_params={"temperature": 0.5},
+        )
+
+        call_kwargs = mock_instructor.chat.completions.create.call_args.kwargs
+        passed_model = call_kwargs["response_model"]
+        # Must be a subclass (not the original) with clean schema
+        assert passed_model is not ToolOutput
+        assert issubclass(passed_model, ToolOutput)
+        assert "additionalProperties" not in str(passed_model.model_json_schema())
+        # Generation params still wrapped correctly
+        gen_config = call_kwargs.get("generation_config", {})
+        assert gen_config.get("temperature") == 0.5
+
+
+@pytest.mark.interface
+class TestLiteLLMStructuredChat:
+    """Test LiteLLMModelAdapter._structured_chat with mocked instructor."""
+
+    def test_structured_chat_returns_chat_response(self):
+        """_structured_chat returns ChatResponse with structured_response."""
+        pytest.importorskip("litellm")
+        from maseval.interface.inference.litellm import LiteLLMModelAdapter
+
+        adapter = LiteLLMModelAdapter(model_id="gpt-4o-mini")
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+
+        # Pre-inject to skip _get_instructor_client
+        adapter._instructor_client = mock_instructor
+
+        response = adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+            generation_params={"temperature": 0.7},
+        )
+
+        assert response.content == '{"answer": "42"}'
+        assert response.structured_response is mock_result
+        assert response.model == "gpt-4o-mini"
+
+    def test_structured_chat_propagates_api_credentials(self):
+        """_structured_chat passes api_key and api_base."""
+        pytest.importorskip("litellm")
+        from maseval.interface.inference.litellm import LiteLLMModelAdapter
+
+        adapter = LiteLLMModelAdapter(
+            model_id="gpt-4o-mini",
+            api_key="test-key",
+            api_base="https://custom.api/v1",
+            seed=77,
+        )
+
+        mock_result = _make_mock_instructor_result()
+        mock_instructor = MagicMock()
+        mock_instructor.chat.completions.create.return_value = mock_result
+        adapter._instructor_client = mock_instructor
+
+        adapter._structured_chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            response_model=object,
+        )
+
+        call_kwargs = mock_instructor.chat.completions.create.call_args
+        assert call_kwargs.kwargs.get("api_key") == "test-key"
+        assert call_kwargs.kwargs.get("api_base") == "https://custom.api/v1"
+        assert call_kwargs.kwargs.get("seed") == 77
+
+    def test_get_instructor_client_creates_patched_client(self):
+        """_get_instructor_client lazily creates instructor client from litellm."""
+        pytest.importorskip("litellm")
+        pytest.importorskip("instructor")
+        from maseval.interface.inference.litellm import LiteLLMModelAdapter
+
+        adapter = LiteLLMModelAdapter(model_id="gpt-4o-mini")
+        client = adapter._get_instructor_client()
+
+        assert client is not None
+        assert hasattr(client, "chat")
+        # Calling again returns same instance (lazy caching)
+        assert adapter._get_instructor_client() is client
+
+
+# ==================== OpenAI Legacy Client Fallback Tests ====================
+
+
+@pytest.mark.interface
+class TestOpenAILegacyClientFallback:
+    """Test OpenAI adapter legacy client method fallbacks."""
+
+    def test_legacy_client_with_create_method(self):
+        """Adapter uses client.create() if no chat.completions."""
+        pytest.importorskip("openai")
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        class LegacyClient:
+            def create(self, model, messages, **kwargs):
+                return {"choices": [{"message": {"content": "Legacy create"}}]}
+
+        adapter = OpenAIModelAdapter(client=LegacyClient(), model_id="gpt-4")
+        response = adapter.chat([{"role": "user", "content": "Hi"}])
+        assert response.content == "Legacy create"
+
+    def test_legacy_client_without_model_param(self):
+        """Adapter retries without model param on TypeError."""
+        pytest.importorskip("openai")
+        from maseval.interface.inference.openai import OpenAIModelAdapter
+
+        class LegacyClient:
+            def create(self, messages, **kwargs):
+                # Accepts messages but not model
+                return {"choices": [{"message": {"content": "No model param"}}]}
+
+        adapter = OpenAIModelAdapter(client=LegacyClient(), model_id="gpt-4")
+        response = adapter.chat([{"role": "user", "content": "Hi"}])
+        assert response.content == "No model param"

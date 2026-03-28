@@ -465,7 +465,7 @@ class TestFullPipeline:
 
         100 input * $0.01 + 50 output * $0.02 = $2.00
         """
-        from tests.conftest import DummyModelAdapter
+        from conftest import DummyModelAdapter
 
         calc = StaticPricingCalculator(
             {
@@ -493,7 +493,7 @@ class TestFullPipeline:
         Call 2: 100 input * $0.01 + 50 output * $0.02 = $2.00
         Total = $4.00, 200 input, 100 output
         """
-        from tests.conftest import DummyModelAdapter
+        from conftest import DummyModelAdapter
 
         calc = StaticPricingCalculator(
             {
@@ -522,7 +522,7 @@ class TestFullPipeline:
         Calculator would compute $2.00.
         Provider cost should win.
         """
-        from tests.conftest import DummyModelAdapter
+        from conftest import DummyModelAdapter
 
         calc = StaticPricingCalculator(
             {
@@ -542,7 +542,7 @@ class TestFullPipeline:
 
     def test_pipeline_no_calculator_no_provider_cost(self):
         """Without calculator or provider cost, cost is None."""
-        from tests.conftest import DummyModelAdapter
+        from conftest import DummyModelAdapter
 
         adapter = DummyModelAdapter(
             model_id="test-model",
@@ -565,7 +565,7 @@ class TestFullPipeline:
         Output: 100 * $0.015 = $1.50
         Total = $2.34
         """
-        from tests.conftest import DummyModelAdapter
+        from conftest import DummyModelAdapter
 
         calc = StaticPricingCalculator(
             {
