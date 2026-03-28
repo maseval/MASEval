@@ -282,3 +282,51 @@ class TestAREEnvironmentShorthandPath:
             assert call_kwargs["start_time"] == 100
             assert call_kwargs["time_increment_in_seconds"] == 5
             mock_scenario_instance.initialize.assert_called_once()
+
+
+class TestAREToolWrapper:
+    """Tests for AREToolWrapper simulation time tracking."""
+
+    def _make_wrapper(self, mock_env):
+        """Create an AREToolWrapper with a mock tool and environment."""
+        from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
+
+        mock_tool = MagicMock()
+        mock_tool.name = "TestTool__do_thing"
+        mock_tool.description = "Does a thing"
+        mock_tool.inputs = {"x": {"type": "string", "description": "input"}}
+        mock_tool.output_type = "string"
+        mock_tool.args = []
+        mock_tool.return_value = "result"
+
+        wrapper = AREToolWrapper(mock_tool, mock_env)
+        return wrapper
+
+    def test_invocation_records_simulation_time(self):
+        """Wrapper records simulation time before/after tool call in meta."""
+        mock_env = MagicMock()
+        mock_env.get_simulation_time = MagicMock(side_effect=[100.0, 105.0])
+
+        wrapper = self._make_wrapper(mock_env)
+        wrapper(x="hello")
+
+        assert len(wrapper.history.logs) == 1
+        meta = wrapper.history.logs[0]["meta"]
+        assert meta["simulation_time_before"] == 100.0
+        assert meta["simulation_time_after"] == 105.0
+        assert meta["simulation_time_elapsed"] == 5.0
+        assert "wall_time" in meta
+
+    def test_invocation_records_none_when_sim_time_unavailable(self):
+        """Wrapper records None values when get_simulation_time raises."""
+        mock_env = MagicMock()
+        mock_env.get_simulation_time = MagicMock(side_effect=AttributeError)
+
+        wrapper = self._make_wrapper(mock_env)
+        wrapper(x="hello")
+
+        assert len(wrapper.history.logs) == 1
+        meta = wrapper.history.logs[0]["meta"]
+        assert meta["simulation_time_before"] is None
+        assert meta["simulation_time_after"] is None
+        assert meta["simulation_time_elapsed"] is None

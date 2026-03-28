@@ -12,7 +12,7 @@ This is the layer 1->2 wrapper:
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from maseval.core.tracing import TraceableMixin
 from maseval.core.config import ConfigurableMixin
@@ -96,6 +96,17 @@ class AREToolWrapper(TraceableMixin, ConfigurableMixin):
 
         return {"properties": properties, "required": required}
 
+    def _get_simulation_time(self) -> Optional[float]:
+        """Get the current simulation time from the ARE environment.
+
+        Returns:
+            The current simulation time, or None if unavailable.
+        """
+        try:
+            return self._environment.get_simulation_time()
+        except Exception:
+            return None
+
     def __call__(self, **kwargs: Any) -> Any:
         """Execute the ARE tool with tracing.
 
@@ -109,6 +120,7 @@ class AREToolWrapper(TraceableMixin, ConfigurableMixin):
             Any exception from the underlying ARE tool is re-raised.
         """
         start_time = datetime.now()
+        sim_time_before = self._get_simulation_time()
         status = "success"
         result = None
         error_message = None
@@ -120,11 +132,25 @@ class AREToolWrapper(TraceableMixin, ConfigurableMixin):
             error_message = str(e)
             raise
         finally:
+            sim_time_after = self._get_simulation_time()
+            if sim_time_before is not None and sim_time_after is not None:
+                sim_time_elapsed = sim_time_after - sim_time_before
+            else:
+                sim_time_elapsed = None
+
+            meta = {
+                "wall_time": start_time.isoformat(),
+                "simulation_time_before": sim_time_before,
+                "simulation_time_after": sim_time_after,
+                "simulation_time_elapsed": sim_time_elapsed,
+            }
+
             self.history.add_invocation(
                 inputs=kwargs,
                 outputs=result if status == "success" else error_message,
                 status=status,
                 timestamp=start_time.isoformat(),
+                meta=meta,
             )
 
         return result
