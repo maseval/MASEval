@@ -300,6 +300,52 @@ class TestAREEnvironmentShorthandPath:
             mock_scenario_instance.initialize.assert_called_once()
 
 
+class TestAREEnvironmentOracleMode:
+    """Tests for AREEnvironment oracle mode."""
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_oracle_mode_captures_traces(self, mock_import):
+        """Oracle mode runs scenario and captures apps_state and world_logs."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        mock_oracle_env = MagicMock()
+        mock_oracle_env.get_apps_state.return_value = {"email": {"inbox": []}}
+        mock_oracle_env.get_world_logs.return_value = [{"event": "email_sent"}]
+
+        mock_agent_env = _make_mock_are_env()
+
+        # First Environment() call = oracle env, second = agent env
+        mock_are_mod.Environment.side_effect = [mock_oracle_env, mock_agent_env]
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(task_data={"scenario": scenario}, run_oracle=True)
+
+        assert env._oracle_traces is not None
+        assert env._oracle_traces["apps_state"] == {"email": {"inbox": []}}
+        assert env._oracle_traces["world_logs"] == [{"event": "email_sent"}]
+        mock_oracle_env.get_apps_state.assert_called_once()
+        mock_oracle_env.get_world_logs.assert_called_once()
+        scenario.soft_reset.assert_called_once()
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_oracle_mode_crashes_if_methods_missing(self, mock_import):
+        """Oracle mode raises AttributeError if ARE env lacks expected methods."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        # Create oracle env with spec=[] so it has NO attributes except run
+        mock_oracle_env = MagicMock(spec=[])
+        mock_oracle_env.run = MagicMock()
+
+        mock_agent_env = _make_mock_are_env()
+        mock_are_mod.Environment.side_effect = [mock_oracle_env, mock_agent_env]
+
+        scenario = _make_mock_scenario()
+        with pytest.raises(AttributeError):
+            AREEnvironment(task_data={"scenario": scenario}, run_oracle=True)
+
+
 class TestAREToolWrapper:
     """Tests for AREToolWrapper simulation time tracking."""
 

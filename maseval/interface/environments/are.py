@@ -187,6 +187,10 @@ class AREEnvironment(Environment):
 
         Returns:
             Dict with oracle event log.
+
+        Raises:
+            AttributeError: If the ARE Environment API changed and expected
+                methods (get_apps_state, get_world_logs) are missing.
         """
         oracle_config = are_mod.EnvironmentConfig(
             oracle_mode=True,
@@ -198,8 +202,8 @@ class AREEnvironment(Environment):
 
         # Capture oracle state
         oracle_traces = {
-            "apps_state": oracle_env.get_apps_state() if hasattr(oracle_env, "get_apps_state") else {},
-            "world_logs": oracle_env.get_world_logs() if hasattr(oracle_env, "get_world_logs") else [],
+            "apps_state": oracle_env.get_apps_state(),
+            "world_logs": oracle_env.get_world_logs(),
         }
 
         # Soft-reset so app state is clean for agent run
