@@ -7,6 +7,22 @@ import pytest
 from maseval.interface.environments.are import AREEnvironment
 
 
+@pytest.fixture(autouse=True)
+def mock_app_tool_adapter():
+    """Mock AppToolAdapter so AREToolWrapper can initialize without ARE installed."""
+    def make_adapter(are_tool):
+        adapter = MagicMock()
+        adapter.name = are_tool.name
+        adapter.description = are_tool.description
+        adapter.inputs = are_tool.inputs
+        adapter.output_type = are_tool.output_type
+        adapter.actual_return_type = None
+        return adapter
+
+    with patch("maseval.interface.environments.are_tool_wrapper.AppToolAdapter", side_effect=make_adapter):
+        yield
+
+
 def _make_mock_scenario(scenario_id="test-001", duration=600, seed=42, start_time=0):
     """Create a mock ARE Scenario."""
     scenario = MagicMock()
@@ -330,3 +346,41 @@ class TestAREToolWrapper:
         assert meta["simulation_time_before"] is None
         assert meta["simulation_time_after"] is None
         assert meta["simulation_time_elapsed"] is None
+
+    def test_schema_extraction_crashes_on_missing_arg_type(self):
+        """_extract_schema raises AttributeError if arg lacks arg_type."""
+        from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
+
+        mock_tool = MagicMock(spec=[])  # empty spec — no attributes
+        mock_tool.name = "param1"
+        # Deliberately no arg_type or has_default
+        mock_are_tool = MagicMock()
+        mock_are_tool.args = [mock_tool]
+
+        with pytest.raises(AttributeError):
+            AREToolWrapper._extract_schema(mock_are_tool)
+
+    @patch("maseval.interface.environments.are_tool_wrapper.AppToolAdapter")
+    def test_uses_app_tool_adapter_for_metadata(self, mock_adapter_cls):
+        """AREToolWrapper delegates metadata extraction to AppToolAdapter."""
+        mock_adapter = MagicMock()
+        mock_adapter.name = "Calendar__create_event"
+        mock_adapter.description = "Create a calendar event"
+        mock_adapter.inputs = {"title": {"type": "string"}}
+        mock_adapter.output_type = "string"
+        mock_adapter.actual_return_type = "str"
+        mock_adapter_cls.return_value = mock_adapter
+
+        mock_tool = MagicMock()
+        mock_tool.args = []
+        mock_env = MagicMock()
+
+        from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
+        wrapper = AREToolWrapper(mock_tool, mock_env)
+
+        mock_adapter_cls.assert_called_once_with(mock_tool)
+        assert wrapper.name == "Calendar__create_event"
+        assert wrapper.description == "Create a calendar event"
+        assert wrapper.inputs == {"title": {"type": "string"}}
+        assert wrapper.output_type == "string"
+        assert wrapper.actual_return_type == "str"

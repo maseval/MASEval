@@ -18,6 +18,11 @@ from maseval.core.tracing import TraceableMixin
 from maseval.core.config import ConfigurableMixin
 from maseval.core.history import ToolInvocationHistory
 
+try:
+    from are.simulation.tool_utils import AppToolAdapter  # type: ignore[import-not-found]
+except ImportError:
+    AppToolAdapter = None  # type: ignore[assignment,misc]
+
 if TYPE_CHECKING:
     from maseval.interface.environments.are import AREEnvironment
 
@@ -57,11 +62,18 @@ class AREToolWrapper(TraceableMixin, ConfigurableMixin):
         self._environment = environment
         self.history = ToolInvocationHistory()
 
-        # Expose ARE tool metadata for framework adapters
-        self.name: str = are_tool.name
-        self.description: str = are_tool.description
-        self.inputs: Dict[str, Any] = are_tool.inputs
-        self.output_type: str = are_tool.output_type
+        # Expose ARE tool metadata via AppToolAdapter (canonical source of truth)
+        if AppToolAdapter is None:
+            raise ImportError(
+                "ARE (Agent Research Environments) is required for AREToolWrapper.\n"
+                "Install with: pip install maseval[are]"
+            )
+        adapter = AppToolAdapter(are_tool)
+        self.name: str = adapter.name
+        self.description: str = adapter.description
+        self.inputs: Dict[str, Any] = adapter.inputs
+        self.output_type: str = adapter.output_type
+        self.actual_return_type: Optional[str] = adapter.actual_return_type
 
         # Extract JSON schema from ARE tool args (if available)
         self.input_schema: Dict[str, Any] = self._extract_schema(are_tool)
@@ -88,10 +100,10 @@ class AREToolWrapper(TraceableMixin, ConfigurableMixin):
             if not param_name:
                 continue
             properties[param_name] = {
-                "type": getattr(arg, "arg_type", "string"),
+                "type": arg.arg_type,
                 "description": getattr(arg, "description", ""),
             }
-            if not getattr(arg, "has_default", True):
+            if not arg.has_default:
                 required.append(param_name)
 
         return {"properties": properties, "required": required}
