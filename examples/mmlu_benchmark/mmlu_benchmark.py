@@ -52,7 +52,7 @@ from maseval.core.callbacks.result_logger import FileResultLogger
 # MMLU benchmark imports
 from maseval.benchmark.mmlu import (
     DEFAULT_DEVICE,
-    HuggingFaceMMLUBenchmark,
+    DefaultMMLUBenchmark,
     load_tasks,
     compute_benchmark_metrics,
 )
@@ -691,7 +691,7 @@ def main():
     )
 
     # Create benchmark
-    benchmark = HuggingFaceMMLUBenchmark(
+    benchmark = DefaultMMLUBenchmark(
         model_id=args.model_id,
         device=args.device,
         trust_remote_code=True,

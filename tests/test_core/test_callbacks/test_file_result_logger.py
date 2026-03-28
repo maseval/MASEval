@@ -175,3 +175,92 @@ def test_file_result_logger_overwrite_true_allows_overwriting(tmp_path):
     obj = json.loads(lines[0])
     assert obj["task_id"] == report["task_id"]
     assert obj["repeat_idx"] == report["repeat_idx"]
+
+
+@pytest.mark.core
+def test_file_result_logger_writes_metadata(tmp_path):
+    """Test that FileResultLogger writes a .meta.json file on finalization."""
+    out_dir = tmp_path / "results"
+    out_dir.mkdir()
+
+    logger = FileResultLogger(output_dir=out_dir, write_metadata=True)
+    benchmark = MockBenchmark(n_tasks=2, n_repeats=1)
+    logger.on_run_start(benchmark)  # type: ignore[arg-type]
+
+    for i, task_id in enumerate(benchmark.task_ids):
+        report = {"task_id": task_id, "repeat_idx": 0, "status": "success"}
+        logger.on_task_repeat_end(benchmark, report)  # type: ignore[arg-type]
+
+    logger.on_run_end(benchmark, [])  # type: ignore[arg-type]
+
+    meta_files = list(out_dir.glob("*.meta.json"))
+    assert len(meta_files) == 1
+    meta = json.loads(meta_files[0].read_text())
+    assert meta["n_tasks"] == 2
+    assert meta["lines_written"] == 2
+    assert "timestamp" in meta
+
+
+@pytest.mark.core
+def test_file_result_logger_validate_detects_duplicates(tmp_path):
+    """Test that validation detects duplicate iterations in the JSONL file."""
+    out_dir = tmp_path / "results"
+    out_dir.mkdir()
+
+    logger = FileResultLogger(output_dir=out_dir, validate_on_completion=False)
+    benchmark = MockBenchmark(n_tasks=1, n_repeats=1)
+    logger.on_run_start(benchmark)  # type: ignore[arg-type]
+
+    report = {"task_id": benchmark.task_ids[0], "repeat_idx": 0, "status": "success"}
+    logger.on_task_repeat_end(benchmark, report)  # type: ignore[arg-type]
+
+    # Manually write a duplicate line to the file
+    assert logger._file_handle is not None
+    logger._file_handle.write(json.dumps(report) + "\n")
+    logger._file_handle.flush()
+    logger._lines_written += 1
+
+    logger.finalize()
+    # Validation should fail due to duplicate
+    assert logger.validate() is False
+
+
+@pytest.mark.core
+def test_file_result_logger_non_atomic_writes(tmp_path):
+    """Test that non-atomic writes work correctly."""
+    out_dir = tmp_path / "results"
+    out_dir.mkdir()
+
+    logger = FileResultLogger(output_dir=out_dir, atomic_writes=False)
+    benchmark = MockBenchmark(n_tasks=1, n_repeats=1)
+    logger.on_run_start(benchmark)  # type: ignore[arg-type]
+
+    report = {"task_id": benchmark.task_ids[0], "repeat_idx": 0, "status": "success"}
+    logger.on_task_repeat_end(benchmark, report)  # type: ignore[arg-type]
+    logger.on_run_end(benchmark, [report])  # type: ignore[arg-type]
+
+    jsonl_files = list(out_dir.glob("*.jsonl"))
+    assert len(jsonl_files) == 1
+    lines = jsonl_files[0].read_text().strip().splitlines()
+    assert len(lines) == 1
+
+
+@pytest.mark.core
+def test_report_validation_errors(tmp_path, capsys):
+    """Test _report_validation_errors reports missing and extra iterations."""
+    out_dir = tmp_path / "results"
+    out_dir.mkdir()
+
+    logger = FileResultLogger(output_dir=out_dir, validate_on_completion=False)
+    benchmark = MockBenchmark(n_tasks=1, n_repeats=1)
+    logger.on_run_start(benchmark)  # type: ignore[arg-type]
+
+    # Set up state to simulate missing iterations
+    logger._expected_iterations = {("task_1", 0), ("task_2", 0)}
+    logger._logged_iterations = {("task_1", 0), ("task_3", 0)}
+
+    logger._report_validation_errors()
+    output = capsys.readouterr().out
+    assert "Validation failed" in output
+    assert "Missing 1 iterations" in output
+    assert "Unexpected 1 iterations" in output

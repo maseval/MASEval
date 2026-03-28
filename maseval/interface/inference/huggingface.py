@@ -1,7 +1,10 @@
-"""HuggingFace model adapter.
+"""HuggingFace pipeline model adapter.
 
-This adapter works with HuggingFace transformers pipelines and models.
-It supports both simple callable models and full pipeline objects.
+This adapter works with HuggingFace transformers pipelines and callables
+for text generation via ``chat()`` and ``generate()``.
+
+For log-likelihood scoring (e.g. MCQ evaluation), see
+``HuggingFaceModelScorer`` in ``maseval.interface.inference.huggingface_scorer``.
 
 Requires transformers to be installed:
     pip install maseval[transformers]
@@ -9,11 +12,11 @@ Requires transformers to be installed:
 Example:
     ```python
     from transformers import pipeline
-    from maseval.interface.inference import HuggingFaceModelAdapter
+    from maseval.interface.inference import HuggingFacePipelineModelAdapter
 
     # Using a pipeline
     pipe = pipeline("text-generation", model="meta-llama/Llama-3.1-8B-Instruct")
-    model = HuggingFaceModelAdapter(model=pipe, model_id="llama-3.1-8b")
+    model = HuggingFacePipelineModelAdapter(model=pipe, model_id="llama-3.1-8b")
 
     # Simple generation
     response = model.generate("Hello!")
@@ -43,12 +46,18 @@ class ToolCallingNotSupportedError(Exception):
     pass
 
 
-class HuggingFaceModelAdapter(ModelAdapter):
-    """Adapter for HuggingFace transformers models and pipelines.
+class HuggingFacePipelineModelAdapter(ModelAdapter):
+    """Adapter for HuggingFace transformers pipelines and callables.
+
+    Wraps a HuggingFace ``pipeline()`` object (or any text-generation callable)
+    for use with the ``ModelAdapter`` interface (``chat()``, ``generate()``).
+
+    For log-likelihood scoring, see ``HuggingFaceModelScorer``.
 
     Works with:
-        - transformers.pipeline() objects
-        - Any callable that accepts a prompt and returns text
+
+    - ``transformers.pipeline()`` objects
+    - Any callable that accepts a prompt and returns text
 
     For chat functionality, the adapter uses the tokenizer's chat template
     if available. This provides proper formatting for instruction-tuned models.
@@ -56,8 +65,8 @@ class HuggingFaceModelAdapter(ModelAdapter):
     Tool calling support:
         Tool calling is only supported if the model's chat template explicitly
         supports it. If you pass tools and the model doesn't support them,
-        a ToolCallingNotSupportedError is raised. For reliable tool calling,
-        consider using LiteLLMModelAdapter instead.
+        a ``ToolCallingNotSupportedError`` is raised. For reliable tool calling,
+        consider using ``LiteLLMModelAdapter`` instead.
     """
 
     def __init__(

@@ -2,6 +2,20 @@
 
 Evaluate language models on [MMLU (Massive Multitask Language Understanding)](https://arxiv.org/abs/2009.03300) with optional efficient evaluation via [DISCO](https://arxiv.org/abs/2510.07959).
 
+## Installation
+
+For basic MMLU evaluation:
+
+```bash
+uv pip install .[mmlu]
+```
+
+For DISCO prediction (includes DISCO dependencies):
+
+```bash
+uv pip install .[disco]
+```
+
 ## Run without DISCO (full evaluation)
 
 From the project root:

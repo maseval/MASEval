@@ -15,7 +15,19 @@ from maseval.core.task import (
     AdaptiveTaskQueue,
     TaskQueue,
     BaseTaskQueue,
+    InformativeSubsetQueue,
+    DISCOQueue,
 )
+
+
+class _FakeArray:
+    """Pickle-serializable array-like for testing .tolist() conversion."""
+
+    def tolist(self):
+        return [1, 2, 3]
+
+    def __iter__(self):
+        return iter([1, 2, 3])
 
 
 # ==================== Fixtures ====================
@@ -210,6 +222,188 @@ class TestSequentialTaskQueue:
 
         assert len(items) == 1
         assert items[0].query == "Only one"
+
+
+# ==================== InformativeSubsetQueue Tests ====================
+
+
+@pytest.mark.core
+class TestInformativeSubsetQueue:
+    """Tests for InformativeSubsetQueue subset filtering."""
+
+    def test_filters_to_indices(self, simple_tasks):
+        """Only tasks at the given indices should be yielded."""
+        queue = InformativeSubsetQueue(simple_tasks, indices=[0, 2])
+
+        queries = [task.query for task in queue]
+
+        assert queries == ["Q1", "Q3"]
+
+    def test_preserves_index_order(self):
+        """Tasks should be yielded in the order given by indices, not original order."""
+        tasks = [Task(query=f"Q{i}") for i in range(5)]
+        queue = InformativeSubsetQueue(tasks, indices=[4, 1, 3])
+
+        queries = [task.query for task in queue]
+
+        assert queries == ["Q4", "Q1", "Q3"]
+
+    def test_none_indices_yields_all(self, simple_tasks):
+        """indices=None should yield all tasks in original order."""
+        queue = InformativeSubsetQueue(simple_tasks, indices=None)
+
+        queries = [task.query for task in queue]
+
+        assert queries == ["Q1", "Q2", "Q3"]
+
+    def test_stores_all_tasks(self, simple_tasks):
+        """_all_tasks should contain the full unfiltered list."""
+        queue = InformativeSubsetQueue(simple_tasks, indices=[0])
+
+        assert len(queue._all_tasks) == 3
+        assert len(queue) == 1
+
+    def test_out_of_range_indices_raises(self):
+        """Out-of-range indices should raise IndexError."""
+        tasks = [Task(query="Q0"), Task(query="Q1")]
+
+        with pytest.raises(IndexError, match="out of range"):
+            InformativeSubsetQueue(tasks, indices=[0, 5, 99])
+
+    def test_empty_indices(self, simple_tasks):
+        """Empty indices list should yield no tasks."""
+        queue = InformativeSubsetQueue(simple_tasks, indices=[])
+
+        assert list(queue) == []
+        assert len(queue) == 0
+
+    def test_is_subclass_of_sequential(self, simple_tasks):
+        """InformativeSubsetQueue should be a SequentialTaskQueue."""
+        queue = InformativeSubsetQueue(simple_tasks)
+        assert isinstance(queue, SequentialTaskQueue)
+
+
+# ==================== DISCOQueue Tests ====================
+
+
+@pytest.mark.core
+class TestDISCOQueue:
+    """Tests for DISCOQueue diversity-based subset."""
+
+    def test_filters_to_anchor_points(self):
+        """Only tasks at anchor-point indices should be yielded."""
+        tasks = [Task(query=f"Q{i}") for i in range(10)]
+        queue = DISCOQueue(tasks, anchor_points=[2, 5, 8])
+
+        queries = [task.query for task in queue]
+
+        assert queries == ["Q2", "Q5", "Q8"]
+
+    def test_none_anchor_points_yields_all(self, simple_tasks):
+        """anchor_points=None should yield all tasks."""
+        queue = DISCOQueue(simple_tasks, anchor_points=None)
+
+        assert len(list(queue)) == 3
+
+    def test_stores_anchor_points(self):
+        """_anchor_points should be accessible."""
+        tasks = [Task(query=f"Q{i}") for i in range(5)]
+        anchor_pts = [0, 3, 4]
+        queue = DISCOQueue(tasks, anchor_points=anchor_pts)
+
+        assert queue._anchor_points == [0, 3, 4]
+
+    def test_is_subclass_of_informative_subset(self, simple_tasks):
+        """DISCOQueue should be an InformativeSubsetQueue."""
+        queue = DISCOQueue(simple_tasks)
+        assert isinstance(queue, InformativeSubsetQueue)
+
+    def test_len_matches_anchor_count(self):
+        """Queue length should match number of valid anchor points."""
+        tasks = [Task(query=f"Q{i}") for i in range(10)]
+        queue = DISCOQueue(tasks, anchor_points=[1, 3, 7])
+
+        assert len(queue) == 3
+
+
+@pytest.mark.core
+class TestDISCOQueueLoadAnchorPoints:
+    """Tests for DISCOQueue.load_anchor_points static method."""
+
+    def test_load_from_json(self, tmp_path):
+        """Should load anchor points from a JSON file."""
+        import json
+
+        path = tmp_path / "anchors.json"
+        path.write_text(json.dumps([0, 5, 12, 99]))
+
+        result = DISCOQueue.load_anchor_points(path)
+
+        assert result == [0, 5, 12, 99]
+
+    def test_load_from_pickle(self, tmp_path):
+        """Should load anchor points from a pickle file."""
+        import pickle
+
+        path = tmp_path / "anchors.pkl"
+        with open(path, "wb") as f:
+            pickle.dump([2, 7, 15], f)
+
+        result = DISCOQueue.load_anchor_points(path)
+
+        assert result == [2, 7, 15]
+
+    def test_load_converts_tolist(self, tmp_path):
+        """Should call .tolist() on array-like objects (e.g. numpy arrays)."""
+        import pickle
+
+        path = tmp_path / "anchors.pkl"
+        with open(path, "wb") as f:
+            pickle.dump(_FakeArray(), f)
+
+        result = DISCOQueue.load_anchor_points(path)
+
+        assert result == [1, 2, 3]
+
+    def test_file_not_found(self, tmp_path):
+        """Should raise FileNotFoundError for missing files."""
+        with pytest.raises(FileNotFoundError, match="not found"):
+            DISCOQueue.load_anchor_points(tmp_path / "nonexistent.json")
+
+    def test_accepts_string_path(self, tmp_path):
+        """Should accept a string path, not just Path objects."""
+        import json
+
+        path = tmp_path / "anchors.json"
+        path.write_text(json.dumps([10, 20]))
+
+        result = DISCOQueue.load_anchor_points(str(path))
+
+        assert result == [10, 20]
+
+    def test_init_with_anchor_points_path(self, tmp_path):
+        """DISCOQueue should load anchor points from file when anchor_points_path is given."""
+        import json
+
+        tasks = [Task(query=f"Q{i}") for i in range(10)]
+        path = tmp_path / "anchors.json"
+        path.write_text(json.dumps([2, 5, 8]))
+
+        queue = DISCOQueue(tasks, anchor_points_path=path)
+
+        assert len(queue) == 3
+        assert queue._anchor_points == [2, 5, 8]
+
+    def test_init_rejects_both_anchor_args(self, tmp_path):
+        """DISCOQueue should raise ValueError when both anchor_points and anchor_points_path are given."""
+        import json
+
+        tasks = [Task(query=f"Q{i}") for i in range(5)]
+        path = tmp_path / "anchors.json"
+        path.write_text(json.dumps([0, 1]))
+
+        with pytest.raises(ValueError, match="not both"):
+            DISCOQueue(tasks, anchor_points=[0, 1], anchor_points_path=path)
 
 
 # ==================== PriorityTaskQueue Tests ====================

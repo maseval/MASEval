@@ -16,6 +16,8 @@ from .core.task import (
     BaseTaskQueue,
     TaskQueue,
     SequentialTaskQueue,
+    InformativeSubsetQueue,
+    DISCOQueue,
     PriorityTaskQueue,
     AdaptiveTaskQueue,
 )
@@ -33,6 +35,7 @@ from .core.simulator import (
     UserSimulatorError,
 )
 from .core.model import ModelAdapter, ChatResponse
+from .core.scorer import ModelScorer
 from .core.user import User, LLMUser, AgenticLLMUser, TerminationReason
 from .core.evaluator import Evaluator
 from .core.history import MessageHistory, ToolInvocationHistory
@@ -103,11 +106,14 @@ __all__ = [
     "BaseTaskQueue",
     "TaskQueue",
     "SequentialTaskQueue",
+    "InformativeSubsetQueue",
+    "DISCOQueue",
     "PriorityTaskQueue",
     "AdaptiveTaskQueue",
-    # Model adapters
+    # Model adapters and scorers
     "ModelAdapter",
     "ChatResponse",
+    "ModelScorer",
     # Exceptions and validation
     "MASEvalError",
     "AgentError",

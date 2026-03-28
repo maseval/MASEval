@@ -111,6 +111,7 @@ nav:
           - Exceptions: reference/exceptions.md
           - History: reference/history.md
           - Model: reference/model.md
+          - Scorer: reference/scorer.md
           - Seeding: reference/seeding.md
           - Simulator: reference/simulator.md
           - Tasks: reference/task.md
@@ -131,7 +132,8 @@ nav:
               - OpenAI: interface/inference/openai.md
       - Benchmarks:
           - ConVerse: benchmark/converse.md
+          - GAIA2: benchmark/gaia2.md
           - MACS: benchmark/macs.md
+          - MMLU: benchmark/mmlu.md
           - MultiAgentBench: benchmark/multiagentbench.md
           - Tau2: benchmark/tau2.md
-          - GAIA2: benchmark/gaia2.md

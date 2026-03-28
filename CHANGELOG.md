@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Core**
 
-- Fixed `MessageHistory.to_list()` returning a reference to the internal list instead of a copy, causing simulator logs to contain future conversation messages that hadn't occurred at the time of logging. (PR: #PR_NUMBER_PLACEHOLDER)
+- Fixed `MessageHistory.to_list()` returning a reference to the internal list instead of a copy, causing simulator logs to contain future conversation messages that hadn't occurred at the time of logging. (PR: #48)
+- Fixed `get_git_info()` crashing on detached HEAD (e.g. in CI checkout), now returns `detached@<short-hash>` as the branch name. (PR: #41)
 
 **Interface**
 
@@ -24,16 +25,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Usage and cost tracking via `Usage` and `TokenUsage` data classes. `ModelAdapter` tracks token usage automatically after each `chat()` call. Components that implement `UsageTrackableMixin` are collected via `gather_usage()`. Live totals available during benchmark runs via `benchmark.usage` (grand total) and `benchmark.usage_by_component` (per-component breakdowns). Post-hoc analysis via `UsageReporter.from_reports(benchmark.reports)` with breakdowns by task, component, or model. (PR: #45)
 - Pluggable cost calculation via `CostCalculator` protocol. `StaticPricingCalculator` computes cost from user-supplied per-token rates. `LiteLLMCostCalculator` in `maseval.interface.usage` for automatic pricing via LiteLLM's model database (supports `custom_pricing` overrides and `model_id_map`; requires `litellm`). Pass a `cost_calculator` to `ModelAdapter` or `AgentAdapter` to compute `Usage.cost`. Provider-reported cost always takes precedence. (PR: #45)
 - `AgentAdapter` now accepts `cost_calculator` and `model_id` parameters. For smolagents, CAMEL, and LlamaIndex, both are auto-detected from the framework's agent object (`LiteLLMCostCalculator` if litellm is installed). LangGraph requires explicit `model_id` since graphs can contain multiple models. Explicit parameters always override auto-detection. (PR: #45)
-
 - `Task.freeze()` and `Task.unfreeze()` methods to make task data read-only during benchmark runs, preventing accidental mutation of `environment_data`, `user_data`, `evaluation_data`, and `metadata` (including nested dicts). Attribute reassignment is also blocked while frozen. Check state with `Task.is_frozen`. (PR: #42)
 - `TaskFrozenError` exception in `maseval.core.exceptions`, raised when attempting to modify a frozen task. (PR: #42)
+- Added `InformativeSubsetQueue` and `DISCOQueue` to `maseval.core.task` for subset-based evaluation (e.g., anchor-point selection for DISCO). `DISCOQueue` accepts `anchor_points_path` to load indices from a `.json`/`.pkl` file via `DISCOQueue.load_anchor_points()`. Available via `from maseval import DISCOQueue, InformativeSubsetQueue`. (PR: #34 and #41)
+- Added `ModelScorer` abstract base class in `maseval.core.scorer` for log-likelihood scoring, with `loglikelihood()`, `loglikelihood_batch()`, and `loglikelihood_choices()` methods. (PR: #34 and #41)
+- Added `SeedGenerator` abstract base class and `DefaultSeedGenerator` implementation for reproducible benchmark runs via SHA-256-based seed derivation (PR: #24)
+- Added `seed` and `seed_generator` parameters to `Benchmark.__init__` for enabling reproducibility (PR: #24)
+- Added `seed_generator` parameter to all benchmark setup methods (`setup_environment`, `setup_user`, `setup_agents`, `setup_evaluators`) (PR: #24)
+- Added `seed` parameter to `ModelAdapter.__init__` for deterministic model inference (PR: #24)
+- Added `SeedingError` exception for providers that don't support seeding (Anthropic models raise this if seed is provided) (PR: #24)
+- Added `UserExhaustedError` exception in `maseval.core.exceptions` for flow control when a user's turns are exhausted (PR: #39)
+
+**Interface**
+
+- Added seed support to interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFacePipelineModelAdapter` pass seeds to underlying APIs (PR: #24)
+- Added `HuggingFaceModelScorer` in `maseval.interface.inference` — log-likelihood scorer backed by a HuggingFace `AutoModelForCausalLM`, with single-token optimisation for MCQ evaluation. Implements the `ModelScorer` interface. (PR: #34 and #41)
+- CAMEL-AI integration: `CamelAgentAdapter` and `CamelLLMUser` for evaluating CAMEL-AI ChatAgent-based systems (PR: #22)
+  - Added `CamelAgentUser` for using a CAMEL ChatAgent as the user in agent-to-agent evaluation (PR: #22)
+  - Added `camel_role_playing_execution_loop()` for benchmarks using CAMEL's RolePlaying semantics (PR: #22)
+  - Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
 
 **Benchmarks**
 
-- MMLU Benchmark with DISCO support: Integration for evaluating language models on MMLU (Massive Multitask Language Understanding) multiple-choice questions, compatible with DISCO anchor-point methodology. Includes `MMLUBenchmark`, `HuggingFaceMMLUBenchmark`, `MMLUEnvironment`, `MMLUEvaluator`, `MMLUModelAgent`, `MMLUAgentAdapter`, `AnchorPointsTaskQueue`, `load_tasks()`, and `compute_benchmark_metrics()`. Optional extras: `lm-eval` (for `HuggingFaceMMLUBenchmark.precompute_all_logprobs_lmeval`), `disco` (for DISCO prediction in the example). (PR: #34)
-
+- MMLU Benchmark with DISCO support: Integration for evaluating language models on MMLU (Massive Multitask Language Understanding) multiple-choice questions, compatible with DISCO anchor-point methodology. `MMLUBenchmark` is a framework-agnostic base class (`setup_agents()` and `get_model_adapter()` must be implemented by subclasses); `DefaultMMLUBenchmark` provides a ready-made HuggingFace implementation. Also includes `MMLUEnvironment`, `MMLUEvaluator`, `load_tasks()`, and `compute_benchmark_metrics()`. Install with `pip install maseval[mmlu]`. Optional extras: `lm-eval` (for `DefaultMMLUBenchmark.precompute_all_logprobs_lmeval`), `disco` (for DISCO prediction in the example). (PR: #34 and #41)
 - CONVERSE benchmark for contextual safety evaluation in adversarial agent-to-agent conversations, including `ConverseBenchmark`, `DefaultAgentConverseBenchmark`, `ConverseEnvironment`, `ConverseExternalAgent`, `PrivacyEvaluator`, `SecurityEvaluator`, and `load_tasks()` utilities for `travel`, `real_estate`, and `insurance` domains. Benchmark source files are now downloaded on first use via `ensure_data_exists()` instead of being bundled in the package. (PR: #28)
-
 - GAIA2 Benchmark: Integration with Meta's ARE (Agent Research Environments) platform for evaluating LLM-based agents on dynamic, multi-step scenarios (PR: #26)
   - `Gaia2Benchmark`, `Gaia2Environment`, `Gaia2Evaluator` components for framework-agnostic evaluation with ARE simulation (PR: #26)
   - `DefaultAgentGaia2Benchmark` with ReAct-style agent for direct comparison with ARE reference implementation (PR: #26)
@@ -43,7 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Metrics: `compute_gaia2_metrics()` for GSR (Goal Success Rate) computation by capability type (PR: #26)
   - Support for 5 capability dimensions: execution, search, adaptability, time, ambiguity (PR: #26, #30)
   - Added `gaia2` optional dependency: `pip install maseval[gaia2]` (PR: #26)
-
 - MultiAgentBench Benchmark: Integration with MARBLE MultiAgentBench for evaluating multi-agent collaboration across all 6 paper-defined domains: research, bargaining, coding, database, werewolf, and minecraft (PR: #25, #30)
   - `MultiAgentBenchBenchmark` abstract base class for framework-agnostic multi-agent evaluation with seeding support for evaluators and agents (PR: #25)
   - `MarbleMultiAgentBenchBenchmark` for exact MARBLE reproduction mode using native MARBLE agents (note: MARBLE's internal LLM calls bypass MASEval seeding) (PR: #25)
@@ -54,31 +68,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Examples**
 
 - Added usage tracking to the 5-A-Day benchmark: `five_a_day_benchmark.ipynb` (section 2.7) and `five_a_day_benchmark.py` (post-run usage summary with per-component and per-task breakdowns). (PR: #45)
-
-- MMLU benchmark example at `examples/mmlu_benchmark/` for evaluating HuggingFace models on MMLU with optional DISCO prediction (`--disco_model_path`, `--disco_transform_path`). Supports local data, HuggingFace dataset repos, and DISCO weights from .pkl/.npz or HF repos. (PR: #34)
+- MMLU benchmark example at `examples/mmlu_benchmark/` for evaluating HuggingFace models on MMLU with optional DISCO prediction (`--disco_model_path`, `--disco_transform_path`). Supports local data, HuggingFace dataset repos, and DISCO weights from .pkl/.npz or HF repos. (PR: #34 and #41)
 - Added a dedicated runnable CONVERSE default benchmark example at `examples/converse_benchmark/default_converse_benchmark.py` for quick start with `DefaultAgentConverseBenchmark`. (PR: #28)
 - Gaia2 benchmark example with Google GenAI and OpenAI model support (PR: #26)
 
 **Documentation**
 
 - Usage & Cost Tracking guide (`docs/guides/usage-tracking.md`) and API reference (`docs/reference/usage.md`). (PR: #45)
-
-**Core**
-
-- Added `SeedGenerator` abstract base class and `DefaultSeedGenerator` implementation for reproducible benchmark runs via SHA-256-based seed derivation (PR: #24)
-- Added `seed` and `seed_generator` parameters to `Benchmark.__init__` for enabling reproducibility (PR: #24)
-- Added `seed_generator` parameter to all benchmark setup methods (`setup_environment`, `setup_user`, `setup_agents`, `setup_evaluators`) (PR: #24)
-- Added `seed` parameter to `ModelAdapter.__init__` for deterministic model inference (PR: #24)
-- Added `SeedingError` exception for providers that don't support seeding (Anthropic models raise this if seed is provided) (PR: #24)
-- Added seed support to interface adapters: `OpenAIModelAdapter`, `GoogleGenAIModelAdapter`, `LiteLLMModelAdapter`, `HuggingFaceModelAdapter` pass seeds to underlying APIs (PR: #24)
-- Added `UserExhaustedError` exception in `maseval.core.exceptions` for flow control when a user's turns are exhausted (PR: #39)
-
-**Interface**
-
-- CAMEL-AI integration: `CamelAgentAdapter` and `CamelLLMUser` for evaluating CAMEL-AI ChatAgent-based systems (PR: #22)
-  - Added `CamelAgentUser` for using a CAMEL ChatAgent as the user in agent-to-agent evaluation (PR: #22)
-  - Added `camel_role_playing_execution_loop()` for benchmarks using CAMEL's RolePlaying semantics (PR: #22)
-  - Added `CamelRolePlayingTracer` and `CamelWorkforceTracer` for capturing orchestration-level traces from CAMEL's multi-agent systems (PR: #22)
 
 **Testing**
 
@@ -91,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live API round-trip tests for all model adapters (`-m credentialed`) (PR: #29)
 - CI jobs for slow tests (with benchmark data caching) and credentialed tests (behind GitHub Environment approval) (PR: #29)
 - Added `respx` dev dependency for HTTP-level mocking (PR: #29)
-- pytest marker `mmlu` for tests that require the MMLU benchmark (HuggingFace + DISCO). (PR: #34)
+- pytest marker `mmlu` for tests that require the MMLU benchmark (HuggingFace + DISCO). (PR: #34 and #41)
 
 ### Changed
 
@@ -108,6 +104,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LlamaIndexAgentAdapter`: Added `max_iterations` constructor parameter, forwarded to `AgentWorkflow.run()`. Fixes silent swallowing of `max_steps` by `FunctionAgent.__init__`. (PR: #39)
 - `SmolAgentAdapter`: New `_determine_step_status()` detects crashed steps where `AgentGenerationError` was raised before `step.error` was set, preventing false "success" status on empty steps. (PR: #39)
 - `GoogleGenAIModelAdapter`: Consecutive tool-response messages are now merged into a single `contents` entry, fixing Google API errors when multiple tool results are returned in one turn. (PR: #39)
+- Renamed framework-specific user classes to reflect the new `LLMUser` base (PR: #22):
+  - `SmolAgentUser` → `SmolAgentLLMUser`
+  - `LangGraphUser` → `LangGraphLLMUser`
+  - `LlamaIndexUser` → `LlamaIndexLLMUser`
 
 **Benchmarks**
 
@@ -115,20 +115,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Gaia2Benchmark`: Seeds `agents/gaia2_agent`, `evaluators/judge`
   - `MACSBenchmark`: Seeds `environment/tools/tool_{name}`, `simulators/user`, `evaluators/user_gsr`, `evaluators/system_gsr`
   - `Tau2Benchmark`: Seeds `simulators/user`, `agents/default_agent`
+- All benchmarks except MACS are now labeled as **Beta** in docs, BENCHMARKS.md, and benchmark index, with a warning that results have not yet been validated against original implementations. (PR: #39)
 
 **User**
 
 - Refactored `User` class into abstract base class defining the interface (`get_initial_query()`, `respond()`, `is_done()`) with `LLMUser` as the concrete LLM-driven implementation. This enables non-LLM user implementations (scripted, human-in-the-loop, agent-based). (PR: #22)
 - Renamed `AgenticUser` → `AgenticLLMUser` for consistency with the new hierarchy (PR: #22)
-
-**Interface**
-
-- Renamed framework-specific user classes to reflect the new `LLMUser` base (PR: #22):
-  - `SmolAgentUser` → `SmolAgentLLMUser`
-  - `LangGraphUser` → `LangGraphLLMUser`
-  - `LlamaIndexUser` → `LlamaIndexLLMUser`
-
-- All benchmarks except MACS are now labeled as **Beta** in docs, BENCHMARKS.md, and benchmark index, with a warning that results have not yet been validated against original implementations. (PR: #39)
 
 **Testing**
 

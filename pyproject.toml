@@ -82,11 +82,22 @@ multiagentbench = [
 ]
 tau2 = ["docstring-parser>=0.16", "addict>=2.4.0"]
 converse = []
+# HuggingFace model + tokenizer, default dataset download; numpy for example script and anchor-point loading.
+# For exact lm-evaluation-harness reproduction (--use_lmeval_batching), also install maseval[lm-eval].
+mmlu = [
+    "torch>=2.0.0",
+    "transformers>=4.37.0",
+    "numpy>=1.20.0",
+]
 
-# LM Evaluation Harness (for HuggingFaceMMLUBenchmark.precompute_all_logprobs_lmeval)
-lm-eval = ["lm-eval @ git+https://github.com/arubique/lm-evaluation-harness.git@main"]
+# LM Evaluation Harness — requires transformers 4.x (lm-eval uses APIs removed in 5.x)
+lm-eval = [
+    "aiohttp>=3.9.0",
+    "transformers>=4.37.0,<5.0.0",
+    "lm-eval @ git+https://github.com/arubique/lm-evaluation-harness.git@main",
+]
 
-# DISCO prediction (for MMLU benchmark example)
+# DISCO prediction (for MMLU benchmark example) — requires transformers 4.x via lm-eval
 disco = [
     "aiohttp>=3.9.0",
     "click>=8.1.0",
@@ -97,6 +108,7 @@ disco = [
     "jsonlines>=4.0.0",
     "lm-eval @ git+https://github.com/arubique/lm-evaluation-harness.git@main",
     "matplotlib>=3.5.0",
+    "transformers>=4.37.0,<5.0.0",
     "scikit-learn>=1.7.2",
     "scipy>=1.11.0",
     "stnd @ git+https://github.com/arubique/stnd.git@0d23b52f7742c08b28be560d2d52d450fcd274b7",

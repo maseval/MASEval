@@ -79,7 +79,23 @@ CONVERSE evaluates contextual safety in agent-to-agent conversations. It focuses
 
 ---
 
-## 6. [Name of Next Benchmark]
+## 6. MMLU (Massive Multitask Language Understanding) (Beta)
+
+MMLU evaluates language models on multiple-choice questions spanning 57 academic subjects. The MASEval integration includes anchor-point-based evaluation for DISCO prediction, allowing efficient estimation of full benchmark performance from a subset of tasks.
+
+> **Beta:** This benchmark has been implemented carefully, but we have not yet validated the results against the original implementation. Use with caution when comparing with existing results or the original paper's numbers. Contributions and compute donations welcome!
+
+> **Implemented:** A ready-to-use implementation is available via `DefaultMMLUBenchmark` with HuggingFace model support. Install with `pip install maseval[mmlu]`. See the [MMLU documentation](https://maseval.readthedocs.io/en/stable/benchmark/mmlu/) for usage details.
+
+### Source and License
+
+- **Original Paper:** [Measuring Massive Multitask Language Understanding](https://arxiv.org/abs/2009.03300) (Hendrycks et al., 2021)
+- **DISCO Paper:** [DISCO: Diversifying Sample Condensation for Efficient Model Evaluation](https://arxiv.org/abs/2510.07959) (Rubinstein et al., ICLR 2026)
+- **Dataset:** [arubique/flattened-MMLU](https://huggingface.co/datasets/arubique/flattened-MMLU)
+
+---
+
+## 7. [Name of Next Benchmark]
 
 (Description for the next benchmark...)
 

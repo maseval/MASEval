@@ -290,3 +290,25 @@ class TestMessageTracingCallback:
         repr_str = repr(callback)
         assert "MessageTracingAgentCallback" in repr_str
         assert "conversations=0" in repr_str
+
+    def test_verbose_mode_prints(self, capsys):
+        """Test that verbose=True produces output."""
+        callback = MessageTracingAgentCallback(verbose=True)
+        agent = DummyAgent()
+        adapter = TracingTestAgentAdapter(agent_instance=agent, name="verbose_agent", callbacks=[callback])
+        adapter.run("Hello")
+        captured = capsys.readouterr().out
+        assert len(captured) > 0
+
+    def test_get_conversations_by_agent_nonexistent(self):
+        """Test that querying a nonexistent agent returns empty list."""
+        callback = MessageTracingAgentCallback()
+        assert callback.get_conversations_by_agent("nonexistent") == []
+
+    def test_get_statistics_empty(self):
+        """Test statistics on empty callback."""
+        callback = MessageTracingAgentCallback()
+        stats = callback.get_statistics()
+        assert stats["total_conversations"] == 0
+        assert stats["total_messages"] == 0
+        assert stats["agents"] == []

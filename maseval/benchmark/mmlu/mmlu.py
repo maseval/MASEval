@@ -8,56 +8,34 @@ Dataset: MMLU (Massive Multitask Language Understanding)
 
 Usage:
     from maseval.benchmark.mmlu import (
-        MMLUBenchmark, load_tasks, AnchorPointsTaskQueue
+        DefaultMMLUBenchmark, load_tasks,
     )
+    from maseval.core.task import DISCOQueue
 
-    # Load tasks filtered to anchor points
+    # Load tasks (optionally filtered to anchor points)
     tasks = load_tasks(
         data_path="/path/to/mmlu_prompts_examples.json",
         anchor_points_path="/path/to/anchor_points.pkl",
     )
 
-    # Create benchmark with HuggingFace model
-    class MyMMLUBenchmark(MMLUBenchmark):
-        def get_model_adapter(self, model_id, **kwargs):
-            from transformers import pipeline
-            from maseval.interface.inference import HuggingFaceModelAdapter
-            pipe = pipeline("text-generation", model=model_id)
-            return HuggingFaceModelAdapter(model=pipe, model_id=model_id)
-
-    benchmark = MyMMLUBenchmark()
-    results = benchmark.run(tasks=tasks, agent_data={"model_id": "meta-llama/Llama-2-7b"})
+    # Run with the HuggingFace concrete implementation
+    benchmark = DefaultMMLUBenchmark(model_id="meta-llama/Llama-2-7b-hf")
+    results = benchmark.run(tasks=tasks, agent_data={"model_id": "meta-llama/Llama-2-7b-hf"})
 """
 
 import json
-import pickle
-from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 
-# numpy is optional - only needed for anchor points processing
-try:
-    import numpy as np
-
-    HAS_NUMPY = True
-except ImportError:
-    np = None  # type: ignore[assignment]
-    HAS_NUMPY = False
-
-from maseval import (
-    AgentAdapter,
-    Benchmark,
-    Environment,
-    Evaluator,
-    MessageHistory,
-    ModelAdapter,
-    Task,
-    User,
-    SeedGenerator,
-)
-from maseval.core.task import AdaptiveTaskQueue, SequentialTaskQueue
-from maseval.core.tracing import TraceableMixin
-from maseval.core.config import ConfigurableMixin
+from maseval.core.agent import AgentAdapter
+from maseval.core.benchmark import Benchmark
+from maseval.core.environment import Environment
+from maseval.core.evaluator import Evaluator
+from maseval.core.history import MessageHistory
+from maseval.core.model import ModelAdapter
+from maseval.core.seeding import SeedGenerator
+from maseval.core.task import DISCOQueue, SequentialTaskQueue, Task
+from maseval.core.user import User
 
 
 # =============================================================================
@@ -72,107 +50,39 @@ DEFAULT_MODEL_REGISTER_NAME = "mmlu_model"
 TARGET_DELIMITER = " "  # lm-eval convention for MCQ
 MMLU_TASK_NAME = "mmlu_prompts"
 TASK_TYPE_MMLU = "mmlu"
-FALLBACK_MODEL_ID = "unknown"
 STATUS_SUCCESS = "success"
 
 
 # =============================================================================
-# Task Queue
+# Agent adapter for scorer-based evaluation
 # =============================================================================
 
 
-class AnchorPointsTaskQueue(AdaptiveTaskQueue):
-    """Task queue that iterates through tasks in anchor points order.
+class _ScorerBackedAdapter(AgentAdapter):
+    """Agent adapter for benchmarks that use scorer-based evaluation.
 
-    This queue is used for DISCO-based evaluation where we only evaluate
-    on a subset of anchor tasks and predict performance on the full dataset.
-
-    The queue iterates through tasks in the order specified by anchor_points,
-    and stops when all anchor tasks have been processed.
+    This adapter is a message container for tracing — the benchmark's
+    ``run_agents()`` drives evaluation via a ``ModelScorer`` and records
+    results here.  Calling ``agent.run()`` directly is an error because
+    there is no generation model behind this adapter.
     """
 
-    def __init__(self, tasks: List[Task], anchor_points: Optional[List[int]] = None):
-        """Initialize anchor points task queue.
+    def __init__(self, scorer: Any, name: str) -> None:
+        super().__init__(agent_instance=scorer, name=name)
+        self._messages: List[Dict[str, Any]] = []
 
-        Args:
-            tasks: Full list of tasks (ordered by doc_id).
-            anchor_points: Optional list of task indices (doc_ids) to evaluate.
-                If None, evaluates all tasks in order.
-        """
-        # If anchor_points provided, filter tasks to only include anchor tasks
-        # This dramatically improves performance by avoiding O(n²) iteration
-        if anchor_points is not None:
-            # Build index mapping for quick lookup
-            task_by_doc_id: Dict[int, Task] = {}
-            for i, task in enumerate(tasks):
-                doc_id = task.metadata.get("doc_id", i)
-                task_by_doc_id[doc_id] = task
+    def record_message(self, message: Dict[str, Any]) -> None:
+        """Record a message for tracing purposes."""
+        self._messages.append(message)
 
-            # Filter to only anchor tasks, preserving anchor order
-            anchor_tasks = []
-            for doc_id in anchor_points:
-                task = task_by_doc_id.get(doc_id)
-                if task is not None:
-                    anchor_tasks.append(task)
+    def _run_agent(self, query: str) -> Any:
+        raise NotImplementedError(
+            f"{type(self).__name__} is backed by a ModelScorer, not a generation model. "
+            "Use benchmark.run_agents() instead of calling agent.run() directly."
+        )
 
-            # Store original for reference
-            self._all_tasks = tasks
-            self._task_by_doc_id = task_by_doc_id
-            tasks = anchor_tasks
-
-        super().__init__(tasks)
-        self._anchor_points = anchor_points
-        self._anchor_idx = 0
-
-        # Initialize state immediately (since __iter__ is overridden and skips initial_state())
-        self._state = self.initial_state()
-
-    def __iter__(self) -> Iterator[Task]:
-        """Yield tasks in anchor point order.
-
-        Since tasks are pre-filtered during __init__, we simply iterate
-        over the stored tasks in order. This avoids the infinite loop
-        issue in AdaptiveTaskQueue.__iter__ which relies on on_task_repeat_end
-        to remove tasks from _remaining.
-        """
-        return iter(self._tasks)
-
-    def initial_state(self) -> Dict[str, Any]:
-        """Initialize state for anchor point iteration."""
-        return {
-            "anchor_idx": 0,
-            "completed_anchors": [],
-        }
-
-    def select_next_task(self, remaining: Sequence[Task], state: Dict[str, Any]) -> Optional[Task]:
-        """Select the next anchor task to execute.
-
-        Args:
-            remaining: Tasks not yet executed.
-            state: Current state with anchor_idx.
-
-        Returns:
-            Next anchor task, or None if all anchors processed.
-        """
-        # Simply return the first remaining task since we pre-filtered to anchor tasks only
-        return remaining[0] if remaining else None
-
-    def update_state(self, task: Task, report: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
-        """Update state after task completion.
-
-        Args:
-            task: Completed task.
-            report: Execution report.
-            state: Current state.
-
-        Returns:
-            Updated state.
-        """
-        doc_id = task.metadata.get("doc_id")
-        state["completed_anchors"].append(doc_id)
-        state["anchor_idx"] += 1
-
-        return state
+    def get_messages(self) -> MessageHistory:
+        return MessageHistory(self._messages)
 
 
 # =============================================================================
@@ -188,13 +98,27 @@ class MMLUEnvironment(Environment):
     """
 
     def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize state from task data."""
-        return {
-            "query": task_data.get("query", ""),
-            "choices": task_data.get("environment_data", {}).get("choices", []),
-            "full_prompt": task_data.get("environment_data", {}).get("full_prompt", ""),
-            "use_full_prompt": task_data.get("environment_data", {}).get("use_full_prompt", False),
+        """Initialize state from task data.
+
+        Args:
+            task_data: Must contain ``"query"`` (str) and ``"environment_data"``
+                (dict with ``"choices"``, ``"full_prompt"``, ``"use_full_prompt"``).
+        """
+        env_data = task_data["environment_data"]
+        use_full_prompt = env_data["use_full_prompt"]
+        if use_full_prompt and "full_prompt" not in env_data:
+            raise ValueError(
+                "use_full_prompt=True but 'full_prompt' is missing from environment_data. "
+                "Ensure the dataset includes few-shot prompts or set use_full_prompt=False."
+            )
+        state: Dict[str, Any] = {
+            "query": task_data["query"],
+            "choices": env_data["choices"],
+            "use_full_prompt": use_full_prompt,
         }
+        if "full_prompt" in env_data:
+            state["full_prompt"] = env_data["full_prompt"]
+        return state
 
     def create_tools(self) -> Dict[str, Any]:
         """MMLU doesn't use tools."""
@@ -203,11 +127,11 @@ class MMLUEnvironment(Environment):
     def get_prompt(self) -> str:
         """Get the prompt to send to the model.
 
-        Returns full_prompt if use_full_prompt is True, otherwise query.
+        Returns ``full_prompt`` if ``use_full_prompt`` is True, otherwise ``query``.
         """
-        if self.state.get("use_full_prompt", False):
-            return self.state.get("full_prompt", self.state.get("query", ""))
-        return self.state.get("query", "")
+        if self.state["use_full_prompt"]:
+            return self.state["full_prompt"]
+        return self.state["query"]
 
 
 # =============================================================================
@@ -231,14 +155,15 @@ class MMLUEvaluator(Evaluator):
         """Initialize MMLU evaluator.
 
         Args:
-            task: Task being evaluated (contains gold answer).
+            task: Task being evaluated. Must have ``evaluation_data["gold"]`` (int)
+                with the correct answer index.
             environment: Environment (provides choices).
             user: Unused for MMLU.
         """
         self.task = task
         self.environment = environment
-        self.gold = task.evaluation_data.get("gold", 0)
-        self.choices = task.environment_data.get("choices", DEFAULT_CHOICES)
+        self.gold = task.evaluation_data["gold"]
+        self.choices = task.environment_data["choices"]
 
     def filter_traces(self, traces: Dict[str, Any]) -> Dict[str, Any]:
         """Extract relevant traces for evaluation.
@@ -262,13 +187,14 @@ class MMLUEvaluator(Evaluator):
             final_answer: The model's final answer.
 
         Returns:
-            Dict with acc, acc_norm, predicted, gold, correct, and optionally logprobs fields.
+            Dict with acc, acc_norm, predicted, gold, correct, parse_failed, and optionally logprobs fields.
         """
         # Parse the model's answer
         predicted = self._parse_answer(final_answer or "")
+        parse_failed = predicted is None
 
-        # Check if correct
-        correct = predicted == self.gold
+        # Check if correct — unparseable responses are never correct
+        correct = (not parse_failed) and predicted == self.gold
 
         result = {
             "acc": 1.0 if correct else 0.0,
@@ -276,11 +202,12 @@ class MMLUEvaluator(Evaluator):
             "predicted": predicted,
             "gold": self.gold,
             "correct": correct,
-            "doc_id": self.task.metadata.get("doc_id"),
+            "parse_failed": parse_failed,
+            "doc_id": self.task.metadata["doc_id"],
         }
 
         # Extract logprobs from traces if available (for logprobs-based evaluation)
-        messages = traces.get("messages", [])
+        messages = traces["messages"]
         for msg in messages:
             if isinstance(msg, dict) and "logprobs" in msg:
                 result["logprobs"] = msg["logprobs"]
@@ -288,7 +215,7 @@ class MMLUEvaluator(Evaluator):
 
         return result
 
-    def _parse_answer(self, response: str) -> int:
+    def _parse_answer(self, response: str) -> Optional[int]:
         """Parse model response to extract answer choice.
 
         Handles various formats:
@@ -300,10 +227,10 @@ class MMLUEvaluator(Evaluator):
             response: Model's response string.
 
         Returns:
-            Index of the predicted choice (0-3), or -1 if unparseable.
+            Index of the predicted choice (0-3), or None if unparseable.
         """
         if not response:
-            return -1
+            return None
 
         response = response.strip().upper()
 
@@ -325,104 +252,7 @@ class MMLUEvaluator(Evaluator):
             if last_char == choice:
                 return i
 
-        return -1
-
-
-# =============================================================================
-# Model Adapter Wrapper for MCQ
-# =============================================================================
-
-
-class MMLUModelAgent(TraceableMixin, ConfigurableMixin):
-    """Simple agent wrapper that passes prompts to a model for MCQ evaluation.
-
-    This is a minimal agent that just forwards prompts to the model
-    and returns the response. It supports tracing for MASEval integration.
-    """
-
-    def __init__(self, model: ModelAdapter, name: str = DEFAULT_AGENT_NAME):
-        """Initialize MMLU model agent.
-
-        Args:
-            model: ModelAdapter to use for generation.
-            name: Agent name for tracing.
-        """
-        super().__init__()
-        self.model = model
-        self.name = name
-        self._messages: List[Dict[str, Any]] = []
-
-    def run(self, prompt: str) -> str:
-        """Run the model on a prompt.
-
-        Args:
-            prompt: The prompt to send to the model.
-
-        Returns:
-            Model's response string.
-        """
-        # Record input message
-        self._messages.append({"role": "user", "content": prompt})
-
-        # Generate response
-        response = self.model.generate(prompt)
-
-        # Record output message
-        self._messages.append({"role": "assistant", "content": response})
-
-        return response
-
-    def gather_traces(self) -> Dict[str, Any]:
-        """Gather traces for this agent."""
-        return {
-            **super().gather_traces(),
-            "name": self.name,
-            "messages": list(self._messages),
-        }
-
-    def gather_config(self) -> Dict[str, Any]:
-        """Gather configuration."""
-        return {
-            **super().gather_config(),
-            "name": self.name,
-            "model_id": self.model.model_id,
-        }
-
-
-class MMLUAgentAdapter(AgentAdapter):
-    """AgentAdapter wrapper for MMLUModelAgent."""
-
-    def __init__(self, agent: MMLUModelAgent, name: str):
-        """Initialize adapter.
-
-        Args:
-            agent: MMLUModelAgent instance.
-            name: Adapter name.
-        """
-        super().__init__(agent, name)
-
-    def _run_agent(self, query: str) -> Any:
-        """Execute the agent."""
-        return self.agent.run(query)
-
-    def get_messages(self) -> MessageHistory:
-        """Get agent messages."""
-        return MessageHistory(self.agent._messages)
-
-    def gather_traces(self) -> Dict[str, Any]:
-        """Gather execution traces from this agent."""
-        from maseval.core.tracing import TraceableMixin
-
-        messages = self.get_messages()
-        return {
-            **TraceableMixin.gather_traces(self),
-            "name": self.name,
-            "agent_type": type(self.agent).__name__,
-            "message_count": len(messages),
-            "messages": messages.to_list(),
-            "callbacks": [type(cb).__name__ for cb in self.callbacks],
-            "logs": self.logs,
-        }
+        return None
 
 
 # =============================================================================
@@ -436,19 +266,12 @@ class MMLUBenchmark(Benchmark):
     Evaluates language models on MMLU multiple choice questions.
     Supports anchor point-based evaluation for DISCO prediction.
 
-    Users must subclass and implement:
-    - get_model_adapter() to provide model adapters
+    Subclasses must implement:
 
-    Usage:
-        class MyMMLUBenchmark(MMLUBenchmark):
-            def get_model_adapter(self, model_id, **kwargs):
-                from transformers import pipeline
-                from maseval.interface.inference import HuggingFaceModelAdapter
-                pipe = pipeline("text-generation", model=model_id)
-                return HuggingFaceModelAdapter(model=pipe, model_id=model_id)
+    - ``setup_agents()`` - create agents for MCQ evaluation
+    - ``get_model_adapter()`` - provide model adapters
 
-        benchmark = MyMMLUBenchmark()
-        results = benchmark.run(tasks=tasks, agent_data={"model_id": "llama-7b"})
+    For a ready-to-use implementation, see ``DefaultMMLUBenchmark``.
     """
 
     def __init__(
@@ -480,47 +303,10 @@ class MMLUBenchmark(Benchmark):
             "query": task.query,
             "environment_data": {
                 **task.environment_data,
-                "use_full_prompt": self.use_full_prompt or agent_data.get("use_full_prompt", False),
+                "use_full_prompt": self.use_full_prompt,
             },
         }
         return MMLUEnvironment(task_data)
-
-    def setup_user(
-        self,
-        agent_data: Dict[str, Any],
-        environment: Environment,
-        task: Task,
-        seed_generator: SeedGenerator,
-    ) -> Optional[User]:
-        """MMLU doesn't use a user simulator."""
-        return None
-
-    def setup_agents(
-        self,
-        agent_data: Dict[str, Any],
-        environment: Environment,
-        task: Task,
-        user: Optional[User],
-        seed_generator: SeedGenerator,
-    ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
-        """Create model agent for MCQ evaluation.
-
-        Args:
-            agent_data: Agent config with model_id.
-            environment: MMLU environment.
-            task: Current task.
-            user: Unused.
-
-        Returns:
-            Tuple of (agents_to_run, agents_dict).
-        """
-        model_id = agent_data.get("model_id", FALLBACK_MODEL_ID)
-        model = self.get_model_adapter(model_id, register_name=DEFAULT_MODEL_REGISTER_NAME)
-
-        agent = MMLUModelAgent(model, name=DEFAULT_AGENT_NAME)
-        adapter = MMLUAgentAdapter(agent, DEFAULT_AGENT_NAME)
-
-        return [adapter], {DEFAULT_AGENT_NAME: adapter}
 
     def setup_evaluators(
         self,
@@ -548,21 +334,6 @@ class MMLUBenchmark(Benchmark):
         agent = agents[0]
         return agent.run(prompt)
 
-    @abstractmethod
-    def get_model_adapter(self, model_id: str, **kwargs) -> ModelAdapter:
-        """Provide a ModelAdapter for the model.
-
-        Must be implemented by subclass.
-
-        Args:
-            model_id: Model identifier.
-            **kwargs: Additional arguments (e.g., register_name for tracing).
-
-        Returns:
-            ModelAdapter instance.
-        """
-        pass
-
     def evaluate(
         self,
         evaluators: Sequence[Evaluator],
@@ -579,16 +350,18 @@ class MMLUBenchmark(Benchmark):
         return results
 
 
-class HuggingFaceMMLUBenchmark(MMLUBenchmark):
+class DefaultMMLUBenchmark(MMLUBenchmark):
     """MMLU Benchmark using HuggingFace transformers models.
 
     This concrete implementation uses log-likelihood based MCQ evaluation
-    with the same optimizations as lm-evaluation-harness:
+    via ``HuggingFaceModelScorer``, with the same optimisations as
+    lm-evaluation-harness:
 
-    1. Single forward pass per question (one-token continuation optimization)
-    2. Batching multiple questions together
-    3. Efficient log-softmax computation
-    4. Proper left-padding for batch processing
+    1. Single forward pass per question (one-token continuation optimisation)
+    2. Efficient log-softmax computation
+    3. Proper left-padding for batch processing
+
+    Agents are created using a scorer-backed adapter (see ``_ScorerBackedAdapter``).
     """
 
     def __init__(
@@ -598,7 +371,7 @@ class HuggingFaceMMLUBenchmark(MMLUBenchmark):
         trust_remote_code: bool = True,
         use_full_prompt: bool = True,
         batch_size: int = DEFAULT_BATCH_SIZE,
-        **kwargs,
+        **kwargs: Any,
     ):
         """Initialize HuggingFace MMLU benchmark.
 
@@ -607,195 +380,51 @@ class HuggingFaceMMLUBenchmark(MMLUBenchmark):
             device: Device to run model on.
             trust_remote_code: Trust remote code when loading model (default True).
             use_full_prompt: Use full prompt with few-shot examples (default True).
-            batch_size: Batch size for evaluation (number of questions per batch).
-            **kwargs: Additional arguments passed to MMLUBenchmark.
+            batch_size: Batch size for lm-eval batching (number of questions per batch).
+            **kwargs: Additional arguments passed to ``MMLUBenchmark``.
         """
         super().__init__(use_full_prompt=use_full_prompt, **kwargs)
         self._model_id = model_id
         self._device = device
         self._trust_remote_code = trust_remote_code
         self._batch_size = batch_size
-        self._model = None
-        self._tokenizer = None
+        self._precomputed_logprobs: Optional[Dict[Any, List[float]]] = None
 
-    def _load_model(self):
-        """Lazy load the model and tokenizer for log-likelihood computation."""
-        if self._model is None:
-            from transformers import AutoModelForCausalLM, AutoTokenizer
+        from maseval.interface.inference.huggingface_scorer import HuggingFaceModelScorer
 
-            print(f"Loading model: {self._model_id}")
-            self._tokenizer = AutoTokenizer.from_pretrained(
-                self._model_id,
-                trust_remote_code=self._trust_remote_code,
-            )
-            self._tokenizer.padding_side = "left"
-            if self._tokenizer.pad_token is None:
-                self._tokenizer.pad_token = self._tokenizer.eos_token
+        self._scorer = HuggingFaceModelScorer(
+            model_id=model_id,
+            device=device,
+            trust_remote_code=trust_remote_code,
+        )
 
-            # Load model with torch_dtype="auto" to match lm-evaluation-harness exactly
-            # This uses the model's native dtype (bfloat16 for most modern models)
-            # Then move to device manually
-            self._model = AutoModelForCausalLM.from_pretrained(
-                self._model_id,
-                trust_remote_code=self._trust_remote_code,
-                torch_dtype="auto",
-            )
-            self._model = self._model.to(self._device)
-            self._model.eval()
+    def setup_agents(
+        self,
+        agent_data: Dict[str, Any],
+        environment: Environment,
+        task: Task,
+        user: Optional[User],
+        seed_generator: SeedGenerator,
+    ) -> Tuple[Sequence[AgentAdapter], Dict[str, AgentAdapter]]:
+        """Create scorer-backed agent for MCQ evaluation.
 
-            # Note: We don't pre-cache choice token IDs here because they depend on context.
-            # Token IDs are computed dynamically in _get_choice_token_id_in_context()
-            # to match lm-evaluation-harness behavior exactly.
-
-        return self._model, self._tokenizer
-
-    def _get_choice_token_id_separate(self, choice: str) -> Optional[int]:
-        """Get the token ID for a choice when tokenized SEPARATELY.
-
-        CRITICAL: lm-evaluation-harness encodes context and continuation separately,
-        then concatenates. This means "A" is always tokenized standalone (token 330),
-        NOT in context after "Answer:" (which would be token 28741).
-
-        We must match this behavior to get identical log-likelihood values.
+        The returned adapter is a tracing container — actual evaluation is
+        driven by ``self._scorer`` in ``run_agents()``.
 
         Args:
-            choice: The choice string (e.g., "A").
+            agent_data: Agent config (unused; model is set at ``__init__``).
+            environment: MMLU environment.
+            task: Current task.
+            user: Unused.
+            seed_generator: Seed generator (unused for MMLU).
 
         Returns:
-            Token ID for the choice (standalone tokenization), or None if multi-token.
+            Tuple of (agents_to_run, agents_dict).
         """
-        _, tokenizer = self._load_model()
+        adapter = _ScorerBackedAdapter(self._scorer, DEFAULT_AGENT_NAME)
+        return [adapter], {DEFAULT_AGENT_NAME: adapter}
 
-        # Tokenize choice ALONE (not in context) - this is how lm-eval does it
-        choice_tokens = tokenizer.encode(choice, add_special_tokens=False)
-
-        if len(choice_tokens) == 1:
-            return choice_tokens[0]
-        else:
-            # Multi-token choice - return None to trigger multi-token fallback
-            return None
-
-    def _encode_pair(self, context: str, continuation: str) -> tuple:
-        """Encode a context-continuation pair like lm-evaluation-harness.
-
-        This matches lm-eval's _encode_pair method exactly:
-        1. Encode whole = context + continuation
-        2. Encode context alone
-        3. continuation_enc = whole[len(context_enc):]
-
-        This handles tokenization boundary effects correctly.
-
-        Args:
-            context: The context/prompt string.
-            continuation: The continuation string (e.g., " A" with target_delimiter).
-
-        Returns:
-            Tuple of (context_enc, continuation_enc) token lists.
-        """
-        _, tokenizer = self._load_model()
-
-        # Handle trailing spaces in context (move to continuation)
-        n_spaces = len(context) - len(context.rstrip())
-        if n_spaces > 0:
-            continuation = context[-n_spaces:] + continuation
-            context = context[:-n_spaces]
-
-        # Encode whole string together, then split
-        whole_enc = tokenizer.encode(context + continuation, add_special_tokens=True)
-        context_enc = tokenizer.encode(context, add_special_tokens=True)
-
-        # Continuation tokens are what's left after context
-        continuation_enc = whole_enc[len(context_enc) :]
-
-        return context_enc, continuation_enc
-
-    def _compute_logprobs_single_token(self, prompt: str, choices: list) -> list:
-        """Compute log-likelihoods using single-token optimization.
-
-        For MCQ with single-letter answers (A, B, C, D), we can compute all
-        choices in one forward pass since they share the same context.
-
-        IMPORTANT: To match lm-evaluation-harness EXACTLY:
-        1. Use target_delimiter=" " before choices (e.g., " A" not "A")
-        2. Use _encode_pair to handle tokenization boundaries correctly
-        3. Input = (context + continuation)[:-1]
-        4. Apply log_softmax to get log probabilities
-
-        Args:
-            prompt: The prompt/question text.
-            choices: List of answer choice strings (e.g., ["A", "B", "C", "D"]).
-
-        Returns:
-            List of log-likelihoods, one per choice.
-        """
-        import torch
-
-        model, _ = self._load_model()
-
-        # lm-eval uses target_delimiter=" " for multiple choice tasks
-        target_delimiter = TARGET_DELIMITER
-
-        # Encode first choice to get the shared context
-        first_continuation = f"{target_delimiter}{choices[0]}"
-        context_enc, first_cont_enc = self._encode_pair(prompt, first_continuation)
-
-        # Build input: (context + continuation)[:-1]
-        full_sequence = context_enc + first_cont_enc
-        input_tokens = full_sequence[:-1]  # Remove last token
-
-        input_ids = torch.tensor([input_tokens], dtype=torch.long, device=self._device)
-
-        with torch.no_grad():
-            outputs = model(input_ids)
-            logits = outputs.logits[0]  # (seq_len, vocab_size)
-
-            # Select logits at position where continuation is predicted
-            # For single-token continuation, this is the last position
-            inplen = len(input_tokens)
-            contlen = len(first_cont_enc)
-            selected_logits = logits[inplen - contlen : inplen]
-
-            # Compute log-softmax
-            log_probs = torch.nn.functional.log_softmax(selected_logits, dim=-1)
-
-            # Get log prob for each choice's continuation token
-            logprobs = []
-            for choice in choices:
-                continuation = f"{target_delimiter}{choice}"
-                _, cont_enc = self._encode_pair(prompt, continuation)
-
-                # Sum log probs for multi-token continuations
-                total = 0.0
-                for i, token_id in enumerate(cont_enc):
-                    total += log_probs[i, token_id].item()
-                logprobs.append(total)
-
-        return logprobs
-
-    def _compute_logprobs_batched(self, prompts: list, choices_list: list) -> list:
-        """Compute log-likelihoods for a batch of prompts.
-
-        For exact match with lm-evaluation-harness, we process each prompt
-        individually using _compute_logprobs_single_token which uses the
-        correct _encode_pair tokenization logic.
-
-        Args:
-            prompts: List of prompt strings.
-            choices_list: List of choice lists (one per prompt).
-
-        Returns:
-            List of log-likelihood lists, one per prompt.
-        """
-        # For exact match with lm-eval, process individually
-        # This ensures correct tokenization via _encode_pair
-        all_logprobs = []
-        for prompt, choices in zip(prompts, choices_list):
-            logprobs = self._compute_logprobs_single_token(prompt, choices)
-            all_logprobs.append(logprobs)
-
-        return all_logprobs
-
-    def precompute_all_logprobs_lmeval(self, tasks) -> dict:
+    def precompute_all_logprobs_lmeval(self, tasks: Sequence[Task]) -> Dict[Any, List[float]]:
         """Precompute log-likelihoods for ALL tasks using lm-eval's batching.
 
         CRITICAL: lm-evaluation-harness batches ALL requests together and uses
@@ -836,7 +465,7 @@ class HuggingFaceMMLUBenchmark(MMLUBenchmark):
         instance_map = {}  # (doc_id, choice_idx) -> position in results
 
         for task in tasks:
-            doc_id = task.metadata.get("doc_id")
+            doc_id = task.metadata["doc_id"]
             # Get prompt from task - use full_prompt from environment_data if available
             if self.use_full_prompt and "full_prompt" in task.environment_data:
                 prompt = task.environment_data["full_prompt"]
@@ -862,7 +491,7 @@ class HuggingFaceMMLUBenchmark(MMLUBenchmark):
         # Map results back to doc_ids
         doc_logprobs = {}
         for task in tasks:
-            doc_id = task.metadata.get("doc_id")
+            doc_id = task.metadata["doc_id"]
             logprobs = []
             for i in range(len(choices)):
                 pos = instance_map[(doc_id, i)]
@@ -875,180 +504,50 @@ class HuggingFaceMMLUBenchmark(MMLUBenchmark):
 
         return doc_logprobs
 
-    def _compute_logprobs_multi_token(self, prompt: str, choices: list) -> list:
-        """Compute log-likelihoods for multi-token continuations.
-
-        This is the fallback for when answer choices have multiple tokens.
-        Uses _encode_pair to match lm-evaluation-harness exactly.
-
-        Args:
-            prompt: The prompt/question text.
-            choices: List of answer choice strings.
-
-        Returns:
-            List of log-likelihoods, one per choice.
-        """
-        import torch
-
-        model, _ = self._load_model()
-
-        # lm-eval uses target_delimiter=" " for multiple choice tasks
-        target_delimiter = TARGET_DELIMITER
-
-        all_logprobs = []
-        for choice in choices:
-            continuation = f"{target_delimiter}{choice}"
-
-            # Use _encode_pair for correct tokenization
-            context_enc, continuation_enc = self._encode_pair(prompt, continuation)
-
-            # Build input: (context + continuation)[:-1]
-            full_sequence = context_enc + continuation_enc
-            input_tokens = full_sequence[:-1]
-
-            input_ids = torch.tensor([input_tokens], dtype=torch.long, device=self._device)
-
-            with torch.no_grad():
-                outputs = model(input_ids)
-                logits = outputs.logits[0]  # (seq_len, vocab_size)
-
-                # Select continuation logits
-                inplen = len(input_tokens)
-                contlen = len(continuation_enc)
-                selected = logits[inplen - contlen : inplen]
-
-                # Compute log-softmax
-                log_probs = torch.nn.functional.log_softmax(selected, dim=-1)
-
-                # Sum log probs for all continuation tokens
-                total = 0.0
-                for i, token_id in enumerate(continuation_enc):
-                    total += log_probs[i, token_id].item()
-
-                all_logprobs.append(total)
-
-        return all_logprobs
-
     def run_agents(
         self,
-        agents,
-        task,
-        environment,
+        agents: Sequence[AgentAdapter],
+        task: Task,
+        environment: Environment,
         query: str = "",
-    ):
+    ) -> Any:
         """Execute log-likelihood based MCQ evaluation.
 
         Uses precomputed logprobs if available (for exact lm-eval match),
-        otherwise falls back to single-forward-pass optimization for
-        single-token answers, or multi-token batched computation.
+        otherwise delegates to ``HuggingFaceModelScorer.loglikelihood_choices()``
+        which automatically picks single-token or multi-token scoring.
         """
-        # Get the prompt from environment
-        prompt = environment.get_prompt()
-        choices = environment.state.get("choices", DEFAULT_CHOICES)
-        doc_id = task.metadata.get("doc_id") if task else None
+        mmlu_env = cast(MMLUEnvironment, environment)
+        prompt = mmlu_env.get_prompt()
+        choices = mmlu_env.state["choices"]
+        doc_id = task.metadata["doc_id"]
+        agent = cast(_ScorerBackedAdapter, agents[0])
 
-        # Check if we have precomputed logprobs (for exact lm-eval match)
-        if hasattr(self, "_precomputed_logprobs") and doc_id is not None:
-            logprobs = self._precomputed_logprobs.get(doc_id)
-            if logprobs is not None:
-                # Use precomputed values for exact match
-                best_idx = logprobs.index(max(logprobs))
-                answer = choices[best_idx]
-
-                # Store logprobs in environment for later retrieval
-                environment.state["logprobs"] = logprobs
-                environment.state["predicted_idx"] = best_idx
-
-                # Record in agent messages for tracing
-                agent = agents[0]
-                agent.agent._messages.append({"role": "user", "content": prompt})
-                agent.agent._messages.append(
-                    {
-                        "role": "assistant",
-                        "content": answer,
-                        "logprobs": logprobs,
-                    }
-                )
-
-                return answer
-
-        # Fall back to computing logprobs on-the-fly
-        # Load model
-        self._load_model()
-
-        # lm-eval uses target_delimiter=" " for multiple choice tasks
-        target_delimiter = TARGET_DELIMITER
-
-        # Check if all choices result in single-token continuations
-        # using _encode_pair to get the correct tokenization
-        all_single_token = True
-        for choice in choices:
-            continuation = f"{target_delimiter}{choice}"
-            _, cont_enc = self._encode_pair(prompt, continuation)
-            if len(cont_enc) != 1:
-                all_single_token = False
-                break
-
-        if all_single_token:
-            # Use optimized single-token path (one forward pass)
-            logprobs = self._compute_logprobs_single_token(prompt, choices)
+        if self._precomputed_logprobs is not None and doc_id in self._precomputed_logprobs:
+            logprobs = self._precomputed_logprobs[doc_id]
         else:
-            # Fall back to multi-token computation
-            logprobs = self._compute_logprobs_multi_token(prompt, choices)
+            logprobs = self._scorer.loglikelihood_choices(prompt, choices, delimiter=TARGET_DELIMITER)
 
-        # Select the choice with highest log-probability
         best_idx = logprobs.index(max(logprobs))
         answer = choices[best_idx]
+        mmlu_env.state["logprobs"] = logprobs
+        mmlu_env.state["predicted_idx"] = best_idx
 
-        # Store logprobs in environment for later retrieval if needed
-        environment.state["logprobs"] = logprobs
-        environment.state["predicted_idx"] = best_idx
-
-        # Record in agent messages for tracing
-        agent = agents[0]
-        agent.agent._messages.append({"role": "user", "content": prompt})
-        agent.agent._messages.append(
-            {
-                "role": "assistant",
-                "content": answer,
-                "logprobs": logprobs,
-            }
-        )
-
+        agent.record_message({"role": "user", "content": prompt})
+        agent.record_message({"role": "assistant", "content": answer, "logprobs": logprobs})
         return answer
 
-    def get_model_adapter(self, model_id: str, **kwargs):
-        """Provide a HuggingFace ModelAdapter.
+    def get_model_adapter(self, model_id: str, **kwargs: Any) -> ModelAdapter:
+        """Not used — ``DefaultMMLUBenchmark`` uses ``HuggingFaceModelScorer``.
 
-        Note: For logprobs-based evaluation, we don't actually use the adapter
-        for generation. This is kept for API compatibility.
-
-        Args:
-            model_id: Model identifier (ignored, uses instance model_id).
-            **kwargs: Additional arguments (e.g., register_name).
-
-        Returns:
-            HuggingFaceModelAdapter instance.
+        Raises:
+            NotImplementedError: Always. Use ``HuggingFaceModelScorer`` via
+                ``self._scorer`` for log-likelihood evaluation.
         """
-        from maseval.interface.inference import HuggingFaceModelAdapter
-
-        # Create a minimal adapter for compatibility
-        # The actual evaluation uses _compute_logprobs_*
-        class DummyCallable:
-            def __call__(self, prompt, **kwargs):
-                return ""
-
-        adapter = HuggingFaceModelAdapter(
-            model=DummyCallable(),
-            model_id=self._model_id,
+        raise NotImplementedError(
+            "DefaultMMLUBenchmark uses HuggingFaceModelScorer for log-likelihood "
+            "evaluation, not a generation ModelAdapter. Access the scorer via self._scorer."
         )
-
-        # Register for tracing if requested
-        register_name = kwargs.get("register_name")
-        if register_name:
-            self.register("models", register_name, adapter)
-
-        return adapter
 
 
 # =============================================================================
@@ -1056,48 +555,23 @@ class HuggingFaceMMLUBenchmark(MMLUBenchmark):
 # =============================================================================
 
 
-def load_pickle(path: Union[str, Path]) -> Any:
-    """Load a pickle file."""
-    with open(path, "rb") as f:
-        return pickle.load(f)
-
-
-def load_anchor_points(path: Union[str, Path]) -> List[int]:
-    """Load anchor points from a .json or .pkl file. Returns a list of doc_ids."""
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Anchor points file not found: {path}")
-    if path.suffix.lower() == ".json":
-        with open(path) as f:
-            anchor_points = json.load(f)
-    else:
-        anchor_points = load_pickle(path)
-    if HAS_NUMPY and isinstance(anchor_points, np.ndarray):
-        anchor_points = anchor_points.tolist()
-    elif not HAS_NUMPY and hasattr(anchor_points, "tolist"):
-        anchor_points = anchor_points.tolist()
-    return list(anchor_points)
-
-
 def load_tasks(
     data_path: Union[str, Path],
     anchor_points_path: Optional[Union[str, Path]] = None,
     limit: Optional[int] = None,
-) -> Union[AnchorPointsTaskQueue, SequentialTaskQueue]:
+) -> Union[DISCOQueue, SequentialTaskQueue]:
     """Load MMLU tasks from JSON file.
 
     Args:
         data_path: Path to MMLU prompts JSON file (mmlu_prompts_examples.json format).
         anchor_points_path: Optional path to anchor points pickle file.
-            If provided, returns an AnchorPointsTaskQueue that evaluates
+            If provided, returns an DISCOQueue that evaluates
             only the anchor tasks in order.
         limit: Optional limit on number of tasks to load.
 
     Returns:
         TaskQueue containing MMLU tasks.
 
-    Raises:
-        ImportError: If anchor_points_path is provided but numpy is not installed.
     """
     data_path = Path(data_path)
 
@@ -1112,16 +586,26 @@ def load_tasks(
     # Convert to Tasks
     tasks = []
     for i, item in enumerate(data):
+        query = item.get("query") or item.get("example")
+        if query is None:
+            raise ValueError(f"MMLU task at index {i} has neither 'query' nor 'example' field")
+
+        if "gold" not in item:
+            raise ValueError(f"MMLU task at index {i} missing required 'gold' field (correct answer index)")
+
+        if "choices" not in item:
+            raise ValueError(f"MMLU task at index {i} missing required 'choices' field")
+
         task = Task(
-            query=item.get("query", item.get("example", "")),
+            query=query,
             id=f"mmlu_{i}",
             environment_data={
-                "choices": item.get("choices", DEFAULT_CHOICES),
-                "full_prompt": item.get("full_prompt", ""),
-                "example": item.get("example", ""),
+                "choices": item["choices"],
+                **({"full_prompt": item["full_prompt"]} if "full_prompt" in item else {}),
+                **({"example": item["example"]} if "example" in item else {}),
             },
             evaluation_data={
-                "gold": item.get("gold", 0),
+                "gold": item["gold"],
             },
             metadata={
                 "doc_id": i,
@@ -1130,14 +614,8 @@ def load_tasks(
         )
         tasks.append(task)
 
-    # Load anchor points if provided
-    anchor_points = None
     if anchor_points_path is not None:
-        anchor_points = load_anchor_points(anchor_points_path)
-
-    # Create appropriate queue
-    if anchor_points is not None:
-        return AnchorPointsTaskQueue(tasks, anchor_points)
+        return DISCOQueue(tasks, anchor_points_path=anchor_points_path)
     else:
         return SequentialTaskQueue(tasks)
 
@@ -1160,23 +638,27 @@ def compute_benchmark_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     total_tasks = len(results)
     correct_count = 0
+    parse_failed_count = 0
     acc_sum = 0.0
     acc_norm_sum = 0.0
 
     for res in results:
-        if res.get("status") != STATUS_SUCCESS:
+        if res["status"] != STATUS_SUCCESS:
             continue
 
-        evals = res.get("eval") or []
+        evals = res["eval"] if res["eval"] is not None else []
         for entry in evals:
-            acc_sum += entry.get("acc", 0.0)
-            acc_norm_sum += entry.get("acc_norm", 0.0)
-            if entry.get("correct", False):
+            acc_sum += entry["acc"]
+            acc_norm_sum += entry["acc_norm"]
+            if entry["correct"]:
                 correct_count += 1
+            if entry.get("parse_failed", False):
+                parse_failed_count += 1
 
     return {
         "total_tasks": total_tasks,
         "correct_count": correct_count,
+        "parse_failed_count": parse_failed_count,
         "acc": acc_sum / total_tasks if total_tasks > 0 else 0.0,
         "acc_norm": acc_norm_sum / total_tasks if total_tasks > 0 else 0.0,
     }

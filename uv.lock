@@ -3536,6 +3536,7 @@ disco = [
     { name = "tiktoken" },
     { name = "torch" },
     { name = "torchvision" },
+    { name = "transformers" },
     { name = "typer" },
     { name = "umap-learn" },
 ]
@@ -3579,6 +3580,7 @@ examples = [
     { name = "tiktoken" },
     { name = "torch" },
     { name = "torchvision" },
+    { name = "transformers" },
     { name = "typer" },
     { name = "typing-extensions" },
     { name = "umap-learn" },
@@ -3605,7 +3607,15 @@ llamaindex = [
     { name = "llama-index-core" },
 ]
 lm-eval = [
+    { name = "aiohttp" },
     { name = "lm-eval" },
+    { name = "transformers" },
+]
+mmlu = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "torch" },
+    { name = "transformers" },
 ]
 multiagentbench = [
     { name = "arxiv" },
@@ -3672,6 +3682,7 @@ requires-dist = [
     { name = "accelerate", marker = "extra == 'examples'", specifier = ">=1.11.0" },
     { name = "addict", marker = "extra == 'tau2'", specifier = ">=2.4.0" },
     { name = "aiohttp", marker = "extra == 'disco'", specifier = ">=3.9.0" },
+    { name = "aiohttp", marker = "extra == 'lm-eval'", specifier = ">=3.9.0" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.40.0" },
     { name = "arxiv", marker = "extra == 'multiagentbench'", specifier = ">=2.1.0" },
     { name = "beartype", marker = "extra == 'multiagentbench'" },
@@ -3714,6 +3725,7 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'examples'", specifier = ">=1.22.0" },
     { name = "meta-agents-research-environments", marker = "extra == 'gaia2'", specifier = ">=1.2.0" },
     { name = "names", marker = "extra == 'multiagentbench'", specifier = ">=0.3.0" },
+    { name = "numpy", marker = "extra == 'mmlu'", specifier = ">=1.20.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.107.2" },
     { name = "psycopg2-binary", marker = "extra == 'multiagentbench'", specifier = ">=2.9.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
@@ -3734,8 +3746,12 @@ requires-dist = [
     { name = "stnd", marker = "extra == 'disco'", git = "https://github.com/arubique/stnd.git?rev=0d23b52f7742c08b28be560d2d52d450fcd274b7" },
     { name = "tiktoken", marker = "extra == 'disco'", specifier = ">=0.5.0" },
     { name = "torch", marker = "extra == 'disco'", specifier = "==2.9.1" },
+    { name = "torch", marker = "extra == 'mmlu'", specifier = ">=2.0.0" },
     { name = "torchvision", marker = "extra == 'disco'", specifier = ">=0.15.0" },
     { name = "tqdm", specifier = ">=4.66.0" },
+    { name = "transformers", marker = "extra == 'disco'", specifier = ">=4.37.0,<5.0.0" },
+    { name = "transformers", marker = "extra == 'lm-eval'", specifier = ">=4.37.0,<5.0.0" },
+    { name = "transformers", marker = "extra == 'mmlu'", specifier = ">=4.37.0" },
     { name = "transformers", marker = "extra == 'transformers'", specifier = ">=4.37.0" },
     { name = "typer", marker = "extra == 'disco'", specifier = ">=0.9.0" },
     { name = "typing-extensions", marker = "extra == 'examples'", specifier = ">=4.0.0" },
@@ -3743,7 +3759,7 @@ requires-dist = [
     { name = "waitress", marker = "extra == 'multiagentbench'", specifier = ">=3.0.0" },
     { name = "wandb", marker = "extra == 'wandb'", specifier = ">=0.15.0" },
 ]
-provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "gaia2", "macs", "multiagentbench", "tau2", "converse", "lm-eval", "disco", "examples", "all"]
+provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "gaia2", "macs", "multiagentbench", "tau2", "converse", "mmlu", "lm-eval", "disco", "examples", "all"]
 
 [package.metadata.requires-dev]
 dev = [

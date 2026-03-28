@@ -1,14 +1,20 @@
-"""Inference model adapters for various providers.
+"""Inference model adapters and scorers for various providers.
 
-This package contains concrete implementations of ModelAdapter for different
-inference providers. Each adapter requires the corresponding optional dependency.
+This package contains concrete implementations of ``ModelAdapter`` and
+``ModelScorer`` for different inference providers. Each adapter/scorer
+requires the corresponding optional dependency.
 
-Available adapters:
-    - AnthropicModelAdapter: Anthropic Claude models (requires anthropic)
-    - GoogleGenAIModelAdapter: Google Gemini models (requires google-genai)
-    - HuggingFaceModelAdapter: HuggingFace transformers (requires transformers)
-    - LiteLLMModelAdapter: 100+ providers via LiteLLM (requires litellm)
-    - OpenAIModelAdapter: OpenAI and compatible APIs (requires openai)
+Available adapters (text generation):
+
+- ``AnthropicModelAdapter``: Anthropic Claude models (requires ``anthropic``)
+- ``GoogleGenAIModelAdapter``: Google Gemini models (requires ``google-genai``)
+- ``HuggingFacePipelineModelAdapter``: HuggingFace pipelines (requires ``transformers``)
+- ``LiteLLMModelAdapter``: 100+ providers via LiteLLM (requires ``litellm``)
+- ``OpenAIModelAdapter``: OpenAI and compatible APIs (requires ``openai``)
+
+Available scorers (log-likelihood):
+
+- ``HuggingFaceModelScorer``: HuggingFace causal LMs (requires ``transformers``)
 
 Example:
     ```python
@@ -49,10 +55,21 @@ except ImportError:
 
 # Conditionally import HuggingFace adapter
 try:
-    from .huggingface import HuggingFaceModelAdapter, ToolCallingNotSupportedError  # noqa: F401
+    from .huggingface import (  # noqa: F401
+        HuggingFacePipelineModelAdapter,
+        ToolCallingNotSupportedError,
+    )
 
-    __all__.append("HuggingFaceModelAdapter")
+    __all__.append("HuggingFacePipelineModelAdapter")
     __all__.append("ToolCallingNotSupportedError")
+except ImportError:
+    pass
+
+# Conditionally import HuggingFace scorer
+try:
+    from .huggingface_scorer import HuggingFaceModelScorer  # noqa: F401
+
+    __all__.append("HuggingFaceModelScorer")
 except ImportError:
     pass
 
