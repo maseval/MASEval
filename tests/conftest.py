@@ -453,8 +453,8 @@ class DummyAgentAdapter(AgentAdapter):
 class DummyEnvironment(Environment):
     """Minimal environment for testing."""
 
-    def setup_state(self, task_data: dict) -> Any:
-        return task_data.copy()
+    def setup_state(self, environment_data: dict) -> Any:
+        return environment_data.copy()
 
     def create_tools(self) -> dict:
         return {}

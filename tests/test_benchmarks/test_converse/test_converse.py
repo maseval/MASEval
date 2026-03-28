@@ -206,7 +206,7 @@ def test_environment_tools_record_invocations() -> None:
 def test_get_user_info_no_match_does_not_dump() -> None:
     """get_user_info returns 'no information' instead of dumping full persona on no match."""
     env = ConverseEnvironment(
-        task_data={
+        environment_data={
             "general_info": "Name: Alice Johnson\nPhone: 555-1234\nAddress: 14 Kensington Gardens",
         }
     )

@@ -639,24 +639,24 @@ class MACSEnvironment(Environment):
 
     def __init__(
         self,
-        task_data: Dict[str, Any],
+        environment_data: Dict[str, Any],
         model_factory: Callable[[str], ModelAdapter],
         callbacks: Optional[List[Any]] = None,
     ):
         """Initialize environment.
 
         Args:
-            task_data: Task data containing environment_data with tool specs
+            environment_data: Environment data dict with tool specs
             model_factory: Factory function that creates a ModelAdapter for a given model_name
             callbacks: Optional callbacks
         """
         self._model_factory = model_factory
-        super().__init__(task_data, callbacks)
+        super().__init__(environment_data, callbacks)
 
-    def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize state from task data."""
+    def setup_state(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize state from environment data."""
         return {
-            "tool_specs": task_data.get("environment_data", {}).get("tools", []),
+            "tool_specs": environment_data.get("tools", []),
         }
 
     def create_tools(self) -> Dict[str, MACSGenericTool]:  # type: ignore[override]
@@ -844,7 +844,7 @@ class MACSBenchmark(Benchmark):
             )
 
         return MACSEnvironment(
-            task_data={"environment_data": task.environment_data},
+            environment_data=task.environment_data,
             model_factory=tool_model_factory,
         )
 

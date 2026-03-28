@@ -32,8 +32,8 @@ class TestMACSEnvironmentSetup:
         env1 = MACSEnvironment({}, macs_model_factory)
         assert env1.state["tool_specs"] == []
 
-        # Empty tools
-        env2 = MACSEnvironment({"environment_data": {}}, macs_model_factory)
+        # Empty tools (no tools key)
+        env2 = MACSEnvironment({}, macs_model_factory)
         assert env2.state["tool_specs"] == []
 
 
@@ -74,18 +74,16 @@ class TestCreateTools:
     def test_create_tools_deduplicates(self, macs_model_factory):
         """Duplicate tool names are deduplicated."""
         task_data = {
-            "environment_data": {
-                "tools": [
-                    {
-                        "tool_name": "group1",
-                        "actions": [{"name": "duplicate_tool", "description": "First"}],
-                    },
-                    {
-                        "tool_name": "group2",
-                        "actions": [{"name": "duplicate_tool", "description": "First"}],  # Same name
-                    },
-                ]
-            }
+            "tools": [
+                {
+                    "tool_name": "group1",
+                    "actions": [{"name": "duplicate_tool", "description": "First"}],
+                },
+                {
+                    "tool_name": "group2",
+                    "actions": [{"name": "duplicate_tool", "description": "First"}],  # Same name
+                },
+            ]
         }
         env = MACSEnvironment(task_data, macs_model_factory)
 
@@ -95,7 +93,7 @@ class TestCreateTools:
 
     def test_create_tools_empty_specs(self, macs_model_factory):
         """Empty specs returns empty dict."""
-        task_data = {"environment_data": {"tools": []}}
+        task_data = {"tools": []}
         env = MACSEnvironment(task_data, macs_model_factory)
 
         assert env.tools == {}
@@ -103,11 +101,9 @@ class TestCreateTools:
     def test_create_tools_empty_actions(self, macs_model_factory):
         """Handles tool groups with no actions."""
         task_data = {
-            "environment_data": {
-                "tools": [
-                    {"tool_name": "empty_group", "actions": []},
-                ]
-            }
+            "tools": [
+                {"tool_name": "empty_group", "actions": []},
+            ]
         }
         env = MACSEnvironment(task_data, macs_model_factory)
 
@@ -264,17 +260,15 @@ class TestEdgeCases:
     def test_tool_with_no_name(self, macs_model_factory):
         """Handles actions without name field."""
         task_data = {
-            "environment_data": {
-                "tools": [
-                    {
-                        "tool_name": "group",
-                        "actions": [
-                            {"description": "No name field"},  # Missing name
-                            {"name": "valid_tool", "description": "Has name"},
-                        ],
-                    }
-                ]
-            }
+            "tools": [
+                {
+                    "tool_name": "group",
+                    "actions": [
+                        {"description": "No name field"},  # Missing name
+                        {"name": "valid_tool", "description": "Has name"},
+                    ],
+                }
+            ]
         }
         env = MACSEnvironment(task_data, macs_model_factory)
 
@@ -299,27 +293,25 @@ class TestEdgeCases:
     def test_nested_tool_groups(self, macs_model_factory):
         """Handles deeply nested tool structures."""
         task_data = {
-            "environment_data": {
-                "tools": [
-                    {
-                        "tool_name": "level1",
-                        "actions": [
-                            {
-                                "name": "tool1",
-                                "description": "Tool 1",
-                                "input_schema": {
-                                    "properties": {
-                                        "nested": {
-                                            "type": "object",
-                                            "description": "Nested object",
-                                        }
+            "tools": [
+                {
+                    "tool_name": "level1",
+                    "actions": [
+                        {
+                            "name": "tool1",
+                            "description": "Tool 1",
+                            "input_schema": {
+                                "properties": {
+                                    "nested": {
+                                        "type": "object",
+                                        "description": "Nested object",
                                     }
-                                },
-                            }
-                        ],
-                    }
-                ]
-            }
+                                }
+                            },
+                        }
+                    ],
+                }
+            ]
         }
         env = MACSEnvironment(task_data, macs_model_factory)
 

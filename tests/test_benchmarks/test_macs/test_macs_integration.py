@@ -134,14 +134,12 @@ class TestDataLoadingIntegration:
         }
 
         task_data = {
-            "environment_data": {
-                "tools": [
-                    {
-                        "tool_name": "tool_group",
-                        "actions": [{"name": "action1", "description": "Action 1"}],
-                    }
-                ]
-            }
+            "tools": [
+                {
+                    "tool_name": "tool_group",
+                    "actions": [{"name": "action1", "description": "Action 1"}],
+                }
+            ]
         }
 
         env = MACSEnvironment(task_data, macs_model_factory)
@@ -176,7 +174,7 @@ class TestErrorHandlingIntegration:
 
     def test_environment_handles_empty_tool_specs(self, macs_model_factory):
         """Environment handles tasks with no tools."""
-        task_data = {"environment_data": {"tools": []}}
+        task_data = {"tools": []}
         env = MACSEnvironment(task_data, macs_model_factory)
 
         assert env.tools == {}

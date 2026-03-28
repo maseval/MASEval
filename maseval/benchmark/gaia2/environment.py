@@ -37,14 +37,14 @@ class Gaia2Environment(Environment):
 
     def __init__(
         self,
-        task_data: Dict[str, Any],
+        environment_data: Dict[str, Any],
         callbacks: Optional[List[Any]] = None,
         judge_engine_config: Optional[Any] = None,
     ):
         """Initialize Gaia2 environment.
 
         Args:
-            task_data: Task data containing:
+            environment_data: Environment data containing:
                 - scenario: ARE BenchmarkScenario object
                 - capability: Capability type (execution, search, etc.)
                 - universe_id: Universe identifier
@@ -53,14 +53,14 @@ class Gaia2Environment(Environment):
                 which LLM model and provider the ARE judge uses for semantic comparison.
                 Passed explicitly from ``setup_environment()`` (lives in ``evaluation_data``).
         """
-        self._scenario = task_data.get("scenario")
+        self._scenario = environment_data.get("scenario")
         self._judge_engine_config = judge_engine_config
         self._are_env: Any = None
         self._tool_wrappers: Dict[str, Gaia2GenericTool] = {}
 
-        super().__init__(task_data, callbacks)
+        super().__init__(environment_data, callbacks)
 
-    def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+    def setup_state(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize ARE scenario and start simulation.
 
         Delegates to ARE's ``preprocess_scenario()`` for faithful preprocessing:
@@ -74,7 +74,7 @@ class Gaia2Environment(Environment):
         7. Start the agent-mode simulation.
 
         Args:
-            task_data: Task data with scenario, capability, universe_id
+            environment_data: Environment data with scenario, capability, universe_id
 
         Returns:
             State dictionary with scenario metadata
@@ -101,9 +101,9 @@ class Gaia2Environment(Environment):
             MAX_TIME_SCENARIO_DURATION,
         )
 
-        scenario = task_data.get("scenario")
+        scenario = environment_data.get("scenario")
         if scenario is None:
-            raise ValueError("Task data must contain 'scenario' with ARE BenchmarkScenario")
+            raise ValueError("Environment data must contain 'scenario' with ARE BenchmarkScenario")
 
         # Determine scenario duration (matching ARE's get_scenario_duration)
         # ARE scenarios/config.py:18: MAX_SCENARIO_DURATION = 1800 (30 min)
@@ -167,8 +167,8 @@ class Gaia2Environment(Environment):
         return {
             "scenario_id": getattr(scenario, "scenario_id", None),
             "duration": scenario.duration,
-            "capability": task_data.get("capability"),
-            "universe_id": task_data.get("universe_id"),
+            "capability": environment_data.get("capability"),
+            "universe_id": environment_data.get("universe_id"),
             "start_time": getattr(scenario, "start_time", None),
         }
 

@@ -138,11 +138,12 @@ class TestMMLURealDataPipeline:
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment
 
         task = real_mmlu_tasks_small[0]
-        task_data = {
+        environment_data = {
             "query": task.query,
-            "environment_data": {**task.environment_data, "use_full_prompt": True},
+            **task.environment_data,
+            "use_full_prompt": True,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         assert "choices" in env.state
         assert "full_prompt" in env.state
         assert env.get_prompt() == task.environment_data["full_prompt"]
@@ -151,11 +152,12 @@ class TestMMLURealDataPipeline:
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment, MMLUEvaluator
 
         task = real_mmlu_tasks_small[0]
-        task_data = {
+        environment_data = {
             "query": task.query,
-            "environment_data": {**task.environment_data, "use_full_prompt": False},
+            **task.environment_data,
+            "use_full_prompt": False,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         evaluator = MMLUEvaluator(task, env)
         assert 0 <= evaluator.gold <= 3
         assert evaluator.choices == ["A", "B", "C", "D"]
@@ -164,11 +166,12 @@ class TestMMLURealDataPipeline:
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment, MMLUEvaluator
 
         task = real_mmlu_tasks_small[0]
-        task_data = {
+        environment_data = {
             "query": task.query,
-            "environment_data": {**task.environment_data, "use_full_prompt": False},
+            **task.environment_data,
+            "use_full_prompt": False,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         evaluator = MMLUEvaluator(task, env)
         gold_letter = ["A", "B", "C", "D"][evaluator.gold]
         result = evaluator({"messages": []}, final_answer=gold_letter)
@@ -179,11 +182,12 @@ class TestMMLURealDataPipeline:
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment, MMLUEvaluator
 
         task = real_mmlu_tasks_small[0]
-        task_data = {
+        environment_data = {
             "query": task.query,
-            "environment_data": {**task.environment_data, "use_full_prompt": False},
+            **task.environment_data,
+            "use_full_prompt": False,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         evaluator = MMLUEvaluator(task, env)
         wrong_letter = ["A", "B", "C", "D"][(evaluator.gold + 1) % 4]
         result = evaluator({"messages": []}, final_answer=wrong_letter)

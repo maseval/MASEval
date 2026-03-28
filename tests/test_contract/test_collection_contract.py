@@ -164,7 +164,7 @@ def create_agent_for_framework(framework: str):
 
 def create_environment():
     """Create environment instance."""
-    return DummyEnvironment(task_data={})
+    return DummyEnvironment(environment_data={})
 
 
 def create_user():
