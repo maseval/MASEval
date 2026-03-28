@@ -129,6 +129,8 @@ nav:
               - HuggingFace: interface/inference/huggingface.md
               - LiteLLM: interface/inference/litellm.md
               - OpenAI: interface/inference/openai.md
+          - Environments:
+              - ARE: interface/environments/are.md
       - Benchmarks:
           - ConVerse: benchmark/converse.md
           - MACS: benchmark/macs.md
