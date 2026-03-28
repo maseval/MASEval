@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maseval"
-version = "0.3.0"
+version = "0.4.0"
 description = "A library for multi-agent systems evaluation and benchmarking."
 authors = [{ name = "Cornelius Emde", email = "cornelius@parameterlab.de" }]
 readme = "README.md"
@@ -94,7 +94,7 @@ mmlu = [
 lm-eval = [
     "aiohttp>=3.9.0",
     "transformers>=4.37.0,<5.0.0",
-    "lm-eval @ git+https://github.com/arubique/lm-evaluation-harness.git@main",
+    "lm-eval>=0.4.0",
 ]
 
 # DISCO prediction (for MMLU benchmark example) — requires transformers 4.x via lm-eval
@@ -106,12 +106,11 @@ disco = [
     "h5py>=3.0.0",
     "ipython>=8.0.0",
     "jsonlines>=4.0.0",
-    "lm-eval @ git+https://github.com/arubique/lm-evaluation-harness.git@main",
+    "lm-eval>=0.4.0",
     "matplotlib>=3.5.0",
     "transformers>=4.37.0,<5.0.0",
     "scikit-learn>=1.7.2",
     "scipy>=1.11.0",
-    "stnd @ git+https://github.com/arubique/stnd.git@0d23b52f7742c08b28be560d2d52d450fcd274b7",
     "tiktoken>=0.5.0",
     "torch==2.9.1",
     "torchvision>=0.15.0",
