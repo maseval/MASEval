@@ -1,6 +1,7 @@
 """Tests for AREEnvironment."""
 
 from unittest.mock import MagicMock, patch, PropertyMock
+import sys
 import pytest
 
 from maseval.interface.environments.are import AREEnvironment
@@ -215,3 +216,69 @@ class TestAREEnvironmentScenarioPath:
         assert config["duration"] == 600
         assert config["notification_verbosity"] == "medium"
         assert "tool_names" in config
+
+
+class TestAREEnvironmentShorthandPath:
+    """Tests for AREEnvironment with apps+events shorthand."""
+
+    @patch("maseval.interface.environments.are._import_are")
+    @patch("maseval.interface.environments.are.AREEnvironment._build_scenario_from_shorthand")
+    def test_shorthand_builds_scenario(self, mock_build, mock_import):
+        """Shorthand task_data with 'apps' key triggers scenario construction."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        mock_scenario = _make_mock_scenario()
+        mock_build.return_value = mock_scenario
+
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        task_data = {
+            "apps": [MagicMock(), MagicMock()],
+            "events": [MagicMock()],
+            "duration": 300,
+            "seed": 99,
+        }
+        env = AREEnvironment(task_data=task_data)
+
+        mock_build.assert_called_once_with(task_data)
+        assert env._scenario is mock_scenario
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_shorthand_passes_config_to_scenario(self, mock_import):
+        """Shorthand config values are passed through to Scenario construction."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        # Patch Scenario import inside _build_scenario_from_shorthand
+        mock_scenario_cls = MagicMock()
+        mock_scenario_instance = _make_mock_scenario()
+        mock_scenario_cls.return_value = mock_scenario_instance
+
+        with patch.dict("sys.modules", {
+            "are": MagicMock(),
+            "are.simulation": MagicMock(),
+            "are.simulation.scenarios": MagicMock(),
+            "are.simulation.scenarios.scenario": MagicMock(Scenario=mock_scenario_cls),
+        }):
+            apps = [MagicMock(), MagicMock()]
+            task_data = {
+                "apps": apps,
+                "duration": 300,
+                "seed": 99,
+                "start_time": 100,
+                "time_increment_in_seconds": 5,
+            }
+            env = AREEnvironment(task_data=task_data)
+
+            mock_scenario_cls.assert_called_once()
+            call_kwargs = mock_scenario_cls.call_args[1]
+            assert call_kwargs["duration"] == 300
+            assert call_kwargs["seed"] == 99
+            assert call_kwargs["start_time"] == 100
+            assert call_kwargs["time_increment_in_seconds"] == 5
+            mock_scenario_instance.initialize.assert_called_once()
