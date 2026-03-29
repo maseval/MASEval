@@ -1,9 +1,25 @@
 """Tests for AREToolWrapper."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 import pytest
 
 from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
+
+
+@pytest.fixture(autouse=True)
+def mock_app_tool_adapter():
+    """Mock AppToolAdapter so AREToolWrapper can initialize without real ARE validation."""
+    def make_adapter(are_tool):
+        adapter = MagicMock()
+        adapter.name = are_tool.name
+        adapter.description = are_tool.description
+        adapter.inputs = are_tool.inputs
+        adapter.output_type = are_tool.output_type
+        adapter.actual_return_type = None
+        return adapter
+
+    with patch("maseval.interface.environments.are_tool_wrapper.AppToolAdapter", side_effect=make_adapter):
+        yield
 
 
 class TestAREToolWrapper:
