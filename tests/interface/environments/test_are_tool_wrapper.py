@@ -9,6 +9,7 @@ from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
 @pytest.fixture(autouse=True)
 def mock_app_tool_adapter():
     """Mock AppToolAdapter so AREToolWrapper can initialize without real ARE validation."""
+
     def make_adapter(are_tool):
         adapter = MagicMock()
         adapter.name = are_tool.name
@@ -25,8 +26,14 @@ def mock_app_tool_adapter():
 class TestAREToolWrapper:
     """Tests for AREToolWrapper."""
 
-    def _make_mock_are_tool(self, name="Calendar__create_event", description="Create a calendar event",
-                            inputs=None, output_type="string", return_value="Event created"):
+    def _make_mock_are_tool(
+        self,
+        name="Calendar__create_event",
+        description="Create a calendar event",
+        inputs=None,
+        output_type="string",
+        return_value="Event created",
+    ):
         """Create a mock ARE tool."""
         tool = MagicMock()
         tool.name = name

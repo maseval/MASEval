@@ -116,10 +116,7 @@ class AREEnvironment(Environment):
         scenario = environment_data.get("scenario")
 
         if scenario is None and "apps" not in environment_data:
-            raise ValueError(
-                "environment_data must contain either 'scenario' (ARE Scenario object) "
-                "or 'apps' (list of ARE App instances)."
-            )
+            raise ValueError("environment_data must contain either 'scenario' (ARE Scenario object) or 'apps' (list of ARE App instances).")
 
         if scenario is None:
             scenario = self._build_scenario_from_shorthand(environment_data)
@@ -176,13 +173,13 @@ class AREEnvironment(Environment):
         time_increment = environment_data.get("time_increment_in_seconds", 1)
 
         scenario = Scenario(
-            scenario_id=environment_data.get("scenario_id", "custom"),
-            apps=apps,
-            events=events,
-            duration=duration,
-            seed=seed,
-            start_time=start_time,
-            time_increment_in_seconds=time_increment,
+            scenario_id=environment_data.get("scenario_id", "custom"),  # ty: ignore[unknown-argument]
+            apps=apps,  # ty: ignore[unknown-argument]
+            events=events,  # ty: ignore[unknown-argument]
+            duration=duration,  # ty: ignore[unknown-argument]
+            seed=seed,  # ty: ignore[unknown-argument]
+            start_time=start_time,  # ty: ignore[unknown-argument]
+            time_increment_in_seconds=time_increment,  # ty: ignore[unknown-argument]
         )
         scenario.initialize()
         return scenario

@@ -1,7 +1,6 @@
 """Tests for AREEnvironment."""
 
-from unittest.mock import MagicMock, patch, PropertyMock
-import sys
+from unittest.mock import MagicMock, patch
 import pytest
 
 from maseval.interface.environments.are import AREEnvironment
@@ -10,6 +9,7 @@ from maseval.interface.environments.are import AREEnvironment
 @pytest.fixture(autouse=True)
 def mock_app_tool_adapter():
     """Mock AppToolAdapter so AREToolWrapper can initialize without ARE installed."""
+
     def make_adapter(are_tool):
         adapter = MagicMock()
         adapter.name = are_tool.name
@@ -275,12 +275,15 @@ class TestAREEnvironmentShorthandPath:
         mock_scenario_instance = _make_mock_scenario()
         mock_scenario_cls.return_value = mock_scenario_instance
 
-        with patch.dict("sys.modules", {
-            "are": MagicMock(),
-            "are.simulation": MagicMock(),
-            "are.simulation.scenarios": MagicMock(),
-            "are.simulation.scenarios.scenario": MagicMock(Scenario=mock_scenario_cls),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "are": MagicMock(),
+                "are.simulation": MagicMock(),
+                "are.simulation.scenarios": MagicMock(),
+                "are.simulation.scenarios.scenario": MagicMock(Scenario=mock_scenario_cls),
+            },
+        ):
             apps = [MagicMock(), MagicMock()]
             environment_data = {
                 "apps": apps,
@@ -289,7 +292,7 @@ class TestAREEnvironmentShorthandPath:
                 "start_time": 100,
                 "time_increment_in_seconds": 5,
             }
-            env = AREEnvironment(environment_data=environment_data)
+            AREEnvironment(environment_data=environment_data)
 
             mock_scenario_cls.assert_called_once()
             call_kwargs = mock_scenario_cls.call_args[1]
@@ -422,6 +425,7 @@ class TestAREToolWrapper:
         mock_env = MagicMock()
 
         from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
+
         wrapper = AREToolWrapper(mock_tool, mock_env)
 
         mock_adapter_cls.assert_called_once_with(mock_tool)

@@ -64,10 +64,7 @@ class AREToolWrapper(TraceableMixin, ConfigurableMixin):
 
         # Expose ARE tool metadata via AppToolAdapter (canonical source of truth)
         if AppToolAdapter is None:
-            raise ImportError(
-                "ARE (Agent Research Environments) is required for AREToolWrapper.\n"
-                "Install with: pip install maseval[are]"
-            )
+            raise ImportError("ARE (Agent Research Environments) is required for AREToolWrapper.\nInstall with: pip install maseval[are]")
         adapter = AppToolAdapter(are_tool)
         self.name: str = adapter.name
         self.description: str = adapter.description
