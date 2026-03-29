@@ -471,3 +471,191 @@ class TestAREEnvironmentNotifications:
 
         result = env.poll_notifications()
         assert result == ([], [], False)
+
+
+class TestAREEnvironmentAUIFiltering:
+    """Tests for AUI tool filtering."""
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_aui_tools_filtered_when_enabled(self, mock_import):
+        """AUI message-retrieval tools are excluded when filter_aui_tools=True."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        aui_app = MagicMock()
+        aui_app.name = "AgentUserInterface"
+        aui_tool_get = MagicMock()
+        aui_tool_get.name = "AgentUserInterface__get_last_message_from_user"
+        aui_tool_get.description = "Get message"
+        aui_tool_get.inputs = {}
+        aui_tool_get.output_type = "string"
+        aui_tool_get.args = []
+        aui_tool_send = MagicMock()
+        aui_tool_send.name = "AgentUserInterface__send_message_to_user"
+        aui_tool_send.description = "Send message"
+        aui_tool_send.inputs = {}
+        aui_tool_send.output_type = "string"
+        aui_tool_send.args = []
+        aui_app.get_tools.return_value = [aui_tool_get, aui_tool_send]
+
+        email_app = MagicMock()
+        email_app.name = "EmailClient"
+        email_tool = MagicMock()
+        email_tool.name = "EmailClient__send_email"
+        email_tool.description = "Send email"
+        email_tool.inputs = {"to": {"type": "string"}}
+        email_tool.output_type = "string"
+        email_tool.args = []
+        email_app.get_tools.return_value = [email_tool]
+
+        mock_are_env = MagicMock()
+        mock_are_env.apps = {"AgentUserInterface": aui_app, "EmailClient": email_app}
+        mock_are_env.current_time = 0.0
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(task_data={"scenario": scenario}, filter_aui_tools=True)
+
+        tools = env.get_tools()
+        assert "AgentUserInterface__get_last_message_from_user" not in tools
+        assert "AgentUserInterface__send_message_to_user" in tools
+        assert "EmailClient__send_email" in tools
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_aui_tools_not_filtered_by_default(self, mock_import):
+        """AUI tools are included by default."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        aui_app = MagicMock()
+        aui_app.name = "AgentUserInterface"
+        aui_tool = MagicMock()
+        aui_tool.name = "AgentUserInterface__get_last_message_from_user"
+        aui_tool.description = "Get message"
+        aui_tool.inputs = {}
+        aui_tool.output_type = "string"
+        aui_tool.args = []
+        aui_app.get_tools.return_value = [aui_tool]
+
+        mock_are_env = MagicMock()
+        mock_are_env.apps = {"AgentUserInterface": aui_app}
+        mock_are_env.current_time = 0.0
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(task_data={"scenario": scenario})
+
+        tools = env.get_tools()
+        assert "AgentUserInterface__get_last_message_from_user" in tools
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_wait_for_user_response_set_false(self, mock_import):
+        """filter_aui_tools=True sets wait_for_user_response=False on AUI app."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        aui_app = MagicMock()
+        aui_app.name = "AgentUserInterface"
+        aui_app.wait_for_user_response = True
+        aui_app.get_tools.return_value = []
+
+        mock_are_env = MagicMock()
+        mock_are_env.apps = {"AgentUserInterface": aui_app}
+        mock_are_env.current_time = 0.0
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        scenario = _make_mock_scenario()
+        AREEnvironment(task_data={"scenario": scenario}, filter_aui_tools=True)
+
+        assert aui_app.wait_for_user_response is False
+
+
+class TestAREEnvironmentTurnNotifications:
+    """Tests for get_turn_notifications."""
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_requeues_env_notifications(self, mock_import):
+        """get_turn_notifications re-queues env notifications."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        mock_message_type = MagicMock()
+        mock_message_type.USER_MESSAGE = "user"
+        mock_message_type.ENVIRONMENT_NOTIFICATION = "env"
+        mock_message_type.ENVIRONMENT_STOP = "stop"
+
+        user_notif = MagicMock()
+        user_notif.message_type = mock_message_type.USER_MESSAGE
+        user_notif.message = "Hello agent"
+
+        env_notif = MagicMock()
+        env_notif.message_type = mock_message_type.ENVIRONMENT_NOTIFICATION
+        env_notif.message = "New email arrived"
+
+        mock_notif_sys = MagicMock()
+        mock_notif_sys.message_queue.get_by_timestamp.return_value = [user_notif, env_notif]
+        mock_are_env.notification_system = mock_notif_sys
+
+        scenario = _make_mock_scenario()
+
+        with patch.dict("sys.modules", {"are.simulation.notification_system": MagicMock(MessageType=mock_message_type)}):
+            env = AREEnvironment(task_data={"scenario": scenario})
+            user_msgs, has_env, has_stop = env.get_turn_notifications()
+
+        assert user_msgs == ["Hello agent"]
+        assert has_env is True
+        assert has_stop is False
+        mock_notif_sys.message_queue.put.assert_called_once_with(env_notif)
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_returns_empty_when_no_env(self, mock_import):
+        """Returns empty results when no ARE environment."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(task_data={"scenario": scenario})
+        env._are_env = None
+
+        result = env.get_turn_notifications()
+        assert result == ([], False, False)
+
+
+class TestAREEnvironmentAccessors:
+    """Tests for convenience accessors."""
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_get_scenario(self, mock_import):
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(task_data={"scenario": scenario})
+        assert env.get_scenario() is scenario
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_get_start_time(self, mock_import):
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+        scenario = _make_mock_scenario(start_time=1000)
+        env = AREEnvironment(task_data={"scenario": scenario})
+        assert env.get_start_time() == 1000
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_get_notification_system(self, mock_import):
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_env = _make_mock_are_env()
+        mock_notif_sys = MagicMock()
+        mock_are_env.notification_system = mock_notif_sys
+        mock_are_mod.Environment.return_value = mock_are_env
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(task_data={"scenario": scenario})
+        assert env.get_notification_system() is mock_notif_sys

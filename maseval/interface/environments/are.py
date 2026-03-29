@@ -59,12 +59,20 @@ class AREEnvironment(Environment):
     ``stop()`` after. ``pause()``/``resume_with_offset()`` control simulation time.
     """
 
+    _AUI_TOOLS_TO_REMOVE = {
+        "AgentUserInterface__get_last_message_from_user",
+        "AgentUserInterface__get_last_message_from_agent",
+        "AgentUserInterface__get_last_unread_messages",
+        "AgentUserInterface__get_all_messages",
+    }
+
     def __init__(
         self,
         task_data: Dict[str, Any],
         callbacks: Optional[List[EnvironmentCallback]] = None,
         run_oracle: bool = False,
         notification_verbosity: str = "medium",
+        filter_aui_tools: bool = False,
     ):
         """Initialize AREEnvironment.
 
@@ -83,6 +91,7 @@ class AREEnvironment(Environment):
         """
         self._run_oracle = run_oracle
         self._notification_verbosity = notification_verbosity
+        self._filter_aui_tools = filter_aui_tools
         self._are_env: Any = None
         self._scenario: Any = None
         self._oracle_traces: Optional[Dict[str, Any]] = None
@@ -245,7 +254,11 @@ class AREEnvironment(Environment):
             return tools
 
         for app in self._are_env.apps.values():
+            if self._filter_aui_tools and hasattr(app, "wait_for_user_response"):
+                app.wait_for_user_response = False
             for are_tool in app.get_tools():
+                if self._filter_aui_tools and are_tool.name in self._AUI_TOOLS_TO_REMOVE:
+                    continue
                 wrapper = AREToolWrapper(are_tool, self)
                 tools[are_tool.name] = wrapper
                 self._tool_wrappers[are_tool.name] = wrapper
@@ -335,6 +348,57 @@ class AREEnvironment(Environment):
 
         return user_messages, env_notifications, has_stop
 
+    def get_turn_notifications(self) -> Tuple[List[str], bool, bool]:
+        """Drain pending notifications, re-queuing environment notifications.
+
+        Like ``poll_notifications`` but instead of formatting environment
+        notifications into strings, it re-queues them back onto the message
+        queue so they remain available for later processing, and returns
+        boolean flags indicating their presence.
+
+        Returns:
+            Tuple of ``(user_messages, has_env_notifications, has_stop)``.
+            ``user_messages``: Messages from simulated users.
+            ``has_env_notifications``: True if any environment notifications were seen.
+            ``has_stop``: True when simulation has ended.
+
+        Raises:
+            Any exception from the underlying ARE notification system is
+            propagated so the benchmark runner can classify it.
+        """
+        if self._are_env is None:
+            return [], False, False
+
+        notification_system = getattr(self._are_env, "notification_system", None)
+        if notification_system is None:
+            return [], False, False
+
+        from datetime import datetime, timezone
+        from are.simulation.notification_system import MessageType  # type: ignore[import-not-found]
+
+        sim_time = self.get_simulation_time()
+        timestamp = datetime.fromtimestamp(sim_time, tz=timezone.utc)
+        unhandled = notification_system.message_queue.get_by_timestamp(timestamp=timestamp)
+
+        if not unhandled:
+            return [], False, False
+
+        user_messages: List[str] = []
+        has_env = False
+        has_stop = False
+
+        for notif in unhandled:
+            msg_type = getattr(notif, "message_type", None)
+            if msg_type == MessageType.USER_MESSAGE:
+                user_messages.append(notif.message)
+            elif msg_type == MessageType.ENVIRONMENT_NOTIFICATION:
+                has_env = True
+                notification_system.message_queue.put(notif)
+            elif msg_type == MessageType.ENVIRONMENT_STOP:
+                has_stop = True
+
+        return user_messages, has_env, has_stop
+
     # ── Data Access ───────────────────────────────────────────────────
 
     def get_simulation_time(self) -> float:
@@ -349,6 +413,20 @@ class AREEnvironment(Environment):
     def get_are_environment(self) -> Any:
         """Get the underlying ARE Environment instance."""
         return self._are_env
+
+    def get_scenario(self) -> Any:
+        """Get the ARE scenario object."""
+        return self._scenario
+
+    def get_start_time(self) -> Optional[float]:
+        """Get the scenario start time."""
+        return self.state.get("start_time")
+
+    def get_notification_system(self) -> Any:
+        """Get the ARE notification system."""
+        if self._are_env is None:
+            return None
+        return getattr(self._are_env, "notification_system", None)
 
     def get_oracle_traces(self) -> Optional[Dict[str, Any]]:
         """Get oracle event log if oracle mode was enabled.
