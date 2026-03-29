@@ -218,17 +218,15 @@ class LangGraphAgentAdapter(AgentAdapter):
                     safe_config["configurable"] = {"has_thread_id": "thread_id" in value if isinstance(value, dict) else False}
             langgraph_config["config"] = safe_config
 
-        # Try to get graph structure info
+        # Get graph structure info — let errors propagate so they're
+        # visible in the registry's error output.
         if hasattr(self.agent, "get_graph"):
-            try:
-                graph = self.agent.get_graph()
-                if graph:
-                    langgraph_config["graph_info"] = {
-                        "num_nodes": len(graph.nodes) if hasattr(graph, "nodes") else None,
-                        "num_edges": len(graph.edges) if hasattr(graph, "edges") else None,
-                    }
-            except Exception:
-                pass
+            graph = self.agent.get_graph()
+            if graph:
+                langgraph_config["graph_info"] = {
+                    "num_nodes": len(graph.nodes) if hasattr(graph, "nodes") else None,
+                    "num_edges": len(graph.edges) if hasattr(graph, "edges") else None,
+                }
 
         if langgraph_config:
             base_config["langgraph_config"] = langgraph_config

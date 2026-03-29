@@ -5,6 +5,7 @@ from uuid import uuid4
 from collections.abc import Sequence
 from typing import Iterable, List, Union, Iterator, Optional
 import json
+import pickle
 from pathlib import Path
 from enum import Enum
 
@@ -425,6 +426,147 @@ class SequentialTaskQueue(BaseTaskQueue):
     def __iter__(self) -> Iterator[Task]:
         """Yield tasks in original order."""
         return iter(self._tasks)
+
+
+class InformativeSubsetQueue(SequentialTaskQueue):
+    """Evaluates an informative subset of tasks in a specified order.
+
+    Used for efficient evaluation where a carefully selected subset of tasks
+    can predict performance on the full dataset. The subset is defined by
+    ``indices`` — integer positions into the original task list. Only tasks
+    at those positions are yielded, in the order given by ``indices``.
+
+    The informativeness criterion (how the indices were chosen) is determined
+    by the caller or by a subclass. This base class is criterion-agnostic.
+
+    When ``indices`` is ``None``, all tasks are yielded in their original
+    order (equivalent to ``SequentialTaskQueue``).
+
+    Attributes:
+        _all_tasks: The complete, unfiltered task list.
+        _indices: The subset indices, or ``None``.
+
+    Example:
+        ```python
+        # Evaluate only tasks at indices 0, 5, 12
+        queue = InformativeSubsetQueue(tasks, indices=[0, 5, 12])
+
+        for task in queue:
+            result = execute(task)  # Only 3 tasks
+        ```
+    """
+
+    def __init__(self, tasks: Iterable[Task], indices: Optional[List[int]] = None) -> None:
+        """Initialize informative-subset task queue.
+
+        Args:
+            tasks: Full list of tasks (ordered by index).
+            indices: Positions into ``tasks`` selecting which tasks to evaluate
+                and in what order. If ``None``, evaluates all tasks in order.
+        """
+        all_tasks = list(tasks)
+        self._all_tasks: List[Task] = all_tasks
+        self._indices: Optional[List[int]] = indices
+
+        if indices is not None:
+            n_tasks = len(all_tasks)
+            out_of_range = [idx for idx in indices if idx < 0 or idx >= n_tasks]
+            if out_of_range:
+                raise IndexError(
+                    f"Indices {out_of_range} are out of range for task list of length {n_tasks}. "
+                    "This likely means a mismatch between the task data and the index file."
+                )
+            filtered = [all_tasks[idx] for idx in indices]
+            super().__init__(filtered)
+        else:
+            super().__init__(all_tasks)
+
+
+class DISCOQueue(InformativeSubsetQueue):
+    """Diversity-based informative subset using DISCO anchor points.
+
+    Selects a diverse subset of tasks (anchor points) for evaluation. Full
+    benchmark performance is then predicted from results on this subset using
+    DISCO (Diversifying Sample Condensation for Efficient Model Evaluation).
+
+    The informativeness criterion is **diversity**: anchor points are chosen
+    to maximise disagreement across models, so that a small evaluation set
+    captures the discriminative structure of the full benchmark.
+
+    Reference: `DISCO: Diversifying Sample Condensation for Efficient Model
+    Evaluation <https://arxiv.org/abs/2510.07959>`_
+
+    Example:
+        ```python
+        queue = DISCOQueue(tasks, anchor_points=[0, 5, 12])
+        # or load from file:
+        queue = DISCOQueue(tasks, anchor_points_path="anchor_points.pkl")
+
+        for task in queue:
+            result = execute(task)  # Only anchor-point tasks
+        ```
+    """
+
+    def __init__(
+        self,
+        tasks: Iterable[Task],
+        anchor_points: Optional[List[int]] = None,
+        anchor_points_path: Optional[Union[str, Path]] = None,
+    ) -> None:
+        """Initialize DISCO task queue.
+
+        Anchor points can be supplied directly via ``anchor_points`` or loaded
+        from a file via ``anchor_points_path``.  Providing both is an error.
+
+        Args:
+            tasks: Full list of tasks (ordered by index).
+            anchor_points: Diversity-selected indices into ``tasks``.
+                Typically downloaded from a HuggingFace DISCO model repo.
+                If ``None`` and ``anchor_points_path`` is also ``None``,
+                evaluates all tasks in order.
+            anchor_points_path: Path to a ``.json`` or ``.pkl`` file
+                containing anchor-point indices.  Mutually exclusive with
+                ``anchor_points``.
+        """
+        if anchor_points is not None and anchor_points_path is not None:
+            raise ValueError("Provide either anchor_points or anchor_points_path, not both.")
+
+        if anchor_points_path is not None:
+            anchor_points = self.load_anchor_points(anchor_points_path)
+
+        self._anchor_points: Optional[List[int]] = anchor_points
+        super().__init__(tasks, indices=anchor_points)
+
+    @staticmethod
+    def load_anchor_points(path: Union[str, Path]) -> List[int]:
+        """Load anchor points from a ``.json`` or ``.pkl`` file.
+
+        Args:
+            path: Path to anchor points file. JSON files should contain a
+                list of integer indices. Pickle files may contain a list or
+                a numpy array.
+
+        Returns:
+            List of integer anchor-point indices.
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+        """
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Anchor points file not found: {path}")
+
+        if path.suffix.lower() == ".json":
+            with open(path) as f:
+                anchor_points = json.load(f)
+        else:
+            with open(path, "rb") as f:
+                anchor_points = pickle.load(f)
+
+        if hasattr(anchor_points, "tolist"):
+            anchor_points = anchor_points.tolist()
+
+        return list(anchor_points)
 
 
 class PriorityTaskQueue(BaseTaskQueue):

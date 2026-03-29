@@ -3,7 +3,7 @@
 Tests specific behavior and integration for each ModelAdapter implementation:
 - OpenAIModelAdapter
 - GoogleGenAIModelAdapter
-- HuggingFaceModelAdapter
+- HuggingFacePipelineModelAdapter
 - LiteLLMModelAdapter
 
 These tests verify that each adapter correctly wraps its underlying client
@@ -645,30 +645,30 @@ class TestGoogleGenAIModelAdapterIntegration:
 
 
 @pytest.mark.interface
-class TestHuggingFaceModelAdapterIntegration:
-    """Test HuggingFaceModelAdapter specific behavior."""
+class TestHuggingFacePipelineModelAdapterIntegration:
+    """Test HuggingFacePipelineModelAdapter specific behavior."""
 
     def test_huggingface_adapter_initialization(self):
-        """HuggingFaceModelAdapter initializes with callable."""
+        """HuggingFacePipelineModelAdapter initializes with callable."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         def mock_model(prompt, **kwargs):
             return f"Response to: {prompt}"
 
-        adapter = HuggingFaceModelAdapter(model=mock_model, model_id="gpt2")
+        adapter = HuggingFacePipelineModelAdapter(model=mock_model, model_id="gpt2")
 
         assert adapter.model_id == "gpt2"
 
     def test_huggingface_adapter_generate(self):
-        """HuggingFaceModelAdapter generates text with message formatting."""
+        """HuggingFacePipelineModelAdapter generates text with message formatting."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         def mock_model(prompt, **kwargs):
             return f"Generated: {prompt}"
 
-        adapter = HuggingFaceModelAdapter(model=mock_model, model_id="gpt2")
+        adapter = HuggingFacePipelineModelAdapter(model=mock_model, model_id="gpt2")
         result = adapter.generate("Test prompt")
 
         assert isinstance(result, str)
@@ -676,9 +676,9 @@ class TestHuggingFaceModelAdapterIntegration:
         assert "Generated:" in result
 
     def test_huggingface_adapter_default_generation_params(self):
-        """HuggingFaceModelAdapter uses default generation parameters."""
+        """HuggingFacePipelineModelAdapter uses default generation parameters."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         captured_params = {}
 
@@ -686,7 +686,7 @@ class TestHuggingFaceModelAdapterIntegration:
             captured_params.update(kwargs)
             return "Response"
 
-        adapter = HuggingFaceModelAdapter(
+        adapter = HuggingFacePipelineModelAdapter(
             model=mock_model,
             model_id="gpt2",
             default_generation_params={"max_length": 50, "temperature": 0.7},
@@ -699,29 +699,29 @@ class TestHuggingFaceModelAdapterIntegration:
         assert captured_params["temperature"] == 0.7
 
     def test_huggingface_adapter_fallback_without_kwargs(self):
-        """HuggingFaceModelAdapter falls back to calling without kwargs."""
+        """HuggingFacePipelineModelAdapter falls back to calling without kwargs."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         def mock_model(prompt):
             # Only accepts prompt
             return f"Response: {prompt}"
 
-        adapter = HuggingFaceModelAdapter(model=mock_model, model_id="gpt2")
+        adapter = HuggingFacePipelineModelAdapter(model=mock_model, model_id="gpt2")
         result = adapter.generate("Test")
 
         # Should still work, just formats the prompt as messages
         assert "Response:" in result
 
     def test_huggingface_adapter_gather_config(self):
-        """HuggingFaceModelAdapter config includes parameters."""
+        """HuggingFacePipelineModelAdapter config includes parameters."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         def mock_model(prompt):
             return "Response"
 
-        adapter = HuggingFaceModelAdapter(
+        adapter = HuggingFacePipelineModelAdapter(
             model=mock_model,
             model_id="gpt2",
             default_generation_params={"max_length": 100},
@@ -734,9 +734,9 @@ class TestHuggingFaceModelAdapterIntegration:
         assert "callable_type" in config
 
     def test_huggingface_adapter_gather_config_with_pipeline(self):
-        """HuggingFaceModelAdapter config includes pipeline configuration."""
+        """HuggingFacePipelineModelAdapter config includes pipeline configuration."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         # Mock pipeline object with attributes
         class MockPipeline:
@@ -749,7 +749,7 @@ class TestHuggingFaceModelAdapterIntegration:
                 return "Response"
 
         pipeline = MockPipeline()
-        adapter = HuggingFaceModelAdapter(model=pipeline, model_id="gpt2")
+        adapter = HuggingFacePipelineModelAdapter(model=pipeline, model_id="gpt2")
 
         config = adapter.gather_config()
 
@@ -759,17 +759,17 @@ class TestHuggingFaceModelAdapterIntegration:
         assert config["pipeline_config"]["framework"] == "pt"
 
     def test_huggingface_adapter_tools_raises_error_without_support(self):
-        """HuggingFaceModelAdapter raises error when tools not supported."""
+        """HuggingFacePipelineModelAdapter raises error when tools not supported."""
         pytest.importorskip("transformers")
         from maseval.interface.inference.huggingface import (
-            HuggingFaceModelAdapter,
+            HuggingFacePipelineModelAdapter,
             ToolCallingNotSupportedError,
         )
 
         def mock_model(prompt, **kwargs):
             return "Response"
 
-        adapter = HuggingFaceModelAdapter(model=mock_model, model_id="test-model")
+        adapter = HuggingFacePipelineModelAdapter(model=mock_model, model_id="test-model")
 
         with pytest.raises(ToolCallingNotSupportedError):
             adapter.chat(
@@ -778,10 +778,10 @@ class TestHuggingFaceModelAdapterIntegration:
             )
 
     def test_huggingface_adapter_tools_raises_when_template_doesnt_support(self):
-        """HuggingFaceModelAdapter raises error when template doesn't support tools."""
+        """HuggingFacePipelineModelAdapter raises error when template doesn't support tools."""
         pytest.importorskip("transformers")
         from maseval.interface.inference.huggingface import (
-            HuggingFaceModelAdapter,
+            HuggingFacePipelineModelAdapter,
             ToolCallingNotSupportedError,
         )
 
@@ -797,7 +797,7 @@ class TestHuggingFaceModelAdapterIntegration:
             def __call__(self, prompt, **kwargs):
                 return "Response"
 
-        adapter = HuggingFaceModelAdapter(model=MockPipeline(), model_id="test-model")
+        adapter = HuggingFacePipelineModelAdapter(model=MockPipeline(), model_id="test-model")
 
         with pytest.raises(ToolCallingNotSupportedError):
             adapter.chat(
@@ -806,9 +806,9 @@ class TestHuggingFaceModelAdapterIntegration:
             )
 
     def test_huggingface_adapter_chat_template_with_tools(self):
-        """HuggingFaceModelAdapter works when template supports tools."""
+        """HuggingFacePipelineModelAdapter works when template supports tools."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         class MockTokenizer:
             def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=False, tools=None, **kwargs):
@@ -820,7 +820,7 @@ class TestHuggingFaceModelAdapterIntegration:
             def __call__(self, prompt, **kwargs):
                 return "Response"
 
-        adapter = HuggingFaceModelAdapter(model=MockPipeline(), model_id="test-model")
+        adapter = HuggingFacePipelineModelAdapter(model=MockPipeline(), model_id="test-model")
         response = adapter.chat(
             [{"role": "user", "content": "Test"}],
             tools=[{"type": "function", "function": {"name": "test"}}],
@@ -829,9 +829,9 @@ class TestHuggingFaceModelAdapterIntegration:
         assert response is not None
 
     def test_huggingface_adapter_parses_tool_calls_from_output(self):
-        """HuggingFaceModelAdapter parses tool calls from model output."""
+        """HuggingFacePipelineModelAdapter parses tool calls from model output."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         class MockTokenizer:
             def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=False, tools=None, **kwargs):
@@ -843,7 +843,7 @@ class TestHuggingFaceModelAdapterIntegration:
             def __call__(self, prompt, **kwargs):
                 return '<tool_call>{"name": "search", "arguments": {"q": "test"}}</tool_call>'
 
-        adapter = HuggingFaceModelAdapter(model=MockPipeline(), model_id="test-model")
+        adapter = HuggingFacePipelineModelAdapter(model=MockPipeline(), model_id="test-model")
         response = adapter.chat(
             [{"role": "user", "content": "Search"}],
             tools=[{"type": "function", "function": {"name": "search"}}],
@@ -854,9 +854,9 @@ class TestHuggingFaceModelAdapterIntegration:
         assert any(tc["function"]["name"] == "search" for tc in response.tool_calls)
 
     def test_huggingface_adapter_chat_with_tokenizer(self):
-        """HuggingFaceModelAdapter uses chat template when available."""
+        """HuggingFacePipelineModelAdapter uses chat template when available."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         class MockTokenizer:
             def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=False, **kwargs):
@@ -868,42 +868,42 @@ class TestHuggingFaceModelAdapterIntegration:
             def __call__(self, prompt, **kwargs):
                 return f"Response to: {prompt}"
 
-        adapter = HuggingFaceModelAdapter(model=MockPipeline(), model_id="test-model")
+        adapter = HuggingFacePipelineModelAdapter(model=MockPipeline(), model_id="test-model")
         response = adapter.chat([{"role": "user", "content": "Hello"}])
 
         assert response.content is not None
 
     def test_huggingface_adapter_pipeline_response_format(self):
-        """HuggingFaceModelAdapter handles pipeline list response format."""
+        """HuggingFacePipelineModelAdapter handles pipeline list response format."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         def mock_model(prompt, **kwargs):
             return [{"generated_text": prompt + " Generated"}]
 
-        adapter = HuggingFaceModelAdapter(model=mock_model, model_id="test-model")
+        adapter = HuggingFacePipelineModelAdapter(model=mock_model, model_id="test-model")
         response = adapter.chat([{"role": "user", "content": "Test"}])
 
         assert response.content is not None
         assert "Generated" in response.content
 
     def test_huggingface_adapter_dict_response_format(self):
-        """HuggingFaceModelAdapter handles dict response format."""
+        """HuggingFacePipelineModelAdapter handles dict response format."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         def mock_model(prompt, **kwargs):
             return {"generated_text": "Dict response"}
 
-        adapter = HuggingFaceModelAdapter(model=mock_model, model_id="test-model")
+        adapter = HuggingFacePipelineModelAdapter(model=mock_model, model_id="test-model")
         response = adapter.chat([{"role": "user", "content": "Test"}])
 
         assert response.content == "Dict response"
 
     def test_huggingface_adapter_nested_tokenizer(self):
-        """HuggingFaceModelAdapter gets tokenizer from model.model.tokenizer."""
+        """HuggingFacePipelineModelAdapter gets tokenizer from model.model.tokenizer."""
         pytest.importorskip("transformers")
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
         class MockTokenizer:
             def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=False, **kwargs):
@@ -918,7 +918,7 @@ class TestHuggingFaceModelAdapterIntegration:
             def __call__(self, prompt, **kwargs):
                 return "Response"
 
-        adapter = HuggingFaceModelAdapter(model=MockPipeline(), model_id="test-model")
+        adapter = HuggingFacePipelineModelAdapter(model=MockPipeline(), model_id="test-model")
         response = adapter.chat([{"role": "user", "content": "Test"}])
 
         assert response is not None
@@ -1673,7 +1673,7 @@ class TestCrossAdapterConsistency:
 
         from maseval.interface.inference.openai import OpenAIModelAdapter
         from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
         from maseval.interface.inference.litellm import LiteLLMModelAdapter
 
         # OpenAI - mock with modern interface
@@ -1706,7 +1706,7 @@ class TestCrossAdapterConsistency:
         assert google_adapter.model_id == "gemini-pro"
 
         # HuggingFace
-        hf_adapter = HuggingFaceModelAdapter(model=lambda p: "R", model_id="gpt2")
+        hf_adapter = HuggingFacePipelineModelAdapter(model=lambda p: "R", model_id="gpt2")
         assert hf_adapter.model_id == "gpt2"
 
         # LiteLLM
@@ -1722,7 +1722,7 @@ class TestCrossAdapterConsistency:
 
         from maseval.interface.inference.openai import OpenAIModelAdapter
         from maseval.interface.inference.google_genai import GoogleGenAIModelAdapter
-        from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+        from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
         from maseval.interface.inference.litellm import LiteLLMModelAdapter
 
         params = {"temperature": 0.7}
@@ -1761,7 +1761,7 @@ class TestCrossAdapterConsistency:
         assert "default_generation_params" in google_config
 
         # HuggingFace
-        hf_config = HuggingFaceModelAdapter(model=lambda p: "R", model_id="gpt2", default_generation_params=params).gather_config()
+        hf_config = HuggingFacePipelineModelAdapter(model=lambda p: "R", model_id="gpt2", default_generation_params=params).gather_config()
         assert "default_generation_params" in hf_config
 
         # LiteLLM

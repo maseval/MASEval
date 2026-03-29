@@ -136,8 +136,8 @@ class TestGaia2EnvironmentInit:
         mock_scenario.scenario_id = "test_scenario"
 
         with patch.dict(sys.modules, modules):
-            task_data = {"scenario": mock_scenario}
-            env = Gaia2Environment(task_data=task_data)
+            environment_data = {"scenario": mock_scenario}
+            env = Gaia2Environment(environment_data=environment_data)
 
             assert env._scenario is mock_scenario
 
@@ -149,7 +149,7 @@ class TestGaia2EnvironmentInit:
 
         with patch.dict(sys.modules, modules):
             with pytest.raises(ValueError, match="scenario"):
-                Gaia2Environment(task_data={})
+                Gaia2Environment(environment_data={})
 
 
 # =============================================================================
@@ -193,7 +193,7 @@ class TestGaia2EnvironmentCreateTools:
         mock_scenario.scenario_id = "test"
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
             tools = env.create_tools()
 
             assert "TestTool__do_something" in tools
@@ -243,7 +243,7 @@ class TestGaia2EnvironmentCreateTools:
         mock_scenario.scenario_id = "test"
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
             tools = env.create_tools()
 
             # Kept tools should be present
@@ -285,7 +285,7 @@ class TestGaia2EnvironmentCreateTools:
         mock_scenario.scenario_id = "test"
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
             env.create_tools()
 
             assert mock_aui_app.wait_for_user_response is False
@@ -304,7 +304,7 @@ class TestGaia2EnvironmentCreateTools:
         mock_scenario.events = []  # No oracle events in mock scenario
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
             # Manually set _are_env to None
             env._are_env = None
             tools = env.create_tools()
@@ -335,7 +335,7 @@ class TestGaia2EnvironmentCleanup:
         mock_scenario.events = []  # No oracle events in mock scenario
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
             env.cleanup()
 
             mock_env_instance.stop.assert_called_once()
@@ -354,7 +354,7 @@ class TestGaia2EnvironmentCleanup:
         mock_scenario.events = []  # No oracle events in mock scenario
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
             env._are_env = None
 
             # Should not raise
@@ -375,7 +375,7 @@ class TestGaia2EnvironmentCleanup:
         mock_scenario.events = []  # No oracle events in mock scenario
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
 
             # Should not raise
             env.cleanup()
@@ -404,7 +404,7 @@ class TestGaia2EnvironmentAccessors:
         mock_scenario.events = []  # No oracle events in mock scenario
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
 
             assert env.get_are_environment() is mock_env_instance
 
@@ -422,7 +422,7 @@ class TestGaia2EnvironmentAccessors:
         mock_scenario.events = []  # No oracle events in mock scenario
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
 
             assert env.get_scenario() is mock_scenario
 
@@ -441,7 +441,7 @@ class TestGaia2EnvironmentAccessors:
         mock_scenario.events = []  # No oracle events in mock scenario
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
 
             assert env.get_simulation_time() == 123.5
 
@@ -459,7 +459,7 @@ class TestGaia2EnvironmentAccessors:
         mock_scenario.events = []  # No oracle events in mock scenario
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
             env._are_env = None
 
             assert env.get_simulation_time() == 0.0
@@ -489,7 +489,7 @@ class TestGaia2EnvironmentTracing:
         mock_scenario.events = []  # No oracle events in mock scenario
 
         with patch.dict(sys.modules, modules):
-            env = Gaia2Environment(task_data={"scenario": mock_scenario})
+            env = Gaia2Environment(environment_data={"scenario": mock_scenario})
             traces = env.gather_traces()
 
             assert "type" in traces
@@ -511,7 +511,7 @@ class TestGaia2EnvironmentTracing:
 
         with patch.dict(sys.modules, modules):
             env = Gaia2Environment(
-                task_data={
+                environment_data={
                     "scenario": mock_scenario,
                     "capability": "execution",
                 }
@@ -551,7 +551,7 @@ class TestGaia2EnvironmentJudgeEngineConfig:
         mock_scenario.events = []
 
         with patch.dict(sys.modules, modules):
-            Gaia2Environment(task_data={"scenario": mock_scenario})
+            Gaia2Environment(environment_data={"scenario": mock_scenario})
 
             # Default: GraphPerEventJudgeConfig() called with no arguments
             mock_judge_config_cls.assert_called_once_with()
@@ -600,7 +600,7 @@ class TestGaia2EnvironmentJudgeEngineConfig:
 
         with patch.dict(sys.modules, modules):
             Gaia2Environment(
-                task_data={"scenario": mock_scenario},
+                environment_data={"scenario": mock_scenario},
                 judge_engine_config=judge_engine_config,
             )
 

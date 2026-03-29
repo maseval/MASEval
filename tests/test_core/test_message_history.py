@@ -241,3 +241,102 @@ class TestMessageHistory:
 
         # Verify still has 2 messages
         assert len(history) == 2
+
+    def test_clear(self):
+        """Test that clear removes all messages."""
+        history = MessageHistory()
+        history.add_message("user", "Hello")
+        history.add_message("assistant", "Hi")
+        assert len(history) == 2
+        history.clear()
+        assert len(history) == 0
+        assert not history
+
+    def test_filter_by_role(self):
+        """Test filtering messages by role."""
+        history = MessageHistory()
+        history.add_message("user", "U1")
+        history.add_message("assistant", "A1")
+        history.add_message("user", "U2")
+        history.add_message("system", "S1")
+        user_msgs = history.filter_by_role("user")
+        assert len(user_msgs) == 2
+        assert all(m["role"] == "user" for m in user_msgs)
+        assert history.filter_by_role("system") == [history[3]]
+        assert history.filter_by_role("tool") == []
+
+    def test_get_last_message(self):
+        """Test get_last_message returns last message or None."""
+        history = MessageHistory()
+        assert history.get_last_message() is None
+        history.add_message("user", "First")
+        history.add_message("assistant", "Second")
+        last = history.get_last_message()
+        assert last is not None
+        assert last["content"] == "Second"
+
+    def test_to_openai_format_strips_metadata_and_timestamps(self):
+        """Test to_openai_format strips metadata and timestamps."""
+        history = MessageHistory()
+        history.add_message("user", "Hello", metadata={"key": "val"})
+        history.add_message("assistant", "Hi", name="bot")
+        openai_msgs = history.to_openai_format()
+        assert len(openai_msgs) == 2
+        assert "metadata" not in openai_msgs[0]
+        assert "timestamp" not in openai_msgs[0]
+        assert openai_msgs[0] == {"role": "user", "content": "Hello"}
+        assert openai_msgs[1] == {"role": "assistant", "content": "Hi", "name": "bot"}
+
+    def test_to_openai_format_preserves_tool_calls(self):
+        """Test to_openai_format preserves tool_calls and tool_call_id."""
+        history = MessageHistory()
+        tc = [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]
+        history.add_tool_call(tool_calls=tc)
+        history.add_tool_response(tool_call_id="c1", content="result")
+        openai_msgs = history.to_openai_format()
+        assert openai_msgs[0]["tool_calls"] == tc
+        assert openai_msgs[1]["tool_call_id"] == "c1"
+
+    def test_add_tool_call_without_content(self):
+        """Test add_tool_call without content omits content key."""
+        history = MessageHistory()
+        history.add_tool_call(tool_calls=[{"id": "c1"}])
+        assert "content" not in history[0]
+
+    def test_add_tool_call_with_content(self):
+        """Test add_tool_call with content includes it."""
+        history = MessageHistory()
+        history.add_tool_call(tool_calls=[{"id": "c1"}], content="thinking...")
+        assert history[0]["content"] == "thinking..."
+
+
+@pytest.mark.core
+class TestToolInvocationHistory:
+    """Tests for ToolInvocationHistory."""
+
+    def test_add_and_len(self):
+        from maseval.core.history import ToolInvocationHistory
+
+        h = ToolInvocationHistory()
+        assert len(h) == 0
+        h.add_invocation(inputs={"x": 1}, outputs={"y": 2}, status="success")
+        assert len(h) == 1
+
+    def test_to_list(self):
+        from maseval.core.history import ToolInvocationHistory
+
+        h = ToolInvocationHistory()
+        h.add_invocation(inputs="in", outputs="out", status="ok")
+        records = h.to_list()
+        assert len(records) == 1
+        assert records[0]["inputs"] == "in"
+        assert records[0]["outputs"] == "out"
+        assert records[0]["status"] == "ok"
+        assert "id" in records[0]
+        assert "timestamp" in records[0]
+
+    def test_init_with_records(self):
+        from maseval.core.history import ToolInvocationHistory
+
+        h = ToolInvocationHistory(records=[{"id": "x", "inputs": 1, "outputs": 2, "status": "ok"}])
+        assert len(h) == 1

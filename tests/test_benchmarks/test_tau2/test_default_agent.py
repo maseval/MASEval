@@ -741,7 +741,7 @@ class TestTau2BenchmarkMethods:
             _env = benchmark.setup_environment({}, sample_task, seed_gen)
 
             mock_env_cls.assert_called_once_with(
-                task_data=sample_task.environment_data,
+                environment_data=sample_task.environment_data,
             )
 
     def test_setup_user_with_dict_instructions(self):

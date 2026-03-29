@@ -628,12 +628,12 @@ class TestModelAdapterSeeding:
         assert adapter.seed == 42
 
     def test_huggingface_adapter_accepts_seed(self):
-        """HuggingFaceModelAdapter accepts seed parameter."""
-        from maseval.interface.inference import HuggingFaceModelAdapter
+        """HuggingFacePipelineModelAdapter accepts seed parameter."""
+        from maseval.interface.inference import HuggingFacePipelineModelAdapter
 
         def mock_model(x):
             return "response"
 
-        adapter = HuggingFaceModelAdapter(model=mock_model, model_id="llama", seed=42)
+        adapter = HuggingFacePipelineModelAdapter(model=mock_model, model_id="llama", seed=42)
 
         assert adapter.seed == 42

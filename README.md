@@ -102,6 +102,13 @@ pip install "maseval[langgraph]"
 pip install "maseval[llamaindex]"
 ```
 
+Or install benchmark-specific dependencies:
+
+```bash
+# MMLU (HuggingFace models)
+pip install "maseval[mmlu]"
+```
+
 ## Example
 
 Examples are available in the [Documentation](https://maseval.readthedocs.io/en/stable/).

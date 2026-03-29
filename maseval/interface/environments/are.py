@@ -50,10 +50,10 @@ def _import_are() -> Any:
 class AREEnvironment(Environment):
     """Generic maseval Environment wrapping ARE's simulation infrastructure.
 
-    Supports two construction paths via ``task_data`` (= ``task.environment_data``):
+    Supports two construction paths via ``environment_data``:
 
-    1. **Scenario path:** ``task_data = {"scenario": <ARE Scenario>}``
-    2. **Shorthand path:** ``task_data = {"apps": [...], "events": [...], "duration": 1800, ...}``
+    1. **Scenario path:** ``environment_data = {"scenario": <ARE Scenario>}``
+    2. **Shorthand path:** ``environment_data = {"apps": [...], "events": [...], "duration": 1800, ...}``
 
     Lifecycle is user-controlled: call ``start()`` before ``run_agents()``,
     ``stop()`` after. ``pause()``/``resume_with_offset()`` control simulation time.
@@ -68,7 +68,7 @@ class AREEnvironment(Environment):
 
     def __init__(
         self,
-        task_data: Dict[str, Any],
+        environment_data: Dict[str, Any],
         callbacks: Optional[List[EnvironmentCallback]] = None,
         run_oracle: bool = False,
         notification_verbosity: str = "medium",
@@ -77,7 +77,7 @@ class AREEnvironment(Environment):
         """Initialize AREEnvironment.
 
         Args:
-            task_data: ``task.environment_data`` dict. Must contain either:
+            environment_data: Dict. Must contain either:
                 - ``"scenario"``: ARE Scenario object, OR
                 - ``"apps"``: list of ARE App instances, plus optional ``"events"``,
                   ``"duration"``, ``"seed"``, ``"start_time"``, ``"time_increment_in_seconds"``
@@ -97,32 +97,32 @@ class AREEnvironment(Environment):
         self._oracle_traces: Optional[Dict[str, Any]] = None
         self._tool_wrappers: Dict[str, AREToolWrapper] = {}
 
-        super().__init__(task_data, callbacks)
+        super().__init__(environment_data, callbacks)
 
-    def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize ARE environment from task data.
+    def setup_state(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize ARE environment from environment data.
 
         Args:
-            task_data: Dict with ``"scenario"`` or ``"apps"`` key.
+            environment_data: Dict with ``"scenario"`` or ``"apps"`` key.
 
         Returns:
             State dict with scenario metadata.
 
         Raises:
-            ValueError: If task_data contains neither ``"scenario"`` nor ``"apps"``.
+            ValueError: If environment_data contains neither ``"scenario"`` nor ``"apps"``.
         """
         are_mod = _import_are()
 
-        scenario = task_data.get("scenario")
+        scenario = environment_data.get("scenario")
 
-        if scenario is None and "apps" not in task_data:
+        if scenario is None and "apps" not in environment_data:
             raise ValueError(
-                "task_data must contain either 'scenario' (ARE Scenario object) "
+                "environment_data must contain either 'scenario' (ARE Scenario object) "
                 "or 'apps' (list of ARE App instances)."
             )
 
         if scenario is None:
-            scenario = self._build_scenario_from_shorthand(task_data)
+            scenario = self._build_scenario_from_shorthand(environment_data)
 
         self._scenario = scenario
 
@@ -155,11 +155,11 @@ class AREEnvironment(Environment):
             "oracle_traces": self._oracle_traces,
         }
 
-    def _build_scenario_from_shorthand(self, task_data: Dict[str, Any]) -> Any:
-        """Build an ARE Scenario from shorthand task_data.
+    def _build_scenario_from_shorthand(self, environment_data: Dict[str, Any]) -> Any:
+        """Build an ARE Scenario from shorthand environment_data.
 
         Args:
-            task_data: Dict with ``"apps"``, and optional ``"events"``,
+            environment_data: Dict with ``"apps"``, and optional ``"events"``,
                 ``"duration"``, ``"seed"``, ``"start_time"``,
                 ``"time_increment_in_seconds"``.
 
@@ -168,15 +168,15 @@ class AREEnvironment(Environment):
         """
         from are.simulation.scenarios.scenario import Scenario  # type: ignore[import-not-found]
 
-        apps = task_data["apps"]
-        events = task_data.get("events", [])
-        duration = task_data.get("duration", 1800)
-        seed = task_data.get("seed", 0)
-        start_time = task_data.get("start_time", 0)
-        time_increment = task_data.get("time_increment_in_seconds", 1)
+        apps = environment_data["apps"]
+        events = environment_data.get("events", [])
+        duration = environment_data.get("duration", 1800)
+        seed = environment_data.get("seed", 0)
+        start_time = environment_data.get("start_time", 0)
+        time_increment = environment_data.get("time_increment_in_seconds", 1)
 
         scenario = Scenario(
-            scenario_id=task_data.get("scenario_id", "custom"),
+            scenario_id=environment_data.get("scenario_id", "custom"),
             apps=apps,
             events=events,
             duration=duration,

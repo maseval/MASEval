@@ -8,10 +8,8 @@ Environments define the execution context for agents, including available tools,
 
 ## Tools and agent-provided helpers
 
-Some agent adapters expose helper tools or user-simulation tools that can be used by the Environment. For example:
+Some agent adapters expose helper tools or user-simulation tools that can be used by the Environment. See the framework-specific interface pages for details:
 
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/agents/smolagents.py){ .md-source-file }
-
-::: maseval.interface.agents.smolagents.SmolAgentAdapter
-
-::: maseval.interface.agents.smolagents.SmolAgentLLMUser
+- [SmolAgents](../interface/agents/smolagents.md) — `SmolAgentAdapter`, `SmolAgentLLMUser`
+- [LangGraph](../interface/agents/langgraph.md) — `LangGraphAgentAdapter`
+- [LlamaIndex](../interface/agents/llamaindex.md) — `LlamaIndexAgentAdapter`

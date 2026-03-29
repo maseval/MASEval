@@ -217,6 +217,9 @@ class FakeSmolagentsModel:
         self._responses = responses or ["mock response"]
         self._call_index = 0
 
+    def to_dict(self) -> dict:
+        return {"class": self.__class__.__name__, "model_id": self.model_id}
+
     def __call__(self, *args, **kwargs):
         return self.generate(*args, **kwargs)
 
@@ -450,8 +453,8 @@ class DummyAgentAdapter(AgentAdapter):
 class DummyEnvironment(Environment):
     """Minimal environment for testing."""
 
-    def setup_state(self, task_data: dict) -> Any:
-        return task_data.copy()
+    def setup_state(self, environment_data: dict) -> Any:
+        return environment_data.copy()
 
     def create_tools(self) -> dict:
         return {}

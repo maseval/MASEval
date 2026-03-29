@@ -177,7 +177,7 @@ class Gaia2Benchmark(Benchmark):
             Gaia2Environment instance
         """
         judge_engine_config = task.evaluation_data.get("judge_engine_config")
-        return Gaia2Environment(task_data=task.environment_data, judge_engine_config=judge_engine_config)
+        return Gaia2Environment(environment_data=task.environment_data, judge_engine_config=judge_engine_config)
 
     def setup_user(  # type: ignore[override]
         self,

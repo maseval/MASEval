@@ -1,7 +1,7 @@
 """Cross-implementation ModelAdapter contract tests.
 
 Verifies that ALL ModelAdapter implementations (DummyModelAdapter, OpenAIModelAdapter,
-GoogleGenAIModelAdapter, HuggingFaceModelAdapter, LiteLLMModelAdapter) implement the
+GoogleGenAIModelAdapter, HuggingFacePipelineModelAdapter, LiteLLMModelAdapter) implement the
 same contract and behave identically for key operations.
 
 This validates MASEval's CORE PROMISE: provider-agnostic model abstraction.
@@ -237,9 +237,9 @@ def create_huggingface_adapter(
     tool_calls: Optional[List[Optional[List[Dict[str, Any]]]]] = None,
     seed: Optional[int] = None,
 ) -> Any:
-    """Create HuggingFaceModelAdapter instance."""
+    """Create HuggingFacePipelineModelAdapter instance."""
     pytest.importorskip("transformers")
-    from maseval.interface.inference.huggingface import HuggingFaceModelAdapter
+    from maseval.interface.inference.huggingface import HuggingFacePipelineModelAdapter
 
     response_list: List[Optional[str]] = responses or ["Test response"]
     call_count = [0]
@@ -249,7 +249,7 @@ def create_huggingface_adapter(
         call_count[0] += 1
         return response
 
-    return HuggingFaceModelAdapter(model=mock_model, model_id=model_id, seed=seed)
+    return HuggingFacePipelineModelAdapter(model=mock_model, model_id=model_id, seed=seed)
 
 
 def create_litellm_adapter(

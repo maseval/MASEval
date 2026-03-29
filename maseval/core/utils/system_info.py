@@ -36,6 +36,12 @@ def get_git_info(repo_path: Optional[str] = None) -> Dict[str, Any]:
         # Get current commit
         commit = repo.head.commit
 
+        # Get branch name (detached HEAD in CI returns the commit hash)
+        try:
+            branch = repo.active_branch.name
+        except TypeError:
+            branch = f"detached@{commit.hexsha[:7]}"
+
         # Get remote URL (if available)
         remote_url = None
         try:
@@ -46,7 +52,7 @@ def get_git_info(repo_path: Optional[str] = None) -> Dict[str, Any]:
         return {
             "commit_hash": commit.hexsha,
             "commit_hash_short": commit.hexsha[:7],
-            "branch": repo.active_branch.name,
+            "branch": branch,
             "is_dirty": repo.is_dirty(),
             "untracked_files": len(repo.untracked_files),
             "remote_url": remote_url,

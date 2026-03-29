@@ -425,12 +425,10 @@ def macs_task_queue(sample_task, travel_task):
 
 
 @pytest.fixture
-def sample_task_data(sample_tool_specs):
-    """Sample task data dict for Environment creation."""
+def sample_environment_data(sample_tool_specs):
+    """Sample environment data dict for MACSEnvironment creation."""
     return {
-        "environment_data": {
-            "tools": sample_tool_specs,
-        }
+        "tools": sample_tool_specs,
     }
 
 

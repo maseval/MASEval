@@ -322,8 +322,8 @@ Tools, environments, and other components can track arbitrary usage by inheritin
 from maseval import Usage, UsageTrackableMixin
 
 class BloombergEnvironment(Environment, UsageTrackableMixin):
-    def __init__(self, task_data):
-        super().__init__(task_data)
+    def __init__(self, environment_data):
+        super().__init__(environment_data)
         self._usage_records = []
 
     def _call_bloomberg(self, query):

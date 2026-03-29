@@ -4,12 +4,10 @@ Implements MMLU evaluation with anchor point-based task selection for DISCO pred
 
 Usage:
     from maseval.benchmark.mmlu import (
-        MMLUBenchmark,
-        MMLUEnvironment,
-        MMLUEvaluator,
+        DefaultMMLUBenchmark,
         load_tasks,
-        AnchorPointsTaskQueue,
     )
+    from maseval.core.task import DISCOQueue, InformativeSubsetQueue
 
     # Load tasks and anchor points
     tasks = load_tasks(
@@ -17,10 +15,12 @@ Usage:
         anchor_points_path="path/to/anchor_points.pkl",  # Optional
     )
 
-    # Create benchmark
-    benchmark = MMLUBenchmark()
-    results = benchmark.run(tasks=tasks, agent_data={"model_id": "gpt-4"})
+    # Run benchmark
+    benchmark = DefaultMMLUBenchmark(model_id="meta-llama/Llama-2-7b-hf")
+    results = benchmark.run(tasks=tasks, agent_data={"model_id": "meta-llama/Llama-2-7b-hf"})
 """
+
+from maseval.core.task import DISCOQueue, InformativeSubsetQueue
 
 from .mmlu import (
     DEFAULT_AGENT_NAME,
@@ -28,18 +28,14 @@ from .mmlu import (
     DEFAULT_CHOICES,
     DEFAULT_DEVICE,
     DEFAULT_MODEL_REGISTER_NAME,
-    FALLBACK_MODEL_ID,
     MMLU_TASK_NAME,
     STATUS_SUCCESS,
     TARGET_DELIMITER,
     TASK_TYPE_MMLU,
     MMLUBenchmark,
-    HuggingFaceMMLUBenchmark,
+    DefaultMMLUBenchmark,
     MMLUEnvironment,
     MMLUEvaluator,
-    MMLUModelAgent,
-    MMLUAgentAdapter,
-    AnchorPointsTaskQueue,
     load_tasks,
     compute_benchmark_metrics,
 )
@@ -50,18 +46,16 @@ __all__ = [
     "DEFAULT_CHOICES",
     "DEFAULT_DEVICE",
     "DEFAULT_MODEL_REGISTER_NAME",
-    "FALLBACK_MODEL_ID",
     "MMLU_TASK_NAME",
     "STATUS_SUCCESS",
     "TARGET_DELIMITER",
     "TASK_TYPE_MMLU",
     "MMLUBenchmark",
-    "HuggingFaceMMLUBenchmark",
+    "DefaultMMLUBenchmark",
     "MMLUEnvironment",
     "MMLUEvaluator",
-    "MMLUModelAgent",
-    "MMLUAgentAdapter",
-    "AnchorPointsTaskQueue",
+    "InformativeSubsetQueue",
+    "DISCOQueue",
     "load_tasks",
     "compute_benchmark_metrics",
 ]

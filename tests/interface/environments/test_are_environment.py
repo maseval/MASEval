@@ -78,9 +78,9 @@ class TestAREEnvironmentScenarioPath:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        task_data = {"scenario": scenario}
+        environment_data = {"scenario": scenario}
 
-        env = AREEnvironment(task_data)
+        env = AREEnvironment(environment_data)
 
         assert env.state["scenario_id"] == "test-001"
         assert env.state["duration"] == 600
@@ -93,7 +93,7 @@ class TestAREEnvironmentScenarioPath:
         mock_import.return_value = MagicMock()
 
         with pytest.raises(ValueError, match="must contain either"):
-            AREEnvironment(task_data={})
+            AREEnvironment(environment_data={})
 
     @patch("maseval.interface.environments.are._import_are")
     def test_create_tools_wraps_are_tools(self, mock_import):
@@ -105,7 +105,7 @@ class TestAREEnvironmentScenarioPath:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
 
         tools = env.get_tools()
         assert "EmailClient__send_email" in tools
@@ -127,7 +127,7 @@ class TestAREEnvironmentScenarioPath:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
         env.start()
 
         mock_are_env.run.assert_called_once()
@@ -144,7 +144,7 @@ class TestAREEnvironmentScenarioPath:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
         env.stop()
 
         mock_are_env.stop.assert_called_once()
@@ -159,7 +159,7 @@ class TestAREEnvironmentScenarioPath:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
         env.pause()
         mock_are_env.pause.assert_called_once()
 
@@ -177,7 +177,7 @@ class TestAREEnvironmentScenarioPath:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
 
         assert env.get_simulation_time() == 42.5
 
@@ -191,7 +191,7 @@ class TestAREEnvironmentScenarioPath:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
         env.cleanup()
 
         mock_are_env.stop.assert_called_once()
@@ -207,7 +207,7 @@ class TestAREEnvironmentScenarioPath:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
 
         traces = env.gather_traces()
         assert traces["scenario_id"] == "test-001"
@@ -225,7 +225,7 @@ class TestAREEnvironmentScenarioPath:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
 
         config = env.gather_config()
         assert config["scenario_id"] == "test-001"
@@ -240,7 +240,7 @@ class TestAREEnvironmentShorthandPath:
     @patch("maseval.interface.environments.are._import_are")
     @patch("maseval.interface.environments.are.AREEnvironment._build_scenario_from_shorthand")
     def test_shorthand_builds_scenario(self, mock_build, mock_import):
-        """Shorthand task_data with 'apps' key triggers scenario construction."""
+        """Shorthand environment_data with 'apps' key triggers scenario construction."""
         mock_are_mod = MagicMock()
         mock_import.return_value = mock_are_mod
 
@@ -250,15 +250,15 @@ class TestAREEnvironmentShorthandPath:
         mock_are_env = _make_mock_are_env()
         mock_are_mod.Environment.return_value = mock_are_env
 
-        task_data = {
+        environment_data = {
             "apps": [MagicMock(), MagicMock()],
             "events": [MagicMock()],
             "duration": 300,
             "seed": 99,
         }
-        env = AREEnvironment(task_data=task_data)
+        env = AREEnvironment(environment_data=environment_data)
 
-        mock_build.assert_called_once_with(task_data)
+        mock_build.assert_called_once_with(environment_data)
         assert env._scenario is mock_scenario
 
     @patch("maseval.interface.environments.are._import_are")
@@ -282,14 +282,14 @@ class TestAREEnvironmentShorthandPath:
             "are.simulation.scenarios.scenario": MagicMock(Scenario=mock_scenario_cls),
         }):
             apps = [MagicMock(), MagicMock()]
-            task_data = {
+            environment_data = {
                 "apps": apps,
                 "duration": 300,
                 "seed": 99,
                 "start_time": 100,
                 "time_increment_in_seconds": 5,
             }
-            env = AREEnvironment(task_data=task_data)
+            env = AREEnvironment(environment_data=environment_data)
 
             mock_scenario_cls.assert_called_once()
             call_kwargs = mock_scenario_cls.call_args[1]
@@ -319,7 +319,7 @@ class TestAREEnvironmentOracleMode:
         mock_are_mod.Environment.side_effect = [mock_oracle_env, mock_agent_env]
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario}, run_oracle=True)
+        env = AREEnvironment(environment_data={"scenario": scenario}, run_oracle=True)
 
         assert env._oracle_traces is not None
         assert env._oracle_traces["apps_state"] == {"email": {"inbox": []}}
@@ -343,7 +343,7 @@ class TestAREEnvironmentOracleMode:
 
         scenario = _make_mock_scenario()
         with pytest.raises(AttributeError):
-            AREEnvironment(task_data={"scenario": scenario}, run_oracle=True)
+            AREEnvironment(environment_data={"scenario": scenario}, run_oracle=True)
 
 
 class TestAREToolWrapper:
@@ -450,7 +450,7 @@ class TestAREEnvironmentNotifications:
         mock_are_env.notification_system = mock_notif_sys
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
 
         with patch.dict("sys.modules", {"are.simulation.notification_system": MagicMock()}):
             with pytest.raises(RuntimeError, match="corrupt queue"):
@@ -466,7 +466,7 @@ class TestAREEnvironmentNotifications:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
         env._are_env = None
 
         result = env.poll_notifications()
@@ -514,7 +514,7 @@ class TestAREEnvironmentAUIFiltering:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario}, filter_aui_tools=True)
+        env = AREEnvironment(environment_data={"scenario": scenario}, filter_aui_tools=True)
 
         tools = env.get_tools()
         assert "AgentUserInterface__get_last_message_from_user" not in tools
@@ -543,7 +543,7 @@ class TestAREEnvironmentAUIFiltering:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
 
         tools = env.get_tools()
         assert "AgentUserInterface__get_last_message_from_user" in tools
@@ -565,7 +565,7 @@ class TestAREEnvironmentAUIFiltering:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        AREEnvironment(task_data={"scenario": scenario}, filter_aui_tools=True)
+        AREEnvironment(environment_data={"scenario": scenario}, filter_aui_tools=True)
 
         assert aui_app.wait_for_user_response is False
 
@@ -601,7 +601,7 @@ class TestAREEnvironmentTurnNotifications:
         scenario = _make_mock_scenario()
 
         with patch.dict("sys.modules", {"are.simulation.notification_system": MagicMock(MessageType=mock_message_type)}):
-            env = AREEnvironment(task_data={"scenario": scenario})
+            env = AREEnvironment(environment_data={"scenario": scenario})
             user_msgs, has_env, has_stop = env.get_turn_notifications()
 
         assert user_msgs == ["Hello agent"]
@@ -618,7 +618,7 @@ class TestAREEnvironmentTurnNotifications:
         mock_are_mod.Environment.return_value = mock_are_env
 
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
         env._are_env = None
 
         result = env.get_turn_notifications()
@@ -635,7 +635,7 @@ class TestAREEnvironmentAccessors:
         mock_are_env = _make_mock_are_env()
         mock_are_mod.Environment.return_value = mock_are_env
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
         assert env.get_scenario() is scenario
 
     @patch("maseval.interface.environments.are._import_are")
@@ -645,7 +645,7 @@ class TestAREEnvironmentAccessors:
         mock_are_env = _make_mock_are_env()
         mock_are_mod.Environment.return_value = mock_are_env
         scenario = _make_mock_scenario(start_time=1000)
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
         assert env.get_start_time() == 1000
 
     @patch("maseval.interface.environments.are._import_are")
@@ -657,5 +657,5 @@ class TestAREEnvironmentAccessors:
         mock_are_env.notification_system = mock_notif_sys
         mock_are_mod.Environment.return_value = mock_are_env
         scenario = _make_mock_scenario()
-        env = AREEnvironment(task_data={"scenario": scenario})
+        env = AREEnvironment(environment_data={"scenario": scenario})
         assert env.get_notification_system() is mock_notif_sys

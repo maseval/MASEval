@@ -425,32 +425,11 @@ class SmolAgentAdapter(AgentAdapter):
         base_config = super().gather_config()
         _check_smolagents_installed()
 
-        # Get comprehensive config from smolagents' native to_dict() method
-        smolagents_config = {}
+        # Get comprehensive config from smolagents' native to_dict() method.
+        # No try/except: if to_dict() exists but fails, the error should
+        # propagate so it's visible in the registry's error output.
         if hasattr(self.agent, "to_dict"):
-            try:
-                smolagents_config = self.agent.to_dict()
-            except Exception:
-                # If to_dict fails, fall back to basic attributes
-                pass
-
-        # Add smolagents-specific config if available
-        if smolagents_config:
-            base_config["smolagents_config"] = smolagents_config
-        else:
-            # Fallback: manually collect common attributes
-            config_attrs = {}
-            for attr in ["max_steps", "planning_interval", "name", "description"]:
-                if hasattr(self.agent, attr):
-                    config_attrs[attr] = getattr(self.agent, attr)
-
-            # CodeAgent-specific attributes
-            for attr in ["additional_authorized_imports", "authorized_imports", "executor_type"]:
-                if hasattr(self.agent, attr):
-                    config_attrs[attr] = getattr(self.agent, attr)
-
-            if config_attrs:
-                base_config["smolagents_config"] = config_attrs
+            base_config["smolagents_config"] = self.agent.to_dict()
 
         return base_config
 

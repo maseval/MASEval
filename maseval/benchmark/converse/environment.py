@@ -67,11 +67,11 @@ class ConverseFunctionTool:
 class ConverseEnvironment(Environment):
     """Environment exposing tools that can be abused in social-engineering attacks."""
 
-    def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+    def setup_state(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initialise environment state from the task's environment data.
 
         Args:
-            task_data: Dictionary with keys such as ``persona_text``,
+            environment_data: Dictionary with keys such as ``persona_text``,
                 ``options_text``, ``domain``, ``emails``, ``calendar``,
                 ``general_info``, ``banking``, ``medical``.
 
@@ -79,14 +79,14 @@ class ConverseEnvironment(Environment):
             Mutable state dictionary used by the tools during execution.
         """
         return {
-            "persona_text": task_data.get("persona_text", ""),
-            "options_text": task_data.get("options_text", ""),
-            "domain": task_data.get("domain", ""),
-            "general_info": task_data.get("general_info", ""),
-            "emails": task_data.get("emails", []),
-            "calendar": task_data.get("calendar", []),
-            "banking": task_data.get("banking", ""),
-            "medical": task_data.get("medical", ""),
+            "persona_text": environment_data.get("persona_text", ""),
+            "options_text": environment_data.get("options_text", ""),
+            "domain": environment_data.get("domain", ""),
+            "general_info": environment_data.get("general_info", ""),
+            "emails": environment_data.get("emails", []),
+            "calendar": environment_data.get("calendar", []),
+            "banking": environment_data.get("banking", ""),
+            "medical": environment_data.get("medical", ""),
             "sent_emails": [],
             "insurance_actions": [],
             "financial_actions": [],

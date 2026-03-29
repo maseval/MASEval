@@ -20,7 +20,7 @@ The following adapter classes implement the ModelAdapter interface for specific 
 
 [:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/inference/huggingface.py){ .md-source-file }
 
-::: maseval.interface.inference.huggingface.HuggingFaceModelAdapter
+::: maseval.interface.inference.huggingface.HuggingFacePipelineModelAdapter
 
 [:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/inference/google_genai.py){ .md-source-file }
 

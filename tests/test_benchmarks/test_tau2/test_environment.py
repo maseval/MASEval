@@ -1139,8 +1139,8 @@ class TestSetState:
         # Create a fresh environment and replay
         from maseval.benchmark.tau2.environment import get_environment_constructor
 
-        task_data = {"domain": "retail"}
-        constructor = get_environment_constructor(task_data)
+        environment_data = {"domain": "retail"}
+        constructor = get_environment_constructor(environment_data)
         env2 = constructor()
         env2.set_state(
             None,
