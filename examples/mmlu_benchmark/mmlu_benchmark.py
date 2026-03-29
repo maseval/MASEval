@@ -258,8 +258,6 @@ def save_predictions_for_disco(
         print(f"Saved predictions tensor to {output_path}")
         print(f"  Shape: {predictions.shape}")
         print(f"  Dtype: {predictions.dtype}")
-    else:
-        print(f"Built predictions tensor with shape: {predictions.shape}")
 
     return predictions
 
@@ -723,8 +721,7 @@ def main():
     print("=" * 80)
     print(f"Total tasks: {metrics['total_tasks']}")
     print(f"Correct: {metrics['correct_count']}")
-    print(f"Accuracy (on anchor points): {metrics['acc']:.4f}")
-    print(f"Accuracy norm (on anchor points): {metrics['acc_norm']:.4f}")
+    print(f"Accuracy: {metrics['acc']:.4f}")
 
     # Build predictions tensor for DISCO
     predictions = None
@@ -754,8 +751,8 @@ def main():
         print("\n" + "-" * 40)
         print("DISCO Predicted Full Benchmark Accuracy:")
         print("-" * 40)
-        for model_idx, acc in disco_results["predicted_accuracies"].items():
-            print(f"  Model {model_idx}: {acc:.6f}")
+        for model_idx, acc in sorted(disco_results["predicted_accuracies"].items()):
+            print(f"  Model {model_idx} ({args.model_id}): {acc:.6f}")
 
     # Save summary
     summary_data = {

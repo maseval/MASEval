@@ -1,19 +1,27 @@
 # MMLU Benchmark Example
 
-Evaluate language models on [MMLU (Massive Multitask Language Understanding)](https://arxiv.org/abs/2009.03300) with optional efficient evaluation via [DISCO](https://arxiv.org/abs/2510.07959).
+Evaluate language models on [MMLU (Massive Multitask Language Understanding)](https://arxiv.org/abs/2009.03300) with optional efficient evaluation via [DISCO (Diversifying Sample Condensation)](https://arxiv.org/abs/2510.07959).
 
 ## Installation
 
-For basic MMLU evaluation:
+Install [uv package manager](https://docs.astral.sh/uv/) as described [here](https://docs.astral.sh/uv/getting-started/installation/).
+
+Create Python environment:
 
 ```bash
-uv pip install .[mmlu]
+uv venv --python 3.11
 ```
 
-For DISCO prediction (includes DISCO dependencies):
+Install dependencies for basic MMLU evaluation:
 
 ```bash
-uv pip install .[disco]
+uv sync --extra mmlu
+```
+
+Install dependencies for MMLU evaluation with DISCO:
+
+```bash
+uv sync --extra disco
 ```
 
 ## Run without DISCO (full evaluation)
@@ -31,9 +39,8 @@ Full evaluation results look like:
 Results Summary (Evaluated Tasks)
 ================================================================================
 Total tasks: 14042
-Correct: 8291
-Accuracy (on anchor points): 0.5904
-Accuracy norm (on anchor points): 0.5904
+Correct: 8292
+Accuracy: 0.5905
 ```
 
 ## Run with DISCO (predicted full-benchmark score)
@@ -47,10 +54,24 @@ uv run python examples/mmlu_benchmark/mmlu_benchmark.py --model_id alignment-han
 Predicted score output:
 
 ```
+================================================================================
+Results Summary (Evaluated Tasks)
+================================================================================
+Total tasks: 100
+Correct: 36
+Accuracy: 0.3600
+
+================================================================================
+DISCO Prediction
+================================================================================
+Computing embeddings and predicting full benchmark accuracy...
+Fetching 9 files: 100%|██████████████████████████████████████████████████████████████████████████████████████| 9/9 [00:00<00:00, 19171.53it/s]
+  Using: DISCO predictor from Hugging Face (arubique/DISCO-MMLU)
+
 ----------------------------------------
 DISCO Predicted Full Benchmark Accuracy:
 ----------------------------------------
-  Model 0: 0.606739
+  Model 0 (alignment-handbook/zephyr-7b-sft-full): 0.602309
 ```
 
 ## Arguments
