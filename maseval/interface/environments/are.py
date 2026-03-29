@@ -296,6 +296,11 @@ class AREEnvironment(Environment):
 
         Agent adapters should call this between agent steps and inject
         the messages into the agent's context.
+
+        Raises:
+            Any exception from the underlying ARE notification system is
+            propagated so the benchmark runner can classify it via
+            ``fail_on_task_error`` / ``fail_on_setup_error``.
         """
         if self._are_env is None:
             return [], [], False
@@ -304,35 +309,31 @@ class AREEnvironment(Environment):
         if notification_system is None:
             return [], [], False
 
-        try:
-            from datetime import datetime, timezone
-            from are.simulation.notification_system import MessageType  # type: ignore[import-not-found]
+        from datetime import datetime, timezone
+        from are.simulation.notification_system import MessageType  # type: ignore[import-not-found]
 
-            sim_time = self.get_simulation_time()
-            timestamp = datetime.fromtimestamp(sim_time, tz=timezone.utc)
-            unhandled = notification_system.message_queue.get_by_timestamp(timestamp=timestamp)
+        sim_time = self.get_simulation_time()
+        timestamp = datetime.fromtimestamp(sim_time, tz=timezone.utc)
+        unhandled = notification_system.message_queue.get_by_timestamp(timestamp=timestamp)
 
-            if not unhandled:
-                return [], [], False
-
-            user_messages: List[str] = []
-            env_notifications: List[str] = []
-            has_stop = False
-
-            for notif in unhandled:
-                msg_type = getattr(notif, "message_type", None)
-                if msg_type == MessageType.USER_MESSAGE:
-                    user_messages.append(notif.message)
-                elif msg_type == MessageType.ENVIRONMENT_NOTIFICATION:
-                    ts = notif.timestamp.strftime("%Y-%m-%d %H:%M:%S") if notif.timestamp else ""
-                    env_notifications.append(f"[{ts}] {notif.message}")
-                elif msg_type == MessageType.ENVIRONMENT_STOP:
-                    has_stop = True
-
-            return user_messages, env_notifications, has_stop
-
-        except Exception:
+        if not unhandled:
             return [], [], False
+
+        user_messages: List[str] = []
+        env_notifications: List[str] = []
+        has_stop = False
+
+        for notif in unhandled:
+            msg_type = getattr(notif, "message_type", None)
+            if msg_type == MessageType.USER_MESSAGE:
+                user_messages.append(notif.message)
+            elif msg_type == MessageType.ENVIRONMENT_NOTIFICATION:
+                ts = notif.timestamp.strftime("%Y-%m-%d %H:%M:%S") if notif.timestamp else ""
+                env_notifications.append(f"[{ts}] {notif.message}")
+            elif msg_type == MessageType.ENVIRONMENT_STOP:
+                has_stop = True
+
+        return user_messages, env_notifications, has_stop
 
     # ── Data Access ───────────────────────────────────────────────────
 

@@ -430,3 +430,44 @@ class TestAREToolWrapper:
         assert wrapper.inputs == {"title": {"type": "string"}}
         assert wrapper.output_type == "string"
         assert wrapper.actual_return_type == "str"
+
+
+class TestAREEnvironmentNotifications:
+    """Tests for notification polling."""
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_poll_notifications_propagates_errors(self, mock_import):
+        """poll_notifications does not swallow unexpected exceptions."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        # Set up notification system that raises on access
+        mock_notif_sys = MagicMock()
+        mock_notif_sys.message_queue.get_by_timestamp.side_effect = RuntimeError("corrupt queue")
+        mock_are_env.notification_system = mock_notif_sys
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(task_data={"scenario": scenario})
+
+        with patch.dict("sys.modules", {"are.simulation.notification_system": MagicMock()}):
+            with pytest.raises(RuntimeError, match="corrupt queue"):
+                env.poll_notifications()
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_poll_notifications_returns_empty_when_no_env(self, mock_import):
+        """poll_notifications returns empty tuple when no ARE env."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(task_data={"scenario": scenario})
+        env._are_env = None
+
+        result = env.poll_notifications()
+        assert result == ([], [], False)
