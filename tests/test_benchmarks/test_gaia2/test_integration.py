@@ -76,7 +76,7 @@ class TestGaia2EnvironmentWithRealData:
     def test_real_tools_are_created(self, first_real_task):
         """Tools created from a real scenario are non-empty Gaia2GenericTool instances."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
-        from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
+        from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
 
         env = Gaia2Environment(task_data=first_real_task.environment_data)
         try:
@@ -86,7 +86,7 @@ class TestGaia2EnvironmentWithRealData:
             assert len(tools) > 0, "No tools created from real scenario. ARE environment should expose app tools (Calendar, Email, etc.)."
 
             for name, tool in tools.items():
-                assert isinstance(tool, Gaia2GenericTool), f"Tool '{name}' is {type(tool).__name__}, expected Gaia2GenericTool"
+                assert isinstance(tool, AREToolWrapper), f"Tool '{name}' is {type(tool).__name__}, expected AREToolWrapper"
                 assert tool.name, "Tool has empty name"
         finally:
             env.cleanup()

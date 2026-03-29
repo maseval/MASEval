@@ -8,6 +8,36 @@ import sys
 from unittest.mock import MagicMock, patch
 
 
+@pytest.fixture(autouse=True)
+def mock_app_tool_adapter():
+    """Mock AppToolAdapter so AREToolWrapper can initialize without real ARE."""
+
+    def make_adapter(are_tool):
+        adapter = MagicMock()
+        adapter.name = getattr(are_tool, "_public_name", are_tool.name) if hasattr(are_tool, "_public_name") else are_tool.name
+        app_name = getattr(are_tool, "app_name", "")
+        desc = getattr(are_tool, "_public_description", getattr(are_tool, "function_description", ""))
+        adapter.description = f"Acts on app {app_name}: {desc}" if app_name else desc
+        type_map = {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}
+        inputs = {}
+        for arg in getattr(are_tool, "args", []):
+            arg_name = getattr(arg, "name", None)
+            if arg_name:
+                raw_type = getattr(arg, "arg_type", "string")
+                entry = {"type": type_map.get(raw_type, raw_type), "description": getattr(arg, "description", "")}
+                if getattr(arg, "has_default", False):
+                    entry["default"] = getattr(arg, "default", None)
+                    entry["nullable"] = True
+                inputs[arg_name] = entry
+        adapter.inputs = inputs
+        adapter.output_type = "string"
+        adapter.actual_return_type = None
+        return adapter
+
+    with patch("maseval.interface.environments.are_tool_wrapper.AppToolAdapter", side_effect=make_adapter):
+        yield
+
+
 def _make_are_mock():
     """Create a fully-mocked ARE module structure for sys.modules patching.
 
@@ -45,6 +75,7 @@ def _make_are_mock():
         "are.simulation.environment": mock_are.simulation.environment,
         "are.simulation.types": mock_are.simulation.types,
         "are.simulation.validation": mock_are.simulation.validation,
+        "are.simulation.notification_system": mock_are.simulation.notification_system,
         "are.simulation.scenarios": mock_are.simulation.scenarios,
         "are.simulation.scenarios.config": mock_are.simulation.scenarios.config,
         "are.simulation.scenarios.scenario_imported_from_json": (mock_are.simulation.scenarios.scenario_imported_from_json),
@@ -133,7 +164,7 @@ class TestGaia2EnvironmentCreateTools:
     def test_create_tools_wraps_are_tools(self):
         """Test create_tools returns wrapped ARE tools."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
-        from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
+        from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
         from types import SimpleNamespace
 
         mock_are, modules = _make_are_mock()
@@ -166,7 +197,7 @@ class TestGaia2EnvironmentCreateTools:
             tools = env.create_tools()
 
             assert "TestTool__do_something" in tools
-            assert isinstance(tools["TestTool__do_something"], Gaia2GenericTool)
+            assert isinstance(tools["TestTool__do_something"], AREToolWrapper)
 
     def test_create_tools_filters_aui_tools(self):
         """Test create_tools filters out AUI message-retrieval tools."""
@@ -863,8 +894,8 @@ class TestPauseResume:
 
         env.resume_with_offset(5.0)  # Should not raise
 
-    def test_pause_swallows_exception(self):
-        """pause() swallows exceptions from ARE environment."""
+    def test_pause_propagates_exception(self):
+        """pause() propagates exceptions from ARE environment."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
         env = Gaia2Environment.__new__(Gaia2Environment)
@@ -875,4 +906,5 @@ class TestPauseResume:
         env._tool_wrappers = {}
         env.state = {}
 
-        env.pause()  # Should not raise
+        with pytest.raises(RuntimeError, match="pause failed"):
+            env.pause()

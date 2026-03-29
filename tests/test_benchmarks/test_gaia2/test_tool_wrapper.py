@@ -5,7 +5,49 @@ for ARE tools following the MACSGenericTool pattern.
 """
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+
+@pytest.fixture(autouse=True)
+def mock_app_tool_adapter():
+    """Mock AppToolAdapter so AREToolWrapper can initialize without real ARE validation."""
+
+    def make_adapter(are_tool):
+        adapter = MagicMock()
+        # Match ARE's AppToolAdapter behavior:
+        # - name comes from _public_name
+        adapter.name = getattr(are_tool, "_public_name", are_tool.name)
+        # - description includes app prefix: "Acts on app {app_name}: {desc}"
+        app_name = getattr(are_tool, "app_name", "")
+        desc = getattr(are_tool, "_public_description", getattr(are_tool, "function_description", ""))
+        adapter.description = f"Acts on app {app_name}: {desc}" if app_name else desc
+        # - inputs as flat dict from args
+        # ARE AppToolAdapter type mapping (tool_utils.py:572-578)
+        type_map = {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}
+        inputs = {}
+        for arg in getattr(are_tool, "args", []):
+            arg_name = getattr(arg, "name", None)
+            if arg_name:
+                raw_type = getattr(arg, "arg_type", "string")
+                entry = {
+                    "type": type_map.get(raw_type, raw_type),
+                    "description": getattr(arg, "description", ""),
+                }
+                if getattr(arg, "has_default", False):
+                    entry["default"] = getattr(arg, "default", None)
+                    entry["nullable"] = True
+                inputs[arg_name] = entry
+        adapter.inputs = inputs
+        adapter.output_type = "string"
+        # Return type suffix for description
+        rt = getattr(are_tool, "return_type", None)
+        if rt is not None:
+            adapter.description += f" Returns {rt.__name__ if isinstance(rt, type) else str(rt)}"
+        adapter.actual_return_type = None
+        return adapter
+
+    with patch("maseval.interface.environments.are_tool_wrapper.AppToolAdapter", side_effect=make_adapter):
+        yield
 
 
 # =============================================================================
