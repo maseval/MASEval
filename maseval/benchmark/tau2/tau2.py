@@ -495,7 +495,7 @@ class Tau2Benchmark(Benchmark):
         Returns:
             Tau2Environment instance
         """
-        return Tau2Environment(task_data=task.environment_data)
+        return Tau2Environment(environment_data=task.environment_data)
 
     def setup_user(  # type: ignore[override]
         self,

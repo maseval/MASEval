@@ -11,7 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Renamed `task_data` parameter to `environment_data` across all environment constructors, test fixtures, and examples for consistency with the base class API. (PR: #58)
+
 ### Fixed
+
+- Fixed MACS real-data tests passing `{"environment_data": task.environment_data}` instead of `task.environment_data` directly, which caused `setup_state` to silently receive an empty tools list. (PR: #58)
 
 ### Removed
 

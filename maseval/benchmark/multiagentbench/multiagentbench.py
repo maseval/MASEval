@@ -243,7 +243,7 @@ class MultiAgentBenchBenchmark(Benchmark):
             MultiAgentBenchEnvironment instance
         """
         return MultiAgentBenchEnvironment(
-            task_data=task.environment_data,
+            environment_data=task.environment_data,
         )
 
     def setup_user(

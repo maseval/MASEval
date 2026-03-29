@@ -28,11 +28,12 @@ class TestMMLUEnvironment:
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment
 
         task = make_mmlu_task(full_prompt="Full prompt here")
-        task_data = {
+        environment_data = {
             "query": task.query,
-            "environment_data": {**task.environment_data, "use_full_prompt": use_full_prompt},
+            **task.environment_data,
+            "use_full_prompt": use_full_prompt,
         }
-        return MMLUEnvironment(task_data)
+        return MMLUEnvironment(environment_data)
 
     def test_setup_state_extracts_fields(self):
         env = self._make_env()
@@ -62,11 +63,12 @@ class TestMMLUEvaluatorParseAnswer:
     def evaluator(self, sample_mmlu_task):
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment, MMLUEvaluator
 
-        task_data = {
+        environment_data = {
             "query": sample_mmlu_task.query,
-            "environment_data": {**sample_mmlu_task.environment_data, "use_full_prompt": False},
+            **sample_mmlu_task.environment_data,
+            "use_full_prompt": False,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         return MMLUEvaluator(sample_mmlu_task, env)
 
     @pytest.mark.parametrize(
@@ -105,11 +107,12 @@ class TestMMLUEvaluatorCall:
     def evaluator(self, sample_mmlu_task):
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment, MMLUEvaluator
 
-        task_data = {
+        environment_data = {
             "query": sample_mmlu_task.query,
-            "environment_data": {**sample_mmlu_task.environment_data, "use_full_prompt": False},
+            **sample_mmlu_task.environment_data,
+            "use_full_prompt": False,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         return MMLUEvaluator(sample_mmlu_task, env)
 
     def test_correct_answer_scores_1(self, evaluator):
@@ -296,11 +299,12 @@ class TestMMLUBenchmarkBase:
     def test_setup_evaluators_returns_mmlu_evaluator(self, benchmark, sample_mmlu_task):
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment, MMLUEvaluator
 
-        task_data = {
+        environment_data = {
             "query": sample_mmlu_task.query,
-            "environment_data": {**sample_mmlu_task.environment_data, "use_full_prompt": False},
+            **sample_mmlu_task.environment_data,
+            "use_full_prompt": False,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         evaluators = benchmark.setup_evaluators(env, sample_mmlu_task, [], None, DefaultSeedGenerator())
         assert len(evaluators) == 1
         assert isinstance(evaluators[0], MMLUEvaluator)
@@ -308,11 +312,12 @@ class TestMMLUBenchmarkBase:
     def test_run_agents_calls_agent_run(self, benchmark, sample_mmlu_task):
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment
 
-        task_data = {
+        environment_data = {
             "query": sample_mmlu_task.query,
-            "environment_data": {**sample_mmlu_task.environment_data, "use_full_prompt": False},
+            **sample_mmlu_task.environment_data,
+            "use_full_prompt": False,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         agents, _ = benchmark.setup_agents({}, env, sample_mmlu_task, None, DefaultSeedGenerator())
         result = benchmark.run_agents(agents, sample_mmlu_task, env, query="")
         assert result == "A"
@@ -321,11 +326,12 @@ class TestMMLUBenchmarkBase:
     def test_evaluate_delegates_to_evaluators(self, benchmark, sample_mmlu_task):
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment
 
-        task_data = {
+        environment_data = {
             "query": sample_mmlu_task.query,
-            "environment_data": {**sample_mmlu_task.environment_data, "use_full_prompt": False},
+            **sample_mmlu_task.environment_data,
+            "use_full_prompt": False,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         evaluators = benchmark.setup_evaluators(env, sample_mmlu_task, [], None, DefaultSeedGenerator())
         results = benchmark.evaluate(evaluators, {}, "A", {"agents": {}})
         assert len(results) == 1
@@ -360,11 +366,12 @@ class TestDefaultMMLUBenchmark:
     def test_setup_agents_returns_scorer_backed_adapter(self, benchmark, sample_mmlu_task):
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment, _ScorerBackedAdapter
 
-        task_data = {
+        environment_data = {
             "query": sample_mmlu_task.query,
-            "environment_data": {**sample_mmlu_task.environment_data, "use_full_prompt": True},
+            **sample_mmlu_task.environment_data,
+            "use_full_prompt": True,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         agents, agents_dict = benchmark.setup_agents({}, env, sample_mmlu_task, None, DefaultSeedGenerator())
         assert len(agents) == 1
         assert isinstance(agents[0], _ScorerBackedAdapter)
@@ -372,11 +379,12 @@ class TestDefaultMMLUBenchmark:
     def test_run_agents_with_precomputed_logprobs(self, benchmark, sample_mmlu_task, mock_scorer):
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment, _ScorerBackedAdapter
 
-        task_data = {
+        environment_data = {
             "query": sample_mmlu_task.query,
-            "environment_data": {**sample_mmlu_task.environment_data, "use_full_prompt": True},
+            **sample_mmlu_task.environment_data,
+            "use_full_prompt": True,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         adapter = _ScorerBackedAdapter(mock_scorer, "agent")
 
         benchmark._precomputed_logprobs = {0: [-0.5, -1.5, -2.5, -3.5]}
@@ -387,11 +395,12 @@ class TestDefaultMMLUBenchmark:
     def test_run_agents_without_precomputed(self, benchmark, sample_mmlu_task, mock_scorer):
         from maseval.benchmark.mmlu.mmlu import MMLUEnvironment, _ScorerBackedAdapter
 
-        task_data = {
+        environment_data = {
             "query": sample_mmlu_task.query,
-            "environment_data": {**sample_mmlu_task.environment_data, "use_full_prompt": True},
+            **sample_mmlu_task.environment_data,
+            "use_full_prompt": True,
         }
-        env = MMLUEnvironment(task_data)
+        env = MMLUEnvironment(environment_data)
         adapter = _ScorerBackedAdapter(mock_scorer, "agent")
 
         benchmark._precomputed_logprobs = None

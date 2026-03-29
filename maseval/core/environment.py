@@ -10,23 +10,23 @@ class Environment(ABC, TraceableMixin, ConfigurableMixin):
     """Manages the state and tools available during a task execution.
 
     Subclasses must implement:
-    - setup_state(task_data) -> Any: Initialize environment state from task data
+    - setup_state(environment_data) -> Any: Initialize environment state from environment data
     - create_tools() -> Dict[str, Any]: Create tools keyed by name
     """
 
-    def __init__(self, task_data: Dict[str, Any], callbacks: Optional[List[EnvironmentCallback]] = None):
+    def __init__(self, environment_data: Dict[str, Any], callbacks: Optional[List[EnvironmentCallback]] = None):
         super().__init__()
         self.callbacks = callbacks or []
         for cb in self.callbacks:
             cb.on_setup_start(self)
-        self.state = self.setup_state(task_data)
+        self.state = self.setup_state(environment_data)
         self.tools = self.create_tools()
         for cb in self.callbacks:
             cb.on_setup_end(self)
 
     @abstractmethod
-    def setup_state(self, task_data: dict) -> Any:
-        """Initializes the environment's state from task data."""
+    def setup_state(self, environment_data: dict) -> Any:
+        """Initializes the environment's state from environment data."""
         pass
 
     @abstractmethod

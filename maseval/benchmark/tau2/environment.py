@@ -59,30 +59,30 @@ class Tau2Environment(Environment):
     Key Features:
     - Real tool implementations that modify database state
     - Deterministic state hashing for evaluation
-    - Support for initial state setup from task data
+    - Support for initial state setup from environment data
 
     Adapted from: tau2-bench src/tau2/environment/environment.py
     """
 
     def __init__(
         self,
-        task_data: Dict[str, Any],
+        environment_data: Dict[str, Any],
         callbacks: Optional[List[Any]] = None,
     ):
         """Initialize environment for a domain.
 
         Args:
-            task_data: Task data containing:
+            environment_data: Environment data containing:
                 - domain: Domain name ("retail", "airline", "telecom")
                 - initial_state: Optional initial state setup
                 - policy: Domain policy text (embedded during task loading)
                 - db_path: Path to database file (embedded during task loading)
             callbacks: Optional callbacks
         """
-        self._domain = task_data.get("domain", "retail")
-        self._initial_state_config = task_data.get("initial_state")
-        self._policy = task_data.get("policy")
-        self._db_path = task_data.get("db_path")
+        self._domain = environment_data.get("domain", "retail")
+        self._initial_state_config = environment_data.get("initial_state")
+        self._policy = environment_data.get("policy")
+        self._db_path = environment_data.get("db_path")
 
         if self._domain not in VALID_DOMAINS:
             raise ValueError(f"Invalid domain '{self._domain}'. Must be one of {VALID_DOMAINS}")
@@ -90,7 +90,7 @@ class Tau2Environment(Environment):
         if self._domain not in DOMAIN_DB_CLASSES:
             raise ValueError(f"Domain '{self._domain}' is not yet implemented")
 
-        super().__init__(task_data, callbacks)
+        super().__init__(environment_data, callbacks)
 
     @property
     def domain(self) -> str:
@@ -117,8 +117,8 @@ class Tau2Environment(Environment):
         """Get the domain policy text."""
         return self.state["policy"]
 
-    def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize environment state from task data.
+    def setup_state(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize environment state from environment data.
 
         Sets up:
         - db: Domain database loaded from data files
@@ -127,7 +127,7 @@ class Tau2Environment(Environment):
         - initial_db_hash: Hash of initial state
 
         Args:
-            task_data: Task data with domain, initial_state, policy, db_path
+            environment_data: Environment data with domain, initial_state, policy, db_path
 
         Returns:
             State dictionary
@@ -652,20 +652,20 @@ class Tau2Environment(Environment):
         return config
 
 
-def get_environment_constructor(task_data: Dict[str, Any]) -> Callable[[], "Tau2Environment"]:
-    """Get an environment constructor from task data.
+def get_environment_constructor(environment_data: Dict[str, Any]) -> Callable[[], "Tau2Environment"]:
+    """Get an environment constructor from environment data.
 
     Used by the evaluator to create fresh environment instances
     for replaying tool calls and computing gold state.
 
     Args:
-        task_data: Task data with domain, policy, db_path
+        environment_data: Environment data with domain, policy, db_path
 
     Returns:
         Callable that creates Tau2Environment instances
     """
 
     def constructor(solo_mode: bool = False) -> Tau2Environment:
-        return Tau2Environment(task_data)
+        return Tau2Environment(environment_data)
 
     return constructor

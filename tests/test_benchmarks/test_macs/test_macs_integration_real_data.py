@@ -61,7 +61,7 @@ class TestMACSRealDataWithEnvironment:
 
         # Test that each task creates a valid environment
         for task in tasks:
-            env = MACSEnvironment({"environment_data": task.environment_data}, macs_model_factory)
+            env = MACSEnvironment(task.environment_data, macs_model_factory)
 
             # Validate environment was created successfully
             assert env.tools is not None
@@ -83,7 +83,7 @@ class TestMACSRealDataWithEnvironment:
         task = tasks[0]
 
         # Create environment
-        env = MACSEnvironment({"environment_data": task.environment_data}, macs_model_factory)
+        env = MACSEnvironment(task.environment_data, macs_model_factory)
 
         # Validate that agent config works with environment
         assert "agents" in agent_config

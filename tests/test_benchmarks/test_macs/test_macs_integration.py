@@ -133,18 +133,16 @@ class TestDataLoadingIntegration:
             "primary_agent_id": "main",
         }
 
-        task_data = {
-            "environment_data": {
-                "tools": [
-                    {
-                        "tool_name": "tool_group",
-                        "actions": [{"name": "action1", "description": "Action 1"}],
-                    }
-                ]
-            }
+        environment_data = {
+            "tools": [
+                {
+                    "tool_name": "tool_group",
+                    "actions": [{"name": "action1", "description": "Action 1"}],
+                }
+            ]
         }
 
-        env = MACSEnvironment(task_data, macs_model_factory)
+        env = MACSEnvironment(environment_data, macs_model_factory)
 
         # Get tools for agent from config
         agent_spec = agent_config["agents"][0]
@@ -176,8 +174,8 @@ class TestErrorHandlingIntegration:
 
     def test_environment_handles_empty_tool_specs(self, macs_model_factory):
         """Environment handles tasks with no tools."""
-        task_data = {"environment_data": {"tools": []}}
-        env = MACSEnvironment(task_data, macs_model_factory)
+        environment_data = {"tools": []}
+        env = MACSEnvironment(environment_data, macs_model_factory)
 
         assert env.tools == {}
 

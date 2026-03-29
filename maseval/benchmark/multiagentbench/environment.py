@@ -37,27 +37,27 @@ class MultiAgentBenchEnvironment(Environment):
 
     def __init__(
         self,
-        task_data: Dict[str, Any],
+        environment_data: Dict[str, Any],
     ):
         """Initialize the environment.
 
         Args:
-            task_data: Task data containing environment configuration
+            environment_data: Task data containing environment configuration
 
         Raises:
             EnvironmentError: If required infrastructure is unavailable
             ImportError: If MARBLE is not available
         """
-        self.domain = task_data.get("scenario", "")
+        self.domain = environment_data.get("scenario", "")
         self._marble_env: Any = None
         self._tool_histories: Dict[str, ToolInvocationHistory] = {}
-        super().__init__(task_data)
+        super().__init__(environment_data)
 
-    def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+    def setup_state(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize state and optionally create MARBLE environment.
 
         Args:
-            task_data: Task data containing environment configuration
+            environment_data: Task data containing environment configuration
 
         Returns:
             Initial state dictionary
@@ -65,9 +65,9 @@ class MultiAgentBenchEnvironment(Environment):
         Raises:
             EnvironmentError: If required infrastructure is unavailable
         """
-        domain = task_data.get("scenario", "")
-        env_config = task_data.get("environment", {})
-        task_config = task_data.get("task", {})
+        domain = environment_data.get("scenario", "")
+        env_config = environment_data.get("environment", {})
+        task_config = environment_data.get("task", {})
 
         # Check infrastructure requirements
         if domain.lower() in INFRASTRUCTURE_DOMAINS:
@@ -89,7 +89,7 @@ class MultiAgentBenchEnvironment(Environment):
 
         # Pass werewolf config path for WerewolfEnv (different constructor)
         if domain.lower() == "werewolf":
-            marble_config["werewolf_config_path"] = task_data.get("werewolf_config_path", "")
+            marble_config["werewolf_config_path"] = environment_data.get("werewolf_config_path", "")
 
         self._marble_env = self._create_marble_environment(domain, marble_config)
 
@@ -101,7 +101,9 @@ class MultiAgentBenchEnvironment(Environment):
             # Prefer top-level max_iterations (int-converted by data_loader)
             # over env_config value which may be a raw string from JSONL.
             # Default 10 from engine.py:97: config.environment.get("max_iterations", 10)
-            "max_iterations": task_data["max_iterations"] if "max_iterations" in task_data else int(env_config.get("max_iterations", 10)),
+            "max_iterations": environment_data["max_iterations"]
+            if "max_iterations" in environment_data
+            else int(env_config.get("max_iterations", 10)),
         }
 
     def _check_infrastructure(self, domain: str) -> bool:

@@ -132,25 +132,25 @@ class FiveADayEnvironment(Environment):
     with task-specific data, and converts them to the target framework (smolagents, langgraph, llamaindex).
     """
 
-    def __init__(self, task_data: Dict[str, Any], framework: str, callbacks: Optional[List] = None):
+    def __init__(self, environment_data: Dict[str, Any], framework: str, callbacks: Optional[List] = None):
         """Initialize environment with framework info.
 
         Args:
-            task_data: Task configuration dictionary
+            environment_data: Environment configuration dictionary
             framework: Target framework ('smolagents', 'langgraph', 'llamaindex')
             callbacks: Optional callback handlers
         """
         self.framework = framework
-        super().__init__(task_data, callbacks)
+        super().__init__(environment_data, callbacks)
 
-    def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize environment state from task data.
+    def setup_state(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize environment state from environment data.
 
         Creates state objects for tools that require them (e.g., EmailState, BankingState).
         State objects are stored alongside raw environment data for tool initialization.
         """
 
-        env_data = task_data["environment_data"].copy()
+        env_data = environment_data.copy()
         tool_names = env_data.get("tools", [])
 
         # Initialize state objects for tools that need them
@@ -731,16 +731,9 @@ class FiveADayBenchmark(Benchmark):
 
     def setup_environment(self, agent_data: Dict[str, Any], task: Task, seed_generator: SeedGenerator) -> Environment:
         """Create environment from task data."""
-        # Pass full task data to environment
-        task_data = {
-            "environment_data": task.environment_data,
-            "query": task.query,
-            "evaluation_data": task.evaluation_data,
-            "metadata": task.metadata,
-        }
-
+        # Pass environment data to environment
         framework = agent_data["framework"]
-        environment = FiveADayEnvironment(task_data, framework)
+        environment = FiveADayEnvironment(task.environment_data, framework)
 
         # Register all tools with the benchmark for tracing
         for tool_name, tool_adapter in environment.get_tools().items():

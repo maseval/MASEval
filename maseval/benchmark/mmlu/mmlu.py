@@ -97,27 +97,26 @@ class MMLUEnvironment(Environment):
     the task context (question, choices, etc.).
     """
 
-    def setup_state(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize state from task data.
+    def setup_state(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize state from environment data.
 
         Args:
-            task_data: Must contain ``"query"`` (str) and ``"environment_data"``
-                (dict with ``"choices"``, ``"full_prompt"``, ``"use_full_prompt"``).
+            environment_data: Must contain ``"query"`` (str), ``"choices"`` (list),
+                ``"use_full_prompt"`` (bool), and optionally ``"full_prompt"`` (str).
         """
-        env_data = task_data["environment_data"]
-        use_full_prompt = env_data["use_full_prompt"]
-        if use_full_prompt and "full_prompt" not in env_data:
+        use_full_prompt = environment_data["use_full_prompt"]
+        if use_full_prompt and "full_prompt" not in environment_data:
             raise ValueError(
                 "use_full_prompt=True but 'full_prompt' is missing from environment_data. "
                 "Ensure the dataset includes few-shot prompts or set use_full_prompt=False."
             )
         state: Dict[str, Any] = {
-            "query": task_data["query"],
-            "choices": env_data["choices"],
+            "query": environment_data["query"],
+            "choices": environment_data["choices"],
             "use_full_prompt": use_full_prompt,
         }
-        if "full_prompt" in env_data:
-            state["full_prompt"] = env_data["full_prompt"]
+        if "full_prompt" in environment_data:
+            state["full_prompt"] = environment_data["full_prompt"]
         return state
 
     def create_tools(self) -> Dict[str, Any]:
@@ -299,14 +298,12 @@ class MMLUBenchmark(Benchmark):
         seed_generator: SeedGenerator,
     ) -> MMLUEnvironment:
         """Create environment for a task."""
-        task_data = {
+        environment_data = {
+            **task.environment_data,
             "query": task.query,
-            "environment_data": {
-                **task.environment_data,
-                "use_full_prompt": self.use_full_prompt,
-            },
+            "use_full_prompt": self.use_full_prompt,
         }
-        return MMLUEnvironment(task_data)
+        return MMLUEnvironment(environment_data)
 
     def setup_evaluators(
         self,

@@ -52,7 +52,7 @@ class TestGaia2EnvironmentWithRealData:
         """Gaia2Environment can be created from a real task."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        env = Gaia2Environment(task_data=first_real_task.environment_data)
+        env = Gaia2Environment(environment_data=first_real_task.environment_data)
         assert env is not None
 
     def test_environment_setup_state(self, first_real_task):
@@ -62,7 +62,7 @@ class TestGaia2EnvironmentWithRealData:
         """
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        env = Gaia2Environment(task_data=first_real_task.environment_data)
+        env = Gaia2Environment(environment_data=first_real_task.environment_data)
         try:
             state = env.setup_state(first_real_task.environment_data)
 
@@ -78,7 +78,7 @@ class TestGaia2EnvironmentWithRealData:
         from maseval.benchmark.gaia2.environment import Gaia2Environment
         from maseval.benchmark.gaia2.tool_wrapper import Gaia2GenericTool
 
-        env = Gaia2Environment(task_data=first_real_task.environment_data)
+        env = Gaia2Environment(environment_data=first_real_task.environment_data)
         try:
             env.setup_state(first_real_task.environment_data)
             tools = env.create_tools()
@@ -95,7 +95,7 @@ class TestGaia2EnvironmentWithRealData:
         """Tools from real scenarios have descriptions and inputs schema."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        env = Gaia2Environment(task_data=first_real_task.environment_data)
+        env = Gaia2Environment(environment_data=first_real_task.environment_data)
         try:
             env.setup_state(first_real_task.environment_data)
             tools = env.create_tools()
@@ -114,7 +114,7 @@ class TestGaia2EnvironmentWithRealData:
         """gather_traces() returns expected keys after real scenario setup."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
-        env = Gaia2Environment(task_data=first_real_task.environment_data)
+        env = Gaia2Environment(environment_data=first_real_task.environment_data)
         try:
             env.setup_state(first_real_task.environment_data)
             env.create_tools()
@@ -143,7 +143,7 @@ class TestDefaultAgentWithRealTools:
 
         from conftest import DummyModelAdapter
 
-        env = Gaia2Environment(task_data=first_real_task.environment_data)
+        env = Gaia2Environment(environment_data=first_real_task.environment_data)
         try:
             env.setup_state(first_real_task.environment_data)
             tools = env.create_tools()
@@ -185,7 +185,7 @@ class TestGaia2EvaluatorWithRealData:
         from maseval.benchmark.gaia2.environment import Gaia2Environment
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
-        env = Gaia2Environment(task_data=first_real_task.environment_data)
+        env = Gaia2Environment(environment_data=first_real_task.environment_data)
 
         evaluator = Gaia2Evaluator(
             task=first_real_task,
@@ -199,7 +199,7 @@ class TestGaia2EvaluatorWithRealData:
         from maseval.benchmark.gaia2.environment import Gaia2Environment
         from maseval.benchmark.gaia2.evaluator import Gaia2Evaluator
 
-        env = Gaia2Environment(task_data=first_real_task.environment_data)
+        env = Gaia2Environment(environment_data=first_real_task.environment_data)
 
         evaluator = Gaia2Evaluator(
             task=first_real_task,

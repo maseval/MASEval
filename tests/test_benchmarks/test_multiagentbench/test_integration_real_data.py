@@ -112,7 +112,7 @@ class TestMultiAgentBenchRealEnvironment:
         tasks = load_tasks(domain, data_dir=marble_data_dir, limit=1)
         assert len(tasks) > 0
 
-        env = MultiAgentBenchEnvironment(task_data=tasks[0].environment_data)
+        env = MultiAgentBenchEnvironment(environment_data=tasks[0].environment_data)
         assert env is not None
         assert env.domain == domain
 
@@ -120,7 +120,7 @@ class TestMultiAgentBenchRealEnvironment:
     def test_environment_setup_state(self, domain, marble_data_dir):
         """setup_state() extracts domain and max_iterations from real data."""
         tasks = load_tasks(domain, data_dir=marble_data_dir, limit=1)
-        env = MultiAgentBenchEnvironment(task_data=tasks[0].environment_data)
+        env = MultiAgentBenchEnvironment(environment_data=tasks[0].environment_data)
         state = env.setup_state(tasks[0].environment_data)
 
         assert isinstance(state, dict)
@@ -132,7 +132,7 @@ class TestMultiAgentBenchRealEnvironment:
     def test_environment_gather_traces(self, domain, marble_data_dir):
         """gather_traces() returns dict with expected keys."""
         tasks = load_tasks(domain, data_dir=marble_data_dir, limit=1)
-        env = MultiAgentBenchEnvironment(task_data=tasks[0].environment_data)
+        env = MultiAgentBenchEnvironment(environment_data=tasks[0].environment_data)
         env.setup_state(tasks[0].environment_data)
         traces = env.gather_traces()
 
@@ -144,7 +144,7 @@ class TestMultiAgentBenchRealEnvironment:
     def test_environment_gather_config(self, domain, marble_data_dir):
         """gather_config() returns dict with domain and tool info."""
         tasks = load_tasks(domain, data_dir=marble_data_dir, limit=1)
-        env = MultiAgentBenchEnvironment(task_data=tasks[0].environment_data)
+        env = MultiAgentBenchEnvironment(environment_data=tasks[0].environment_data)
         env.setup_state(tasks[0].environment_data)
         config = env.gather_config()
 

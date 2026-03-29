@@ -57,7 +57,7 @@ class ConverseBenchmark(Benchmark):
             A :class:`ConverseEnvironment` initialised with the task's data.
         """
         _ = agent_data, seed_generator
-        return ConverseEnvironment(task_data=task.environment_data)
+        return ConverseEnvironment(environment_data=task.environment_data)
 
     def setup_user(
         self,
