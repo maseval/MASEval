@@ -124,6 +124,35 @@ class TestAREToolWrapper:
         assert config["description"] == "Create a calendar event"
         assert "input_schema" in config
 
+    def test_input_schema_from_to_open_ai(self):
+        """input_schema is extracted from AppTool.to_open_ai() format."""
+        are_tool = self._make_mock_are_tool()
+        are_tool.to_open_ai.return_value = {
+            "type": "function",
+            "function": {
+                "name": "Calendar__create_event",
+                "description": "Create a calendar event",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Event title"},
+                    },
+                    "required": ["title"],
+                },
+            },
+        }
+        env = MagicMock()
+
+        wrapper = AREToolWrapper(are_tool, env)
+
+        assert wrapper.input_schema == {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Event title"},
+            },
+            "required": ["title"],
+        }
+
     def test_repr(self):
         """String representation shows tool signature."""
         are_tool = self._make_mock_are_tool()

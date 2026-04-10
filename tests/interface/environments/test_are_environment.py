@@ -233,6 +233,22 @@ class TestAREEnvironmentScenarioPath:
         assert config["notification_verbosity"] == "medium"
         assert "tool_names" in config
 
+    @patch("maseval.interface.environments.are._import_are")
+    def test_setup_state_raises_on_missing_scenario_attributes(self, mock_import):
+        """setup_state raises AttributeError if scenario lacks expected attributes."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_mod.Environment.return_value = _make_mock_are_env()
+
+        # Create scenario missing time_increment_in_seconds
+        scenario = MagicMock(spec=[])
+        scenario.duration = 600
+        scenario.apps = []
+        # Deliberately missing: time_increment_in_seconds, scenario_id, seed, start_time
+
+        with pytest.raises(AttributeError):
+            AREEnvironment(environment_data={"scenario": scenario})
+
 
 class TestAREEnvironmentShorthandPath:
     """Tests for AREEnvironment with apps+events shorthand."""
@@ -301,6 +317,26 @@ class TestAREEnvironmentShorthandPath:
             assert call_kwargs["start_time"] == 100
             assert call_kwargs["time_increment_in_seconds"] == 5
             mock_scenario_instance.initialize.assert_called_once()
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_shorthand_requires_duration(self, mock_import):
+        """Shorthand path raises KeyError when duration is missing."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_mod.Environment.return_value = _make_mock_are_env()
+
+        with pytest.raises(KeyError, match="duration"):
+            AREEnvironment(environment_data={"apps": [MagicMock()], "seed": 1})
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_shorthand_requires_seed(self, mock_import):
+        """Shorthand path raises KeyError when seed is missing."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_mod.Environment.return_value = _make_mock_are_env()
+
+        with pytest.raises(KeyError, match="seed"):
+            AREEnvironment(environment_data={"apps": [MagicMock()], "duration": 60})
 
 
 class TestAREEnvironmentOracleMode:
@@ -395,19 +431,6 @@ class TestAREToolWrapper:
         assert meta["simulation_time_before"] is None
         assert meta["simulation_time_after"] is None
         assert meta["simulation_time_elapsed"] is None
-
-    def test_schema_extraction_crashes_on_missing_arg_type(self):
-        """_extract_schema raises AttributeError if arg lacks arg_type."""
-        from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
-
-        mock_tool = MagicMock(spec=[])  # empty spec — no attributes
-        mock_tool.name = "param1"
-        # Deliberately no arg_type or has_default
-        mock_are_tool = MagicMock()
-        mock_are_tool.args = [mock_tool]
-
-        with pytest.raises(AttributeError):
-            AREToolWrapper._extract_schema(mock_are_tool)
 
     @patch("maseval.interface.environments.are_tool_wrapper.AppToolAdapter")
     def test_uses_app_tool_adapter_for_metadata(self, mock_adapter_cls):
@@ -526,6 +549,32 @@ class TestAREEnvironmentAUIFiltering:
         assert "EmailClient__send_email" in tools
 
     @patch("maseval.interface.environments.are._import_are")
+    def test_configure_aui_apps_disables_wait(self, mock_import):
+        """_configure_aui_apps() sets wait_for_user_response=False on AUI apps."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+
+        aui_app = MagicMock()
+        aui_app.name = "AgentUserInterface"
+        aui_app.wait_for_user_response = True
+        aui_app.get_tools.return_value = []
+
+        email_app = MagicMock()
+        email_app.name = "EmailClient"
+        del email_app.wait_for_user_response
+        email_app.get_tools.return_value = []
+
+        mock_are_env = MagicMock()
+        mock_are_env.apps = {"AgentUserInterface": aui_app, "EmailClient": email_app}
+        mock_are_env.current_time = 0.0
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        scenario = _make_mock_scenario()
+        AREEnvironment(environment_data={"scenario": scenario}, filter_aui_tools=True)
+
+        assert aui_app.wait_for_user_response is False
+
+    @patch("maseval.interface.environments.are._import_are")
     def test_aui_tools_not_filtered_by_default(self, mock_import):
         """AUI tools are included by default."""
         mock_are_mod = MagicMock()
@@ -629,6 +678,101 @@ class TestAREEnvironmentTurnNotifications:
         assert result == ([], False, False)
 
 
+class TestAREEnvironmentClassmethods:
+    """Tests for from_scenario and from_apps classmethods."""
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_from_scenario_creates_environment(self, mock_import):
+        """from_scenario() constructs environment from an ARE Scenario."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment.from_scenario(scenario)
+
+        assert env.state["scenario_id"] == "test-001"
+        assert env.state["duration"] == 600
+        assert env.state["seed"] == 42
+        assert env._are_env is mock_are_env
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_from_scenario_passes_options(self, mock_import):
+        """from_scenario() forwards run_oracle, notification_verbosity, filter_aui_tools."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment.from_scenario(
+            scenario,
+            run_oracle=False,
+            notification_verbosity="high",
+            filter_aui_tools=True,
+        )
+
+        assert env._run_oracle is False
+        assert env._notification_verbosity == "high"
+        assert env._filter_aui_tools is True
+
+    @patch("maseval.interface.environments.are._import_are")
+    @patch("maseval.interface.environments.are.AREEnvironment._build_scenario_from_shorthand")
+    def test_from_apps_creates_environment(self, mock_build, mock_import):
+        """from_apps() constructs environment from apps list + required params."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_scenario = _make_mock_scenario()
+        mock_build.return_value = mock_scenario
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        apps = [MagicMock(), MagicMock()]
+        env = AREEnvironment.from_apps(
+            apps=apps,
+            duration=120,
+            seed=7,
+        )
+
+        assert env._scenario is mock_scenario
+        call_args = mock_build.call_args[0][0]
+        assert call_args["apps"] is apps
+        assert call_args["duration"] == 120
+        assert call_args["seed"] == 7
+
+    @patch("maseval.interface.environments.are._import_are")
+    @patch("maseval.interface.environments.are.AREEnvironment._build_scenario_from_shorthand")
+    def test_from_apps_passes_optional_params(self, mock_build, mock_import):
+        """from_apps() forwards optional scenario and environment params."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_scenario = _make_mock_scenario()
+        mock_build.return_value = mock_scenario
+        mock_are_env = _make_mock_are_env()
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        apps = [MagicMock()]
+        events = [MagicMock()]
+        env = AREEnvironment.from_apps(
+            apps=apps,
+            duration=60,
+            seed=42,
+            events=events,
+            start_time=100,
+            time_increment_in_seconds=5,
+            scenario_id="my-test",
+            notification_verbosity="high",
+        )
+
+        call_args = mock_build.call_args[0][0]
+        assert call_args["events"] is events
+        assert call_args["start_time"] == 100
+        assert call_args["time_increment_in_seconds"] == 5
+        assert call_args["scenario_id"] == "my-test"
+        assert env._notification_verbosity == "high"
+
+
 class TestAREEnvironmentAccessors:
     """Tests for convenience accessors."""
 
@@ -663,3 +807,82 @@ class TestAREEnvironmentAccessors:
         scenario = _make_mock_scenario()
         env = AREEnvironment(environment_data={"scenario": scenario})
         assert env.get_notification_system() is mock_notif_sys
+
+
+class TestAREEnvironmentLifecycleErrors:
+    """Tests that lifecycle methods raise on misconfigured environment."""
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_start_raises_when_no_are_env(self, mock_import):
+        """start() raises RuntimeError if _are_env is None."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_mod.Environment.return_value = _make_mock_are_env()
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(environment_data={"scenario": scenario})
+        env._are_env = None
+
+        with pytest.raises(RuntimeError, match="ARE environment not initialized"):
+            env.start()
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_stop_raises_when_no_are_env(self, mock_import):
+        """stop() raises RuntimeError if _are_env is None."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_mod.Environment.return_value = _make_mock_are_env()
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(environment_data={"scenario": scenario})
+        env._are_env = None
+
+        with pytest.raises(RuntimeError, match="ARE environment not initialized"):
+            env.stop()
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_pause_raises_when_no_are_env(self, mock_import):
+        """pause() raises RuntimeError if _are_env is None."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_mod.Environment.return_value = _make_mock_are_env()
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(environment_data={"scenario": scenario})
+        env._are_env = None
+
+        with pytest.raises(RuntimeError, match="ARE environment not initialized"):
+            env.pause()
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_resume_raises_when_no_are_env(self, mock_import):
+        """resume_with_offset() raises RuntimeError if _are_env is None."""
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_mod.Environment.return_value = _make_mock_are_env()
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(environment_data={"scenario": scenario})
+        env._are_env = None
+
+        with pytest.raises(RuntimeError, match="ARE environment not initialized"):
+            env.resume_with_offset(5.0)
+
+    @patch("maseval.interface.environments.are._import_are")
+    def test_cleanup_logs_exception(self, mock_import, caplog):
+        """cleanup() logs exceptions instead of swallowing silently."""
+        import logging
+
+        mock_are_mod = MagicMock()
+        mock_import.return_value = mock_are_mod
+        mock_are_env = _make_mock_are_env()
+        mock_are_env.stop.side_effect = RuntimeError("stop failed")
+        mock_are_mod.Environment.return_value = mock_are_env
+
+        scenario = _make_mock_scenario()
+        env = AREEnvironment(environment_data={"scenario": scenario})
+
+        with caplog.at_level(logging.WARNING):
+            env.cleanup()  # should not raise
+
+        assert "stop failed" in caplog.text

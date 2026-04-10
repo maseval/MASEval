@@ -113,6 +113,23 @@ class TestAREEnvironmentLifecycle:
         finally:
             env.cleanup()
 
+    def test_from_apps_classmethod(self):
+        """from_apps() creates a working environment with real ARE apps."""
+        from maseval.interface.environments.are import AREEnvironment
+
+        apps = [CalendarApp(), ContactsApp(), SystemApp()]
+        env = AREEnvironment.from_apps(
+            apps=apps,
+            duration=30,
+            seed=99,
+        )
+        try:
+            assert env.state["duration"] == 30
+            assert env.state["seed"] == 99
+            assert len(env.tools) > 0
+        finally:
+            env.cleanup()
+
     def test_cleanup_is_idempotent(self):
         """cleanup() can be called multiple times without error."""
         from maseval.interface.environments.are import AREEnvironment

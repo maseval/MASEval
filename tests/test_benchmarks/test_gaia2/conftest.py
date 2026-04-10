@@ -117,6 +117,30 @@ class MockARETool:
             arg.default = default
         return arg
 
+    def to_open_ai(self) -> Dict[str, Any]:
+        """Convert to OpenAI function calling format (matching AppTool.to_open_ai)."""
+        properties = {}
+        required = []
+        for arg in self.args:
+            properties[arg.name] = {
+                "type": arg.arg_type,
+                "description": getattr(arg, "description", ""),
+            }
+            if not arg.has_default:
+                required.append(arg.name)
+        return {
+            "type": "function",
+            "function": {
+                "name": self._public_name,
+                "description": self._public_description,
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
+                },
+            },
+        }
+
     def __call__(self, **kwargs) -> Any:
         self._calls.append(kwargs)
         if callable(self._return_value):

@@ -7,11 +7,19 @@ Original Repository: https://github.com/facebookresearch/meta-agents-research-en
 Code License: MIT
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from maseval.core.environment import Environment
 from maseval.core.callback import EnvironmentCallback
 from maseval.interface.environments.are_tool_wrapper import AREToolWrapper
+
+if TYPE_CHECKING:
+    from are.simulation.environment import Environment as _AREEnv  # type: ignore[import-not-found]
+    from are.simulation.scenarios.scenario import Scenario as _Scenario  # type: ignore[import-not-found]
+    from are.simulation.notification_system import VerboseNotificationSystem as _NotificationSystem  # type: ignore[import-not-found]
+
+logger = logging.getLogger(__name__)
 
 
 def _check_are_installed() -> None:
@@ -50,10 +58,16 @@ def _import_are() -> Any:
 class AREEnvironment(Environment):
     """Generic maseval Environment wrapping ARE's simulation infrastructure.
 
-    Supports two construction paths via ``environment_data``:
+    Two construction paths:
 
-    1. **Scenario path:** ``environment_data = {"scenario": <ARE Scenario>}``
-    2. **Shorthand path:** ``environment_data = {"apps": [...], "events": [...], "duration": 1800, ...}``
+    1. **From a Scenario:** ``AREEnvironment.from_scenario(scenario)``
+    2. **From apps:** ``AREEnvironment.from_apps(apps=[...], duration=60, seed=42)``
+
+    Both paths also accept ``run_oracle``, ``notification_verbosity``,
+    ``filter_aui_tools``, and ``callbacks``.
+
+    The raw ``AREEnvironment(environment_data=...)`` constructor is available
+    for subclasses that need full control over ``setup_state()``.
 
     Lifecycle is user-controlled: call ``start()`` before ``run_agents()``,
     ``stop()`` after. ``pause()``/``resume_with_offset()`` control simulation time.
@@ -79,8 +93,9 @@ class AREEnvironment(Environment):
         Args:
             environment_data: Dict. Must contain either:
                 - ``"scenario"``: ARE Scenario object, OR
-                - ``"apps"``: list of ARE App instances, plus optional ``"events"``,
-                  ``"duration"``, ``"seed"``, ``"start_time"``, ``"time_increment_in_seconds"``
+                - ``"apps"``: list of ARE App instances, plus required ``"duration"``
+                  and ``"seed"``, and optional ``"events"``, ``"start_time"``,
+                  ``"time_increment_in_seconds"``
             callbacks: Optional maseval EnvironmentCallbacks.
             run_oracle: If True, run ARE oracle mode during setup to generate
                 expected event log. Stored in traces for evaluation.
@@ -92,12 +107,92 @@ class AREEnvironment(Environment):
         self._run_oracle = run_oracle
         self._notification_verbosity = notification_verbosity
         self._filter_aui_tools = filter_aui_tools
-        self._are_env: Any = None
-        self._scenario: Any = None
+        self._are_env: Optional["_AREEnv"] = None
+        self._scenario: Optional["_Scenario"] = None
         self._oracle_traces: Optional[Dict[str, Any]] = None
         self._tool_wrappers: Dict[str, AREToolWrapper] = {}
 
         super().__init__(environment_data, callbacks)
+
+    @classmethod
+    def from_scenario(
+        cls,
+        scenario: "Any",
+        callbacks: Optional[List[EnvironmentCallback]] = None,
+        run_oracle: bool = False,
+        notification_verbosity: str = "medium",
+        filter_aui_tools: bool = False,
+    ) -> "AREEnvironment":
+        """Create AREEnvironment from a pre-built ARE Scenario.
+
+        Args:
+            scenario: ARE Scenario object (from ``are.simulation.scenarios``).
+            callbacks: Optional maseval EnvironmentCallbacks.
+            run_oracle: If True, run ARE oracle mode during setup.
+            notification_verbosity: ``"low"``, ``"medium"``, or ``"high"``.
+            filter_aui_tools: If True, exclude AUI message-retrieval tools.
+
+        Returns:
+            Configured AREEnvironment instance.
+        """
+        return cls(
+            environment_data={"scenario": scenario},
+            callbacks=callbacks,
+            run_oracle=run_oracle,
+            notification_verbosity=notification_verbosity,
+            filter_aui_tools=filter_aui_tools,
+        )
+
+    @classmethod
+    def from_apps(
+        cls,
+        apps: "List[Any]",
+        duration: int,
+        seed: int,
+        events: "Optional[List[Any]]" = None,
+        start_time: float = 0,
+        time_increment_in_seconds: int = 1,
+        scenario_id: str = "custom",
+        callbacks: Optional[List[EnvironmentCallback]] = None,
+        run_oracle: bool = False,
+        notification_verbosity: str = "medium",
+        filter_aui_tools: bool = False,
+    ) -> "AREEnvironment":
+        """Create AREEnvironment from ARE app instances and explicit config.
+
+        Args:
+            apps: List of ARE App instances (e.g. ``[CalendarApp(), ContactsApp()]``).
+            duration: Scenario duration in seconds. Required — no default.
+            seed: Random seed for reproducibility. Required — no default.
+            events: Optional list of ARE events to schedule.
+            start_time: Simulation start time in seconds.
+            time_increment_in_seconds: Fixed tick interval (>= 1 second).
+            scenario_id: Identifier for the scenario.
+            callbacks: Optional maseval EnvironmentCallbacks.
+            run_oracle: If True, run ARE oracle mode during setup.
+            notification_verbosity: ``"low"``, ``"medium"``, or ``"high"``.
+            filter_aui_tools: If True, exclude AUI message-retrieval tools.
+
+        Returns:
+            Configured AREEnvironment instance.
+        """
+        environment_data: Dict[str, Any] = {
+            "apps": apps,
+            "duration": duration,
+            "seed": seed,
+            "start_time": start_time,
+            "time_increment_in_seconds": time_increment_in_seconds,
+            "scenario_id": scenario_id,
+        }
+        if events is not None:
+            environment_data["events"] = events
+        return cls(
+            environment_data=environment_data,
+            callbacks=callbacks,
+            run_oracle=run_oracle,
+            notification_verbosity=notification_verbosity,
+            filter_aui_tools=filter_aui_tools,
+        )
 
     def setup_state(self, environment_data: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize ARE environment from environment data.
@@ -131,9 +226,9 @@ class AREEnvironment(Environment):
         config = are_mod.EnvironmentConfig(
             oracle_mode=False,
             duration=scenario.duration,
-            time_increment_in_seconds=getattr(scenario, "time_increment_in_seconds", 1),
+            time_increment_in_seconds=scenario.time_increment_in_seconds,
         )
-        if getattr(scenario, "start_time", None) and scenario.start_time > 0:
+        if scenario.start_time and scenario.start_time > 0:
             config.start_time = scenario.start_time
 
         # Create notification system based on verbosity
@@ -144,11 +239,11 @@ class AREEnvironment(Environment):
         self._are_env.register_apps(scenario.apps)
 
         return {
-            "scenario_id": getattr(scenario, "scenario_id", None),
+            "scenario_id": scenario.scenario_id,
             "duration": scenario.duration,
-            "seed": getattr(scenario, "seed", None),
-            "start_time": getattr(scenario, "start_time", None),
-            "app_names": [getattr(app, "name", str(app)) for app in scenario.apps],
+            "seed": scenario.seed,
+            "start_time": scenario.start_time,
+            "app_names": [app.name for app in scenario.apps],
             "oracle_traces": self._oracle_traces,
         }
 
@@ -156,19 +251,22 @@ class AREEnvironment(Environment):
         """Build an ARE Scenario from shorthand environment_data.
 
         Args:
-            environment_data: Dict with ``"apps"``, and optional ``"events"``,
-                ``"duration"``, ``"seed"``, ``"start_time"``,
-                ``"time_increment_in_seconds"``.
+            environment_data: Dict with ``"apps"`` (required), ``"duration"`` (required),
+                ``"seed"`` (required), and optional ``"events"``,
+                ``"start_time"``, ``"time_increment_in_seconds"``.
 
         Returns:
             ARE Scenario instance.
+
+        Raises:
+            KeyError: If ``"duration"`` or ``"seed"`` is missing.
         """
         from are.simulation.scenarios.scenario import Scenario  # type: ignore[import-not-found]
 
         apps = environment_data["apps"]
+        duration = environment_data["duration"]
+        seed = environment_data["seed"]
         events = environment_data.get("events", [])
-        duration = environment_data.get("duration", 1800)
-        seed = environment_data.get("seed", 0)
         start_time = environment_data.get("start_time", 0)
         time_increment = environment_data.get("time_increment_in_seconds", 1)
 
@@ -201,7 +299,7 @@ class AREEnvironment(Environment):
         oracle_config = are_mod.EnvironmentConfig(
             oracle_mode=True,
             duration=scenario.duration,
-            time_increment_in_seconds=getattr(scenario, "time_increment_in_seconds", 1),
+            time_increment_in_seconds=scenario.time_increment_in_seconds,
         )
         oracle_env = are_mod.Environment(oracle_config)
         oracle_env.run(scenario, wait_for_end=True, schedule_events=True)
@@ -239,6 +337,18 @@ class AREEnvironment(Environment):
         except ImportError:
             return None
 
+    def _configure_aui_apps(self) -> None:
+        """Disable AUI wait_for_user_response when AUI filtering is enabled.
+
+        Separated from ``create_tools()`` for clarity — app mutation is
+        a distinct concern from tool wrapping.
+        """
+        if not self._filter_aui_tools or self._are_env is None:
+            return
+        for app in self._are_env.apps.values():
+            if hasattr(app, "wait_for_user_response"):
+                app.wait_for_user_response = False
+
     def create_tools(self) -> Dict[str, AREToolWrapper]:
         """Wrap all ARE app tools in AREToolWrapper.
 
@@ -250,9 +360,9 @@ class AREEnvironment(Environment):
         if self._are_env is None:
             return tools
 
+        self._configure_aui_apps()
+
         for app in self._are_env.apps.values():
-            if self._filter_aui_tools and hasattr(app, "wait_for_user_response"):
-                app.wait_for_user_response = False
             for are_tool in app.get_tools():
                 if self._filter_aui_tools and are_tool.name in self._AUI_TOOLS_TO_REMOVE:
                     continue
@@ -267,31 +377,45 @@ class AREEnvironment(Environment):
     def start(self) -> None:
         """Start the ARE simulation event loop.
 
-        Call this after environment setup and before running agents.
-        Runs the scenario with ``wait_for_end=False`` so control returns
-        immediately for agent interaction.
+        Raises:
+            RuntimeError: If the ARE environment is not initialized.
         """
-        if self._are_env is not None and self._scenario is not None:
-            self._are_env.run(self._scenario, wait_for_end=False, schedule_events=True)
+        if self._are_env is None or self._scenario is None:
+            raise RuntimeError("ARE environment not initialized. Cannot start simulation.")
+        self._are_env.run(self._scenario, wait_for_end=False, schedule_events=True)
 
     def stop(self) -> None:
-        """Stop the ARE simulation event loop."""
-        if self._are_env is not None:
-            self._are_env.stop()
+        """Stop the ARE simulation event loop.
+
+        Raises:
+            RuntimeError: If the ARE environment is not initialized.
+        """
+        if self._are_env is None:
+            raise RuntimeError("ARE environment not initialized. Cannot stop simulation.")
+        self._are_env.stop()
 
     def pause(self) -> None:
-        """Pause simulation time progression."""
-        if self._are_env is not None:
-            self._are_env.pause()
+        """Pause simulation time progression.
+
+        Raises:
+            RuntimeError: If the ARE environment is not initialized.
+        """
+        if self._are_env is None:
+            raise RuntimeError("ARE environment not initialized. Cannot pause simulation.")
+        self._are_env.pause()
 
     def resume_with_offset(self, offset: float) -> None:
         """Resume simulation with a time offset.
 
         Args:
             offset: Seconds to advance simulation clock before resuming.
+
+        Raises:
+            RuntimeError: If the ARE environment is not initialized.
         """
-        if self._are_env is not None:
-            self._are_env.resume_with_offset(offset)
+        if self._are_env is None:
+            raise RuntimeError("ARE environment not initialized. Cannot resume simulation.")
+        self._are_env.resume_with_offset(offset)
 
     # ── Notification Polling ──────────────────────────────────────────
 
@@ -407,11 +531,11 @@ class AREEnvironment(Environment):
         except AttributeError:
             return 0.0
 
-    def get_are_environment(self) -> Any:
+    def get_are_environment(self) -> Optional["_AREEnv"]:
         """Get the underlying ARE Environment instance."""
         return self._are_env
 
-    def get_scenario(self) -> Any:
+    def get_scenario(self) -> Optional["_Scenario"]:
         """Get the ARE scenario object."""
         return self._scenario
 
@@ -419,7 +543,7 @@ class AREEnvironment(Environment):
         """Get the scenario start time."""
         return self.state.get("start_time")
 
-    def get_notification_system(self) -> Any:
+    def get_notification_system(self) -> Optional["_NotificationSystem"]:
         """Get the ARE notification system."""
         if self._are_env is None:
             return None
@@ -441,7 +565,7 @@ class AREEnvironment(Environment):
             try:
                 self._are_env.stop()
             except Exception:
-                pass
+                logger.warning("Error during ARE environment cleanup", exc_info=True)
 
     # ── Tracing & Config ──────────────────────────────────────────────
 

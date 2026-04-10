@@ -77,33 +77,20 @@ class AREToolWrapper(TraceableMixin, ConfigurableMixin):
 
     @staticmethod
     def _extract_schema(are_tool: Any) -> Dict[str, Any]:
-        """Convert ARE's args list to JSON schema format.
+        """Extract JSON schema from ARE tool's OpenAI function calling format.
+
+        Uses ``AppTool.to_open_ai()`` as the canonical schema source.
 
         Args:
-            are_tool: ARE Tool instance.
+            are_tool: ARE AppTool instance.
 
         Returns:
-            JSON schema dict with properties and required fields.
+            JSON schema dict (the ``parameters`` object from OpenAI format).
         """
-        args = getattr(are_tool, "args", None)
-        if not args:
+        if not hasattr(are_tool, "to_open_ai"):
             return {}
-
-        properties = {}
-        required = []
-
-        for arg in args:
-            param_name = getattr(arg, "name", None)
-            if not param_name:
-                continue
-            properties[param_name] = {
-                "type": arg.arg_type,
-                "description": getattr(arg, "description", ""),
-            }
-            if not arg.has_default:
-                required.append(param_name)
-
-        return {"properties": properties, "required": required}
+        openai_spec = are_tool.to_open_ai()
+        return openai_spec.get("function", {}).get("parameters", {})
 
     def _get_simulation_time(self) -> Optional[float]:
         """Get the current simulation time from the ARE environment.

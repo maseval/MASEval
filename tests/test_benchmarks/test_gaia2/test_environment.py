@@ -868,8 +868,8 @@ class TestPauseResume:
 
         env._are_env.resume_with_offset.assert_called_once_with(5.0)
 
-    def test_pause_noop_when_no_are_env(self):
-        """pause() is a no-op when ARE environment is not available."""
+    def test_pause_raises_when_no_are_env(self):
+        """pause() raises RuntimeError when ARE environment is not available."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
         env = Gaia2Environment.__new__(Gaia2Environment)
@@ -879,10 +879,11 @@ class TestPauseResume:
         env._tool_wrappers = {}
         env.state = {}
 
-        env.pause()  # Should not raise
+        with pytest.raises(RuntimeError, match="ARE environment not initialized"):
+            env.pause()
 
-    def test_resume_with_offset_noop_when_no_are_env(self):
-        """resume_with_offset() is a no-op when ARE environment is not available."""
+    def test_resume_with_offset_raises_when_no_are_env(self):
+        """resume_with_offset() raises RuntimeError when ARE environment is not available."""
         from maseval.benchmark.gaia2.environment import Gaia2Environment
 
         env = Gaia2Environment.__new__(Gaia2Environment)
@@ -892,7 +893,8 @@ class TestPauseResume:
         env._tool_wrappers = {}
         env.state = {}
 
-        env.resume_with_offset(5.0)  # Should not raise
+        with pytest.raises(RuntimeError, match="ARE environment not initialized"):
+            env.resume_with_offset(5.0)
 
     def test_pause_propagates_exception(self):
         """pause() propagates exceptions from ARE environment."""
