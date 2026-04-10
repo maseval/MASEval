@@ -144,6 +144,8 @@ class Gaia2Evaluator(Evaluator):
             # Use the scenario's judge (created during preprocess_scenario)
             # ARE scenarios/scenario_imported_from_json/utils.py:112
             scenario = self.environment.get_scenario()
+            if scenario is None:
+                raise RuntimeError("ARE scenario not available on environment. Cannot evaluate.")
             judge = getattr(scenario, "judge", None)
 
             if judge is None:
