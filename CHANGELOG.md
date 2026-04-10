@@ -9,8 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Generic `AREEnvironment` in `maseval.interface.environments` for Meta's ARE (Agent Research Environments) platform with lifecycle control (start/stop/pause/resume), notification polling, AUI tool filtering, and oracle mode support. Install with `pip install maseval[are]`. (PR: #55)
+- Generic `AREToolWrapper` in `maseval.interface.environments` wraps any ARE `AppTool` with simulation time tracking, invocation history, JSON schema extraction, and MASEval tracing integration. (PR: #55)
+- Optional dependency extra `are`: `pip install maseval[are]` (PR: #55)
+
 ### Changed
 
+- `Gaia2Environment` now inherits from `AREEnvironment` and only retains GAIA2-specific setup (preprocessing + judge) and trace/config gathering as overrides. (PR: #55)
+- `Gaia2GenericTool` is now an alias for `AREToolWrapper`. (PR: #55)
 - Renamed `task_data` parameter to `environment_data` across all environment constructors, test fixtures, and examples for consistency with the base class API. (PR: #58)
 
 ### Fixed

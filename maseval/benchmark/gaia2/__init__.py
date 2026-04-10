@@ -71,10 +71,9 @@ from maseval.benchmark.gaia2.evaluator import (
 )
 
 # Tool wrapper
-from maseval.benchmark.gaia2.tool_wrapper import (
-    Gaia2GenericTool,
-    wrap_are_tools,
-)
+# Backward compatibility: Gaia2GenericTool is now AREToolWrapper
+from maseval.interface.environments.are_tool_wrapper import AREToolWrapper as Gaia2GenericTool
+from maseval.benchmark.gaia2.tool_wrapper import wrap_are_tools
 
 # Data loading and configuration
 from maseval.benchmark.gaia2.data_loader import (

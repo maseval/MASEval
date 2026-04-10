@@ -1378,7 +1378,7 @@ class DefaultAgentGaia2Benchmark(Gaia2Benchmark):
         model = self.get_model_adapter(model_id, register_name="agent_model", seed=agent_seed)
 
         agent = DefaultGaia2Agent(
-            tools=tools,  # type: ignore[arg-type]  # Gaia2GenericTool has __call__
+            tools=tools,  # type: ignore[arg-type]  # AREToolWrapper has __call__
             model=model,
             environment=environment,
             llm_args=llm_args,

@@ -48,6 +48,7 @@ wandb = ["wandb>=0.15.0"]
 langfuse = ["langfuse>=3.3.4"]
 
 # Benchmarks
+are = ["meta-agents-research-environments>=1.2.0"]
 gaia2 = ["meta-agents-research-environments>=1.2.0", "datasets>=3.0.0"]
 macs = []
 multiagentbench = [
@@ -220,6 +221,7 @@ markers = [
     "smolagents: Tests that specifically require smolagents",
     "langgraph: Tests that specifically require langgraph",
     "llamaindex: Tests that specifically require llama-index-core",
+    "are: Tests that specifically require ARE (Agent Research Environments)",
     "gaia2: Tests that specifically require ARE (Agent Research Environments)",
     "camel: Tests that specifically require camel-ai",
     "mmlu: Tests that specifically require MMLU benchmark (HuggingFace + DISCO)",

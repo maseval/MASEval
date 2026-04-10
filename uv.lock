@@ -3433,6 +3433,9 @@ all = [
 anthropic = [
     { name = "anthropic" },
 ]
+are = [
+    { name = "meta-agents-research-environments" },
+]
 camel = [
     { name = "camel-ai" },
     { name = "litellm" },
@@ -3641,6 +3644,7 @@ requires-dist = [
     { name = "maseval", extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "litellm", "langfuse", "gaia2", "macs", "tau2", "disco"], marker = "extra == 'examples'" },
     { name = "matplotlib", marker = "extra == 'disco'", specifier = ">=3.5.0" },
     { name = "mcp", marker = "extra == 'examples'", specifier = ">=1.22.0" },
+    { name = "meta-agents-research-environments", marker = "extra == 'are'", specifier = ">=1.2.0" },
     { name = "meta-agents-research-environments", marker = "extra == 'gaia2'", specifier = ">=1.2.0" },
     { name = "names", marker = "extra == 'multiagentbench'", specifier = ">=0.3.0" },
     { name = "numpy", marker = "extra == 'mmlu'", specifier = ">=1.20.0" },
@@ -3676,7 +3680,7 @@ requires-dist = [
     { name = "waitress", marker = "extra == 'multiagentbench'", specifier = ">=3.0.0" },
     { name = "wandb", marker = "extra == 'wandb'", specifier = ">=0.15.0" },
 ]
-provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "gaia2", "macs", "multiagentbench", "tau2", "converse", "mmlu", "lm-eval", "disco", "examples", "all"]
+provides-extras = ["smolagents", "langgraph", "llamaindex", "camel", "anthropic", "openai", "google-genai", "transformers", "litellm", "wandb", "langfuse", "are", "gaia2", "macs", "multiagentbench", "tau2", "converse", "mmlu", "lm-eval", "disco", "examples", "all"]
 
 [package.metadata.requires-dev]
 dev = [
