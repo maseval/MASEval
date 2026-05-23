@@ -6,6 +6,7 @@ model adapters and includes it in report dicts.
 
 import pytest
 from maseval import TaskQueue
+from conftest import DummyBenchmark, DummyModelAdapter
 
 
 @pytest.mark.core
@@ -99,32 +100,26 @@ class TestBenchmarkUsageCollection:
 
 
 # ---------------------------------------------------------------------------
-# Bug #60 reproduction: evaluator (judge) usage was dropped from reports
-# because collect_all_usage() ran before evaluate(). The fixtures below
-# build a benchmark whose evaluator owns a model adapter and only invokes
-# it during __call__, mirroring real LLM judges.
+# Regression tests for issue #60: judge (evaluator) token usage collection
 # ---------------------------------------------------------------------------
 
 
 class _JudgeEvaluator:
-    """Evaluator that invokes a model adapter during __call__.
+    """Minimal evaluator that invokes a model adapter at evaluate-time.
 
-    Defined as a duck-typed Evaluator (matches the abstract interface) so it
-    can hold a model reference and exercise it at evaluate-time.
+    Not an ``Evaluator`` subclass — it implements the duck-typed
+    interface (``filter_traces`` + ``__call__``) that ``DummyBenchmark.evaluate``
+    iterates over (see ``tests/conftest.py``).
     """
 
-    def __init__(self, task, environment, user, model):
-        self.task = task
-        self.environment = environment
-        self.user = user
+    def __init__(self, model):
         self.model = model
 
     def filter_traces(self, traces):
         return traces
 
     def __call__(self, traces, final_answer=None):
-        # Invoke the judge model — this is the action whose usage was
-        # previously lost because collect_all_usage() had already run.
+        # Invokes the judge at evaluate-time (not at setup).
         self.model.chat([{"role": "user", "content": "judge this"}])
         return {"score": 1.0, "passed": True}
 
@@ -136,21 +131,19 @@ def _make_judge_benchmark(judge_usage):
     call to the model appends one usage record, so a single evaluator
     invocation produces exactly one record's worth of tokens.
     """
-    from conftest import DummyBenchmark, DummyModelAdapter
 
     class JudgeBenchmark(DummyBenchmark):
         def setup_evaluators(self, environment, task, agents, user, seed_generator):
             judge_model = DummyModelAdapter(model_id="judge", usage=judge_usage)
             self.register("models", "judge_model", judge_model)
-            return [_JudgeEvaluator(task, environment, user, model=judge_model)]
+            return [_JudgeEvaluator(model=judge_model)]
 
     return JudgeBenchmark()
 
 
 @pytest.mark.core
 class TestBenchmarkJudgeUsage:
-    """Regression tests for issue #60: judge token usage must appear in
-    per-task reports and aggregate into ``benchmark.usage``."""
+    """Tests that judge token usage reaches both per-task reports and ``benchmark.usage``."""
 
     def test_judge_model_usage_captured_in_report(self):
         """A judge model invoked during evaluate() has non-zero usage in
@@ -166,6 +159,7 @@ class TestBenchmarkJudgeUsage:
         judge_entry = models["judge_model"]
         assert judge_entry["input_tokens"] == 100
         assert judge_entry["output_tokens"] == 50
+        assert judge_entry["total_tokens"] == 150
 
     def test_judge_model_usage_aggregated_in_benchmark_total(self):
         """``benchmark.usage`` includes judge tokens, and
