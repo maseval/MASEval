@@ -1254,10 +1254,7 @@ class Benchmark(ABC):
 
             final_answers = None
 
-        # 3. Collect traces and configs (always attempt this).
-        # Usage is collected later (step 4b) so that token usage from
-        # evaluator-owned models (LLM judges) is captured — they only
-        # invoke their model during evaluate() at step 4.
+        # 3. Collect traces and configs (always attempt this)
         execution_usage: Optional[Dict[str, Any]] = None
         try:
             execution_configs = self.collect_all_configs()
@@ -1308,10 +1305,7 @@ class Benchmark(ABC):
             # Task execution failed, so skip evaluation
             eval_results = None
 
-        # 4b. Collect usage (after evaluate() so judge/evaluator-owned
-        # model token usage is included). This is the only point that
-        # folds per-component usage into Benchmark.usage and
-        # Benchmark.usage_by_component (see ComponentRegistry.collect_usage).
+        # 5. Collect usage after evaluate() so judge/evaluator-owned model tokens are captured.
         try:
             execution_usage = self.collect_all_usage()
         except Exception as e:
@@ -1320,7 +1314,7 @@ class Benchmark(ABC):
                 "error_type": type(e).__name__,
             }
 
-        # 5. Build report — all keys always present for consistent schema
+        # 6. Build report — all keys always present for consistent schema
         report = self._build_report(
             task,
             repeat_idx,
