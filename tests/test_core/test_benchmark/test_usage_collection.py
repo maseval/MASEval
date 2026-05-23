@@ -6,6 +6,7 @@ model adapters and includes it in report dicts.
 
 import pytest
 from maseval import TaskQueue
+from maseval.core.exceptions import AgentError
 from conftest import DummyBenchmark, DummyModelAdapter
 
 
@@ -185,7 +186,7 @@ class TestBenchmarkJudgeUsage:
 
         class RaisingEvaluator:
             def __init__(self, task, environment, user):
-                self.task = task
+                _ = task, environment, user
 
             def filter_traces(self, traces):
                 return traces
@@ -214,15 +215,14 @@ class TestBenchmarkJudgeUsage:
         report = reports[0]
         assert report["status"] == "evaluation_failed"
         usage = report["usage"]
-        assert isinstance(usage, dict)
         assert "error" not in usage, f"usage became an error dict: {usage}"
         assert usage["models"]["agent_model"]["input_tokens"] == 42
+        assert usage["models"]["agent_model"]["output_tokens"] == 7
 
     def test_agent_usage_captured_when_execution_raises(self):
         """When run_agents raises (execution failure) and fail_on_task_error
         is False, the report still carries a real usage dict. Evaluate is
         skipped, but step 5 still runs."""
-        from maseval.core.exceptions import AgentError
 
         class FailingAgentBenchmark(DummyBenchmark):
             def setup_agents(self, agent_data, environment, task, user, seed_generator):
@@ -246,6 +246,6 @@ class TestBenchmarkJudgeUsage:
         report = reports[0]
         assert report["status"] == "agent_error"
         usage = report["usage"]
-        assert isinstance(usage, dict)
         assert "error" not in usage, f"usage became an error dict: {usage}"
         assert usage["models"]["agent_model"]["input_tokens"] == 11
+        assert usage["models"]["agent_model"]["output_tokens"] == 3
