@@ -178,3 +178,74 @@ class TestBenchmarkJudgeUsage:
         assert "models:judge_model" in by_component, f"keys: {list(by_component)}"
         assert by_component["models:judge_model"].input_tokens == 100
         assert by_component["models:judge_model"].output_tokens == 50
+
+    def test_agent_usage_captured_when_evaluation_raises(self):
+        """When evaluate() raises and fail_on_evaluation_error=False, the
+        report still carries a real usage dict (step 5 runs after step 4)."""
+
+        class RaisingEvaluator:
+            def __init__(self, task, environment, user):
+                self.task = task
+
+            def filter_traces(self, traces):
+                return traces
+
+            def __call__(self, traces, final_answer=None):
+                raise RuntimeError("boom — simulated evaluator failure")
+
+        class RaisingJudgeBenchmark(DummyBenchmark):
+            def setup_evaluators(self, environment, task, agents, user, seed_generator):
+                # Register an agent-side model with usage so we can assert
+                # that pre-evaluate usage still survives the eval failure.
+                agent_model = DummyModelAdapter(
+                    model_id="agent_model",
+                    usage={"input_tokens": 42, "output_tokens": 7, "total_tokens": 49},
+                )
+                self.register("models", "agent_model", agent_model)
+                # Drive the model once so it has a usage record.
+                agent_model.chat([{"role": "user", "content": "hi"}])
+                return [RaisingEvaluator(task, environment, user)]
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = RaisingJudgeBenchmark(fail_on_evaluation_error=False)
+
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
+
+        report = reports[0]
+        assert report["status"] == "evaluation_failed"
+        usage = report["usage"]
+        assert isinstance(usage, dict)
+        assert "error" not in usage, f"usage became an error dict: {usage}"
+        assert usage["models"]["agent_model"]["input_tokens"] == 42
+
+    def test_agent_usage_captured_when_execution_raises(self):
+        """When run_agents raises (execution failure) and fail_on_task_error
+        is False, the report still carries a real usage dict. Evaluate is
+        skipped, but step 5 still runs."""
+        from maseval.core.exceptions import AgentError
+
+        class FailingAgentBenchmark(DummyBenchmark):
+            def setup_agents(self, agent_data, environment, task, user, seed_generator):
+                agent_model = DummyModelAdapter(
+                    model_id="agent_model",
+                    usage={"input_tokens": 11, "output_tokens": 3, "total_tokens": 14},
+                )
+                self.register("models", "agent_model", agent_model)
+                # Drive the model once so it has a usage record.
+                agent_model.chat([{"role": "user", "content": "hi"}])
+                return super().setup_agents(agent_data, environment, task, user, seed_generator)
+
+            def run_agents(self, agents, task, environment, query):
+                raise AgentError("simulated agent failure", component="agent")
+
+        tasks = TaskQueue.from_list([{"query": "Test", "environment_data": {}}])
+        benchmark = FailingAgentBenchmark(fail_on_task_error=False)
+
+        reports = benchmark.run(tasks, agent_data={"model": "test"})
+
+        report = reports[0]
+        assert report["status"] == "agent_error"
+        usage = report["usage"]
+        assert isinstance(usage, dict)
+        assert "error" not in usage, f"usage became an error dict: {usage}"
+        assert usage["models"]["agent_model"]["input_tokens"] == 11
