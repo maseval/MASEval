@@ -1254,12 +1254,14 @@ class Benchmark(ABC):
 
             final_answers = None
 
-        # 3. Collect traces, configs, and usage (always attempt this)
+        # 3. Collect traces and configs (always attempt this).
+        # Usage is collected later (step 4b) so that token usage from
+        # evaluator-owned models (LLM judges) is captured — they only
+        # invoke their model during evaluate() at step 4.
         execution_usage: Optional[Dict[str, Any]] = None
         try:
             execution_configs = self.collect_all_configs()
             execution_traces = self.collect_all_traces()
-            execution_usage = self.collect_all_usage()
             # Store in context for potential timeout errors
             context.set_collected_traces(execution_traces)
         except Exception as e:
@@ -1272,11 +1274,6 @@ class Benchmark(ABC):
                 "error": f"Failed to collect traces: {e}",
                 "error_type": type(e).__name__,
             }
-            if execution_usage is None:
-                execution_usage = {
-                    "error": f"Failed to collect usage: {e}",
-                    "error_type": type(e).__name__,
-                }
 
         # 4. Evaluate (skip if task execution failed)
         if execution_status == TaskExecutionStatus.SUCCESS:
@@ -1310,6 +1307,18 @@ class Benchmark(ABC):
         else:
             # Task execution failed, so skip evaluation
             eval_results = None
+
+        # 4b. Collect usage (after evaluate() so judge/evaluator-owned
+        # model token usage is included). This is the only point that
+        # folds per-component usage into Benchmark.usage and
+        # Benchmark.usage_by_component (see ComponentRegistry.collect_usage).
+        try:
+            execution_usage = self.collect_all_usage()
+        except Exception as e:
+            execution_usage = {
+                "error": f"Failed to collect usage: {e}",
+                "error_type": type(e).__name__,
+            }
 
         # 5. Build report — all keys always present for consistent schema
         report = self._build_report(
