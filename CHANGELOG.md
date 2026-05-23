@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed MACS real-data tests passing `{"environment_data": task.environment_data}` instead of `task.environment_data` directly, which caused `setup_state` to silently receive an empty tools list. (PR: #58)
 - Benchmark reports from `Benchmark.run()` now have a consistent schema across every outcome. Setup failures, setup timeouts, and unexpected worker failures in parallel runs previously produced reports missing the `usage` and `task` keys (with empty `traces`/`config`). Every report now always includes `task_id`, `repeat_idx`, `status`, `error`, `traces`, `config`, `usage`, `eval`, and `task`, and `report["error"]` is always populated whenever `status` is not `SUCCESS`. (PR: #61)
 - `fail_on_setup_error`, `fail_on_task_error`, and `fail_on_evaluation_error` now abort a parallel `Benchmark.run()` the same way they abort a sequential run. Previously a parallel run swallowed the failure into a degraded report and kept going. (PR: #61)
+- Token usage and cost for LLM judges and other evaluator-owned models are now correctly captured in per-task reports (`report["usage"]`) and in `benchmark.usage` / `benchmark.usage_by_component`. Previously these entries showed zero tokens because the usage snapshot was taken before evaluators ran. Affects every benchmark that registers a model in `setup_evaluators` (e.g. ConVerse, MultiAgentBench). (PR: #63)
 
 ### Removed
 
