@@ -15,7 +15,7 @@ git push && git push --tags
 
 The script automatically stages `CHANGELOG.md` along with `pyproject.toml`.
 
-Automation handles the rest: https://github.com/parameterlab/maseval/actions
+Automation handles the rest: https://github.com/maseval/MASEval/actions
 
 ---
 

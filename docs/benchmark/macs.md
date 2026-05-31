@@ -6,7 +6,7 @@ The **Multi-Agent Collaboration Scenarios (MACS)** benchmark evaluates how well 
 
 [Multi-Agent Collaboration Scenarios (MACS)](https://arxiv.org/abs/2412.05449) is designed to test collaborative problem-solving in realistic enterprise scenarios. The benchmark includes tasks spanning multiple domains such as travel planning, retail, and more. Each task involves multiple agents that must coordinate their actions to achieve user goals.
 
-Check out the [BENCHMARKS.md](https://github.com/parameterlab/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
+Check out the [BENCHMARKS.md](https://github.com/maseval/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
 
 ## Quick Start
 

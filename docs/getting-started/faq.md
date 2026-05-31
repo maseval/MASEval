@@ -11,8 +11,8 @@ Anyone! We had a few groups in mind when building MASEval.
 ## Q: I am looking for a specific feature, but I cannot find it.
 
 1. Check this documentation.
-2. If the feature does not exist, please [open an issue on GitHub](https://github.com/parameterlab/MASEval/issues/new). Feature requests are welcome.
-3. Consider implementing it yourself. Check out the [contributing guide](https://github.com/parameterlab/MASEval/blob/main/CONTRIBUTING.md) for details.
+2. If the feature does not exist, please [open an issue on GitHub](https://github.com/maseval/MASEval/issues/new). Feature requests are welcome.
+3. Consider implementing it yourself. Check out the [contributing guide](https://github.com/maseval/MASEval/blob/main/CONTRIBUTING.md) for details.
 
 ## Q: Can I only test multi-agent systems?
 
