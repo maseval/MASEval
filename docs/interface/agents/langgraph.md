@@ -19,7 +19,7 @@ pip install langgraph
 
 ## API Reference
 
-[:material-github: View source](https://github.com/maseval/maseval/blob/main/maseval/interface/agents/langgraph.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/MASEval/blob/main/maseval/interface/agents/langgraph.py){ .md-source-file }
 
 ::: maseval.interface.agents.langgraph.LangGraphAgentAdapter
 

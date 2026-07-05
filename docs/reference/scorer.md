@@ -6,7 +6,7 @@ Model Scorers provide a uniform interface for log-likelihood computation across 
 
     `ModelScorer` is the scoring counterpart to `ModelAdapter`. Use it when you need log-likelihood evaluation (e.g., multiple-choice benchmarks) rather than text generation.
 
-[:material-github: View source](https://github.com/maseval/maseval/blob/main/maseval/core/scorer.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/MASEval/blob/main/maseval/core/scorer.py){ .md-source-file }
 
 ::: maseval.core.scorer.ModelScorer
 
@@ -14,6 +14,6 @@ Model Scorers provide a uniform interface for log-likelihood computation across 
 
 The following scorer classes implement the ModelScorer interface for specific providers.
 
-[:material-github: View source](https://github.com/maseval/maseval/blob/main/maseval/interface/inference/huggingface_scorer.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/MASEval/blob/main/maseval/interface/inference/huggingface_scorer.py){ .md-source-file }
 
 ::: maseval.interface.inference.huggingface_scorer.HuggingFaceModelScorer

@@ -2,7 +2,7 @@
 
 Exception classes for error classification in benchmark execution.
 
-[:material-github: View source](https://github.com/maseval/maseval/blob/main/maseval/core/exceptions.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/MASEval/blob/main/maseval/core/exceptions.py){ .md-source-file }
 
 ## Exception Hierarchy
 
