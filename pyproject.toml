@@ -140,10 +140,10 @@ examples = [
 all = ["maseval[examples,transformers,wandb,multiagentbench]"]
 
 [project.urls]
-"Homepage" = "https://github.com/parameterlab/MASEval"
-"Bug Tracker" = "https://github.com/parameterlab/MASEval/issues"
+"Homepage" = "https://github.com/maseval/MASEval"
+"Bug Tracker" = "https://github.com/maseval/MASEval/issues"
 "Documentation" = "https://maseval.readthedocs.io/en/stable/"
-"Changelog" = "https://github.com/parameterlab/MASEval/blob/main/CHANGELOG.md"
+"Changelog" = "https://github.com/maseval/MASEval/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 # Development tools (linting, testing) - for contributors only

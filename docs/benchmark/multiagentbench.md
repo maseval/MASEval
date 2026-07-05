@@ -14,7 +14,7 @@ The **MultiAgentBench** benchmark evaluates multi-agent collaboration and compet
 
 Reference Paper: [MultiAgentBench: Evaluating the Collaboration and Competition of LLM agents](https://arxiv.org/abs/2503.01935)
 
-Check out the [BENCHMARKS.md](https://github.com/parameterlab/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
+Check out the [BENCHMARKS.md](https://github.com/maseval/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
 
 ::: maseval.benchmark.multiagentbench.MultiAgentBenchBenchmark
 

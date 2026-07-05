@@ -244,4 +244,4 @@ Formal API documentation for all MASEval components. The reference is split into
 
 ## Next Steps
 
-Work through the examples listed above. 3. **Explore the [`examples/five_a_day_benchmark/`](https://github.com/parameterlab/MASEval/tree/main/examples/five_a_day_benchmark) folder** for tool implementations, evaluators, and the CLI script (`five_a_day_benchmark.py`) 4. **Build your own benchmark** using the patterns you've learned
+Work through the examples listed above. 3. **Explore the [`examples/five_a_day_benchmark/`](https://github.com/maseval/MASEval/tree/main/examples/five_a_day_benchmark) folder** for tool implementations, evaluators, and the CLI script (`five_a_day_benchmark.py`) 4. **Build your own benchmark** using the patterns you've learned

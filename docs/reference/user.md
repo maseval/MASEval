@@ -4,7 +4,7 @@ In many real-world applications, Multi-Agent Systems (MAS) are designed to inter
 
 The `LLMUser` is initialized with a persona and a scenario, both of which are typically defined within a Task. This tight integration allows for dynamic and context-aware simulations. For example, a Task might generate a random birthdate for the user. This birthdate is then passed to both the `LLMUser` and the `Evaluator`. The user will use this information in its conversation with the MAS, and the `Evaluator` will check if the MAS correctly processes and remembers this information. This mechanism enables the creation of sophisticated and reliable benchmarks that can assess the interactive capabilities of a MAS.
 
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/core/user.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/MASEval/blob/main/maseval/core/user.py){ .md-source-file }
 
 ::: maseval.core.user.User
 

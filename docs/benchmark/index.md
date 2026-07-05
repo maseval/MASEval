@@ -13,4 +13,4 @@ You can also create your own benchmarks by subclassing the [`Benchmark`](../refe
 
 ## Licensing
 
-For detailed source and licensing information for each benchmark's data, see [BENCHMARKS.md](https://github.com/parameterlab/MASEval/blob/main/BENCHMARKS.md).
+For detailed source and licensing information for each benchmark's data, see [BENCHMARKS.md](https://github.com/maseval/MASEval/blob/main/BENCHMARKS.md).

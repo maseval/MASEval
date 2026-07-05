@@ -191,7 +191,7 @@ mkdocs serve
 API reference pages should include links to source files on GitHub. Use the following pattern:
 
 ```markdown
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/path/to/YOUR_NEW_CLASS.py){ .md-source-file align=right }
+[:material-github: View source](https://github.com/maseval/MASEval/blob/main/maseval/path/to/YOUR_NEW_CLASS.py){ .md-source-file align=right }
 
 ::: maseval.path.to.YOUR_NEW_CLASS
 ```

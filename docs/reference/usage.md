@@ -4,7 +4,7 @@ Usage and cost tracking provides data classes for recording resource consumption
 
 See the [Usage & Cost Tracking guide](../guides/usage-tracking.md) for usage patterns and examples.
 
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/core/usage.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/MASEval/blob/main/maseval/core/usage.py){ .md-source-file }
 
 ::: maseval.core.usage.Usage
 
@@ -18,6 +18,6 @@ See the [Usage & Cost Tracking guide](../guides/usage-tracking.md) for usage pat
 
 ::: maseval.core.usage.UsageReporter
 
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/usage.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/MASEval/blob/main/maseval/interface/usage.py){ .md-source-file }
 
 ::: maseval.interface.usage.LiteLLMCostCalculator
