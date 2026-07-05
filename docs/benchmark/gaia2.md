@@ -17,7 +17,7 @@ The **GAIA2 Benchmark** evaluates LLM-based agents on dynamic, multi-step scenar
 
 Reference Paper: "GAIA-2: A Controllable Multi-Turn Conversational Benchmark for Agents"
 
-Check out the [BENCHMARKS.md](https://github.com/parameterlab/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
+Check out the [BENCHMARKS.md](https://github.com/maseval/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
 
 ## Installation
 

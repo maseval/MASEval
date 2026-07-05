@@ -16,7 +16,7 @@ The **Tau2 Benchmark** evaluates LLM-based agents on customer service tasks acro
 
 Reference Paper: [Tau-Bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains](https://arxiv.org/abs/2406.12045)
 
-Check out the [BENCHMARKS.md](https://github.com/parameterlab/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
+Check out the [BENCHMARKS.md](https://github.com/maseval/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
 
 ## Quick Start
 

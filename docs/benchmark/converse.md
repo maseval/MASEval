@@ -139,7 +139,7 @@ Output fields:
 - `coverage_evaluation` (dict): Full LLM coverage evaluation.
 - `ratings_evaluation` (dict): Full LLM ratings evaluation with `ratings_mapping` and `average_rating`.
 
-[:material-github: View source](https://github.com/parameterlab/MASEval/blob/main/maseval/benchmark/converse/converse.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/MASEval/blob/main/maseval/benchmark/converse/converse.py){ .md-source-file }
 
 ::: maseval.benchmark.converse.ConverseBenchmark
 

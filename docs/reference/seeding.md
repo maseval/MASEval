@@ -8,14 +8,14 @@ The seeding module provides infrastructure for reproducible benchmark runs. Seed
 
 The abstract base class that defines the seeding interface. Implement this to create custom seeding strategies.
 
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/core/seeding.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/maseval/blob/main/maseval/core/seeding.py){ .md-source-file }
 
 ::: maseval.core.seeding.SeedGenerator
 
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/core/seeding.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/maseval/blob/main/maseval/core/seeding.py){ .md-source-file }
 
 ::: maseval.core.seeding.DefaultSeedGenerator
 
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/core/seeding.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/maseval/blob/main/maseval/core/seeding.py){ .md-source-file }
 
 ::: maseval.core.seeding.SeedingError

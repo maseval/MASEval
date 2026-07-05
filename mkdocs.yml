@@ -4,8 +4,8 @@ docs_dir: docs
 site_dir: site
 site_author: ParameterLab
 site_url: https://maseval.readthedocs.io/en/stable/
-repo_name: parameterlab/maseval
-repo_url: https://github.com/parameterlab/maseval
+repo_name: maseval/maseval
+repo_url: https://github.com/maseval/maseval
 edit_uri: edit/main/docs/
 
 theme:

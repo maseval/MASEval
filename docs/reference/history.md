@@ -2,7 +2,7 @@
 
 These are the objects used internally within each class to trace everything.
 
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/core/history.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/maseval/blob/main/maseval/core/history.py){ .md-source-file }
 
 ::: maseval.core.history.MessageHistory
 

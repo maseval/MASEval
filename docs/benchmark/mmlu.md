@@ -14,7 +14,7 @@ The **MMLU Benchmark** evaluates language models on multiple-choice questions sp
 - **HuggingFace integration** with batched log-probability computation
 - **lm-eval compatibility** mode for exact numerical reproduction
 
-Check out the [BENCHMARKS.md](https://github.com/parameterlab/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
+Check out the [BENCHMARKS.md](https://github.com/maseval/MASEval/blob/main/BENCHMARKS.md) file for more information including licenses.
 
 ## Installation
 

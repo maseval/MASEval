@@ -19,7 +19,7 @@ pip install camel-ai
 
 ## API Reference
 
-[:material-github: View source](https://github.com/parameterlab/maseval/blob/main/maseval/interface/agents/camel.py){ .md-source-file }
+[:material-github: View source](https://github.com/maseval/maseval/blob/main/maseval/interface/agents/camel.py){ .md-source-file }
 
 ::: maseval.interface.agents.camel.CamelAgentAdapter
 
