@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maseval"
-version = "0.4.0"
+version = "0.5.0"
 description = "A library for multi-agent systems evaluation and benchmarking."
 authors = [{ name = "Cornelius Emde", email = "cornelius@parameterlab.de" }]
 readme = "README.md"

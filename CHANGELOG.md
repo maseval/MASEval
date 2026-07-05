@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.5.0] - 2026-07-05
+
+### Added
+
 - Generic `AREEnvironment` in `maseval.interface.environments` for Meta's ARE (Agent Research Environments) platform with lifecycle control (start/stop/pause/resume), notification polling, AUI tool filtering, and oracle mode support. Install with `pip install maseval[are]`. (PR: #55)
 - Generic `AREToolWrapper` in `maseval.interface.environments` wraps any ARE `AppTool` with simulation time tracking, invocation history, JSON schema extraction, and MASEval tracing integration. (PR: #55)
 - Optional dependency extra `are`: `pip install maseval[are]` (PR: #55)
@@ -361,7 +371,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- Previous changes here -->
 
-[Unreleased]: https://github.com/parameterlab/maseval/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/parameterlab/maseval/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/parameterlab/maseval/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/parameterlab/maseval/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/parameterlab/maseval/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/parameterlab/maseval/compare/v0.1.2...v0.2.0
