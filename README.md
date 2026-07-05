@@ -16,7 +16,7 @@
 [![codecov](https://codecov.io/gh/maseval/MASEval/graph/badge.svg?token=HMFU71QVB2)](https://codecov.io/gh/maseval/MASEval)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-MASEval is an evaluation library that provides a unified interface for benchmarking (multi-)agent systems. It offers standardized abstractions for running any agent implementation—whether built with AutoGen, LangChain, custom frameworks, or direct API calls—against established benchmarks like GAIA and AgentBench, or your own custom evaluation tasks.
+MASEval is an evaluation library that provides a unified interface for benchmarking (multi-)agent systems. It is evaluation infrastructure for multi-agent harnesses, treating harness engineering as a first-class concern. It offers standardized abstractions for running any agent implementation (whether built with smolagents, LangGraph, custom frameworks, or direct API calls) against established benchmarks like GAIA and MMLU, or your own custom evaluation tasks.
 
 Analogous to pytest for testing or MLflow for ML experimentation, MASEval focuses exclusively on evaluation infrastructure. It does not implement agents, define multi-agent communication protocols, or turn LLMs into agents. Instead, it wraps existing agent systems via simple adapters, orchestrates the evaluation lifecycle (setup, execution, measurement, teardown), and provides lifecycle hooks for tracing, logging, and metrics collection. This separation allows researchers to compare different agent architectures apples-to-apples across frameworks, while maintaining full control over their agent implementations.
 
@@ -59,9 +59,9 @@ Compare multi-agent evaluation frameworks across key capabilities.
 
 ## Core Principles:
 
-- **Evaluation, Not Implementation:** MASEval provides the evaluation infrastructure—you bring your agent implementation. Whether you've built agents with AutoGen, LangChain, custom code, or direct LLM calls, MASEval wraps them via simple adapters and runs them through standardized benchmarks.
+- **Evaluation, Not Implementation:** MASEval provides the evaluation infrastructure. You bring your agent implementation. Whether you've built agents with smolagents, LangGraph, custom code, or direct LLM calls, MASEval wraps them via simple adapters and runs them through standardized benchmarks.
 
-- **System-Level Benchmarking:** The fundamental unit of evaluation is the complete system—the full configuration of agents, prompts, tools, and their interaction patterns. This allows meaningful comparison between entirely different architectural approaches.
+- **System-Level Benchmarking:** The fundamental unit of evaluation is the complete system (the full configuration of agents, prompts, tools, and their interaction patterns). This allows meaningful comparison between entirely different architectural approaches.
 
 - **Task-Specific Configurations:** Each benchmark task is a self-contained evaluation unit with its own instructions, environment state, success criteria, and custom evaluation logic. One task might measure success by environment state changes, another by programmatic output validation.
 
@@ -69,9 +69,9 @@ Compare multi-agent evaluation frameworks across key capabilities.
 
 - **Lifecycle Hooks via Callbacks:** Inject custom logic at any point in the evaluation lifecycle (e.g., on_run_start, on_task_start, on_agent_step_end) through a callback system. This enables extensibility without modifying core evaluation logic.
 
-- **Pluggable Backends:** Tracing, logging, metrics, and data storage are implemented as callbacks. Easily add new backends or combine existing ones—log to WandB and Langfuse simultaneously, or implement custom metrics collectors.
+- **Pluggable Backends:** Tracing, logging, metrics, and data storage are implemented as callbacks. Easily add new backends or combine existing ones (log to WandB and Langfuse simultaneously, or implement custom metrics collectors).
 
-- **Extensible Benchmark Suite:** Researchers can implement new benchmarks by inheriting from base classes and focusing on task construction and evaluation logic, while leveraging built-in evaluation infrastructure.
+- **Extensible Benchmark Suite:** Researchers can implement new benchmarks by inheriting from base classes and focusing on task construction and evaluation logic. The built-in evaluation infrastructure handles the rest.
 
 - **Abstract Base Classes:** The library provides abstract base classes for core components (Task, Benchmark, Environment, Evaluator) with optional default implementations, giving users flexibility to customize while maintaining interface consistency.
 
@@ -128,14 +128,20 @@ This library includes implementations for several benchmarks to evaluate a varie
 Please consider citing the MASEval library.
 
 ```
-@misc{emde2026maseval,
-      title={MASEval: Extending Multi-Agent Evaluation from Models to Systems},
-      author={Cornelius Emde and Alexander Rubinstein and Anmol Goel and Ahmed Heakl and Sangdoo Yun and Seong Joon Oh and Martin Gubri},
-      year={2026},
-      eprint={2603.08835},
-      archivePrefix={arXiv},
-      primaryClass={cs.AI},
-      url={https://arxiv.org/abs/2603.08835},
-      note={Alexander Rubinstein, Anmol Goel, and Ahmed Heakl contributed equally.},
+@inproceedings{emde2026maseval,
+    title = "{MASE}val: Extending Multi-Agent Evaluation from Models to Systems",
+    author={Cornelius Emde and Alexander Rubinstein and Anmol Goel and Ahmed Heakl and Sangdoo Yun and Seong Joon Oh and Martin Gubri},
+    editor = "Durrett, Greg  and
+      Jian, Ping",
+    booktitle = "Proceedings of the 64th Annual Meeting of the {A}ssociation for {C}omputational {L}inguistics (Volume 3: System Demonstrations)",
+    month = jul,
+    year = "2026",
+    address = "San Diego, California, United States",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2026.acl-demo.34/",
+    doi = "10.18653/v1/2026.acl-demo.34",
+    pages = "345--356",
+    ISBN = "979-8-89176-392-0",
+    abstract = "The rapid adoption of LLM-based agentic systems has produced a rich ecosystem of frameworks (smolagents, LangGraph, AutoGen, CAMEL, LlamaIndex, i.a.). Yet many existing benchmarks are model-centric: they fix the agentic setup and do not compare other system components. We argue that implementation decisions substantially impact performance, including choices such as topology, orchestration logic, and error handling. MASEval addresses this evaluation gap with a Python library that treats the entire agentic system as the unit of analysis. Important design decisions such as harness and context engineering are first-class citizens. MASEval helps practitioners identify the best implementation for their use case and researchers systematically study agentic systems, opening new avenues for principled system design. Through the first systematic system-level comparison across 3 benchmarks, 3 models, and 3 frameworks, we find that, across models of comparable cost and capability, framework choice matters as much as model choice. MASEval is available under the MIT licence at https://github.com/maseval/MASEval."
 }
 ```
