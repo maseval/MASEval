@@ -46,17 +46,26 @@ class TestTaskProtocol:
         """TaskProtocol should accept custom values."""
         protocol = TaskProtocol(
             timeout_seconds=60.0,
-            timeout_action=TimeoutAction.RETRY,
-            max_retries=3,
             priority=10,
             tags={"category": "hard", "group": "A"},
         )
 
         assert protocol.timeout_seconds == 60.0
-        assert protocol.timeout_action == TimeoutAction.RETRY
-        assert protocol.max_retries == 3
+        assert protocol.timeout_action == TimeoutAction.SKIP
+        assert protocol.max_retries == 0
         assert protocol.priority == 10
         assert protocol.tags == {"category": "hard", "group": "A"}
+
+    @pytest.mark.parametrize("timeout_action", [TimeoutAction.RETRY, TimeoutAction.EXTEND])
+    def test_retry_timeout_actions_are_rejected(self, timeout_action):
+        """Unsupported timeout retry actions should fail loudly."""
+        with pytest.raises(ValueError, match="supports only TimeoutAction.SKIP"):
+            TaskProtocol(timeout_action=timeout_action)
+
+    def test_max_retries_is_rejected(self):
+        """Unsupported transient-failure retries should fail loudly."""
+        with pytest.raises(ValueError, match="max_retries is reserved"):
+            TaskProtocol(max_retries=1)
 
     def test_tags_isolation(self):
         """Tags dict should be independent per instance."""
@@ -84,8 +93,6 @@ class TestTaskProtocol:
         """to_dict should serialize custom values and enums correctly."""
         protocol = TaskProtocol(
             timeout_seconds=60.0,
-            timeout_action=TimeoutAction.RETRY,
-            max_retries=3,
             priority=10,
             tags={"category": "hard"},
         )
@@ -93,8 +100,8 @@ class TestTaskProtocol:
 
         assert result == {
             "timeout_seconds": 60.0,
-            "timeout_action": "retry",
-            "max_retries": 3,
+            "timeout_action": "skip",
+            "max_retries": 0,
             "priority": 10,
             "tags": {"category": "hard"},
         }
