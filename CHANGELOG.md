@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `TaskProtocol` now rejects reserved retry settings instead of silently accepting unsupported timeout retry behavior. (PR: #66)
+
 ### Removed
 
 ## [0.5.1] - 2026-07-05
