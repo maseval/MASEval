@@ -62,10 +62,11 @@ class TestTaskProtocol:
         with pytest.raises(ValueError, match="supports only TimeoutAction.SKIP"):
             TaskProtocol(timeout_action=timeout_action)
 
-    def test_max_retries_is_rejected(self):
-        """Unsupported transient-failure retries should fail loudly."""
+    @pytest.mark.parametrize("max_retries", [-1, 1, 5, 100])
+    def test_max_retries_is_rejected(self, max_retries):
+        """Any non-zero max_retries should fail loudly."""
         with pytest.raises(ValueError, match="max_retries is reserved"):
-            TaskProtocol(max_retries=1)
+            TaskProtocol(max_retries=max_retries)
 
     def test_tags_isolation(self):
         """Tags dict should be independent per instance."""
