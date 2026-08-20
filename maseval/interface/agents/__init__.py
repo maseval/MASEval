@@ -52,3 +52,11 @@ try:
     )
 except ImportError:
     pass
+
+# Conditionally import DAF adapter
+try:
+    from .daf import DAFAgentAdapter  # noqa: F401
+
+    __all__.append("DAFAgentAdapter")
+except ImportError:
+    pass

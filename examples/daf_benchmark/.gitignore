@@ -1,0 +1,9 @@
+# Environment variables (API keys)
+.env
+
+# Benchmark results (too large for GitHub)
+results/
+
+# Byte-compiled
+__pycache__/
+*.pyc

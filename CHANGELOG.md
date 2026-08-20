@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `DAFAgentAdapter` in `maseval.interface.agents` for integrating DAF (Declarative Agentic Framework) agent teams with MASEval benchmarks. The adapter wraps DAF's orchestration API and captures execution events (skills invoked, iterations, tokens, duration) as MASEval traces. Works with both DAF SDK clients and simple callables for testing. (PR: #TBD)
+- Added DAF benchmark example (`examples/daf_benchmark/`) demonstrating agent evaluation with Ollama (local LLMs via LiteLLM), including latency tracking, token/cost metrics, and accuracy evaluation across multiple task categories (factual, reasoning, coding, explanation). (PR: #TBD)
+- Added integration tests for DAF adapter covering callable agents, trace gathering, config collection, and accuracy evaluation logic. (PR: #TBD)
+
 ### Changed
 
 ### Fixed
