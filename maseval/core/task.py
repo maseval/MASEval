@@ -22,8 +22,8 @@ class TimeoutAction(Enum):
     """Action to take when a task timeout occurs."""
 
     SKIP = "skip"  # Mark as timed out, continue to next task
-    RETRY = "retry"  # Retry once with same timeout
-    EXTEND = "extend"  # Double timeout and retry
+    RETRY = "retry"  # Reserved; benchmark retries are not implemented yet
+    EXTEND = "extend"  # Reserved; timeout extension is not implemented yet
 
 
 @dataclass
@@ -41,8 +41,12 @@ class TaskProtocol:
 
     Attributes:
         timeout_seconds: Maximum execution time for this task. None means no timeout.
-        timeout_action: Action to take when timeout occurs.
-        max_retries: Maximum retry attempts for transient failures (not timeouts).
+        timeout_action: Action to take when timeout occurs. Only SKIP is currently
+            supported; RETRY and EXTEND are reserved for future execution-loop retry
+            handling and raise ValueError when selected.
+        max_retries: Reserved for future transient-failure retry handling. The
+            execution engine currently requires this to remain 0 and raises
+            ValueError for non-zero values instead of silently ignoring them.
         priority: Execution priority (higher = sooner). Used by adaptive task queues.
         tags: Arbitrary tags for filtering or grouping tasks.
     """
@@ -52,6 +56,16 @@ class TaskProtocol:
     max_retries: int = 0
     priority: int = 0
     tags: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Reject retry settings that the execution engine does not support yet."""
+        if self.timeout_action != TimeoutAction.SKIP:
+            raise ValueError(
+                "TaskProtocol.timeout_action currently supports only TimeoutAction.SKIP. "
+                "RETRY and EXTEND are reserved for future retry handling."
+            )
+        if self.max_retries != 0:
+            raise ValueError("TaskProtocol.max_retries is reserved for future transient-failure retry handling and must currently be 0.")
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to a JSON-serializable dictionary.
