@@ -171,18 +171,24 @@ MASEval includes pre-built benchmarks for established evaluation suites. See the
 **Using a default agent:** For quick evaluation or baseline comparisons, use the default benchmark class directly:
 
 ```python
+from openai import OpenAI
 from maseval.benchmark.tau2 import (
-    DefaultAgentTau2Benchmark, load_tasks, ensure_data_exists,
+    DefaultAgentTau2Benchmark, load_tasks, ensure_data_exists, configure_model_ids,
 )
+from maseval.interface.inference.openai import OpenAIModelAdapter
+
+client = OpenAI()
+
+class MyTau2Benchmark(DefaultAgentTau2Benchmark):
+    def get_model_adapter(self, model_id, **kwargs):
+        return OpenAIModelAdapter(client=client, model_id=model_id)
 
 ensure_data_exists(domain="retail")
 tasks = load_tasks("retail", split="base", limit=5)
+configure_model_ids(tasks, user_model_id="gpt-4o")
 
-benchmark = DefaultAgentTau2Benchmark(
-    agent_data={"model_id": "gpt-4o"},
-    n_task_repeats=4,
-)
-results = benchmark.run(tasks)
+benchmark = MyTau2Benchmark(n_task_repeats=4)
+results = benchmark.run(tasks, agent_data={"model_id": "gpt-4o"})
 ```
 
 **Plugging in your own agent:** Subclass the base benchmark to use your own agent implementation:
@@ -196,8 +202,8 @@ class MyTau2Benchmark(Tau2Benchmark):
         # Create your agent with these tools
         ...
 
-benchmark = MyTau2Benchmark(agent_data={}, n_task_repeats=4)
-results = benchmark.run(tasks)
+benchmark = MyTau2Benchmark(n_task_repeats=4)
+results = benchmark.run(tasks, agent_data={})
 ```
 
 The base class handles environment setup, user simulation, and evaluation—you only implement `setup_agents()` and `run_agents()`.
