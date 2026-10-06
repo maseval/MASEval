@@ -170,6 +170,7 @@ class ResultLogger(BenchmarkCallback, ABC):
             "repeat_idx": report.get("repeat_idx"),
             "status": report.get("status"),
             "error": report.get("error"),
+            "attempts": report.get("attempts"),
         }
 
         if self.include_traces and "traces" in report:

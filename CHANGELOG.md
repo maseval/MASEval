@@ -9,9 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Reports now include an `attempts` field listing the status, error, usage, and timeout of every attempt of a task repetition. `ResultLogger` writes it too. (PR: #71)
+
 ### Changed
 
+- tau2 and gaia2 `load_tasks()` now default to `max_retries=0`, matching the original benchmarks, which do not retry failed runs. (PR: #71)
+
 ### Fixed
+
+- `TaskProtocol.max_retries` and `TimeoutAction.RETRY`/`EXTEND` now take effect. Failures outside the agent's control (`setup_failed`, `environment_error`, `user_error`, `unknown_execution_error`) are retried up to `max_retries` times. Timeouts are retried once with the same (`RETRY`) or doubled (`EXTEND`) timeout. Previously both settings were silently ignored. `TaskProtocol` now rejects negative `max_retries`. (PR: #71)
 
 ### Removed
 

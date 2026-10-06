@@ -58,6 +58,11 @@ class TestTaskProtocol:
         assert protocol.priority == 10
         assert protocol.tags == {"category": "hard", "group": "A"}
 
+    def test_negative_max_retries_raises(self):
+        """Negative max_retries should be rejected."""
+        with pytest.raises(ValueError, match="max_retries"):
+            TaskProtocol(max_retries=-1)
+
     def test_tags_isolation(self):
         """Tags dict should be independent per instance."""
         p1 = TaskProtocol()

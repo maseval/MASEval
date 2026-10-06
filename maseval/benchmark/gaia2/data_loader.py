@@ -94,7 +94,7 @@ VALID_SPLITS: Tuple[str, ...] = ("validation",)  # Only validation has oracle ev
 
 # ARE scenarios/config.py:20: DEFAULT_SCENARIO_TIMEOUT = 1860
 DEFAULT_TIMEOUT_SECONDS = 1860.0  # 31 minutes per task (matching ARE)
-DEFAULT_MAX_RETRIES = 1
+DEFAULT_MAX_RETRIES = 0  # ARE does not retry failed scenarios
 
 # HuggingFace dataset info
 HF_DATASET_ID = "meta-agents-research-environments/gaia2"
@@ -129,7 +129,7 @@ def load_tasks(
         limit: Maximum number of tasks to load (across all capabilities)
         timeout_seconds: Maximum execution time per task. Default 1860 (31 minutes,
             matching ARE's DEFAULT_SCENARIO_TIMEOUT). Set to None to disable timeout.
-        max_retries: Maximum retry attempts. Default 1 (skip on failure).
+        max_retries: Maximum retries after an infrastructure failure (see `TaskProtocol`). Default 0 (no retries).
 
     Returns:
         TaskQueue with Task objects.
@@ -230,7 +230,7 @@ def _convert_gaia2_to_maseval(
         row: Raw row from HuggingFace dataset
         scenario: ARE BenchmarkScenario object
         timeout_seconds: Maximum execution time per task
-        max_retries: Maximum retry attempts
+        max_retries: Maximum retries after an infrastructure failure
         config_capability: The capability from the HuggingFace config name
 
     Returns:

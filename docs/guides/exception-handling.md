@@ -190,7 +190,13 @@ The success rate (65.22%) reflects `60 / 92` rather than `60 / 100`.
 
 ## Rerunning Failed Tasks
 
-Infrastructure errors are often transient. Tasks with infrastructure failures can be rerun:
+Infrastructure errors are often transient. To retry them automatically, set `max_retries` on the task's protocol. This retries `setup_failed`, `environment_error`, `user_error`, and `unknown_execution_error` with the same seeds. Every attempt is listed in the report's `attempts` field.
+
+```python
+task = Task(query="...", protocol=TaskProtocol(max_retries=2))
+```
+
+Alternatively, tasks with infrastructure failures can be rerun manually:
 
 ```python
 results = benchmark.run(tasks)
