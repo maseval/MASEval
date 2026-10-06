@@ -39,7 +39,7 @@ BASE_SPLIT_COUNTS = {
 
 # Default execution protocol settings
 DEFAULT_TIMEOUT_SECONDS = 600.0  # 10 minutes per task
-DEFAULT_MAX_RETRIES = 1  # Skip on first failure
+DEFAULT_MAX_RETRIES = 0  # tau2-bench v0.2.0 does not retry failed simulations
 
 # GitHub raw content URLs for v0.2.0 tag
 GITHUB_BASE = "https://raw.githubusercontent.com/sierra-research/tau2-bench"
@@ -274,7 +274,7 @@ def load_tasks(
         limit: Maximum number of tasks to load
         timeout_seconds: Maximum execution time per task in seconds. Default 600 (10 minutes).
             Set to None to disable timeout.
-        max_retries: Maximum retry attempts for transient failures. Default 1 (skip on failure).
+        max_retries: Maximum retries after an infrastructure failure (see `TaskProtocol`). Default 0 (no retries).
 
     Returns:
         TaskQueue containing Task objects with:
@@ -349,7 +349,7 @@ def _convert_tau2_task_to_maseval(
         split: Split name
         domain_config: Domain configuration with policy and db_path
         timeout_seconds: Maximum execution time per task in seconds
-        max_retries: Maximum retry attempts for transient failures
+        max_retries: Maximum retries after an infrastructure failure
 
     Returns:
         MASEval Task object

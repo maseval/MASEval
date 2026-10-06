@@ -8,7 +8,7 @@ import traceback
 import logging
 
 from .evaluator import Evaluator
-from .task import Task, BaseTaskQueue, SequentialTaskQueue
+from .task import Task, BaseTaskQueue, SequentialTaskQueue, TimeoutAction
 from .environment import Environment
 from .agent import AgentAdapter
 from .model import ModelAdapter
@@ -66,6 +66,17 @@ class TaskExecutionStatus(Enum):
 
     # Deprecated: kept for backward compatibility, use specific error types instead
     TASK_EXECUTION_FAILED = "task_execution_failed"
+
+
+# Failures outside the agent's control, retried up to `TaskProtocol.max_retries` times.
+_RETRYABLE_STATUSES = frozenset(
+    {
+        TaskExecutionStatus.SETUP_FAILED,
+        TaskExecutionStatus.ENVIRONMENT_ERROR,
+        TaskExecutionStatus.USER_ERROR,
+        TaskExecutionStatus.UNKNOWN_EXECUTION_ERROR,
+    }
+)
 
 
 class Benchmark(ABC):
@@ -552,7 +563,7 @@ class Benchmark(ABC):
 
         Returns:
             Report dictionary with keys: ``task_id``, ``repeat_idx``, ``status``,
-            ``error``, ``traces``, ``config``, ``usage``, ``eval``, ``task``.
+            ``error``, ``traces``, ``config``, ``usage``, ``eval``, ``attempts``, ``task``.
         """
         if status is not TaskExecutionStatus.SUCCESS and error is None:
             # Defensive: a non-success report must always carry error details.
@@ -570,6 +581,7 @@ class Benchmark(ABC):
             "config": config if config is not None else {},
             "usage": usage,
             "eval": eval_results,
+            "attempts": [],  # Filled in by _execute_task_repetition
             "task": {
                 "query": task.query,
                 "metadata": dict(task.metadata),
@@ -1072,16 +1084,65 @@ class Benchmark(ABC):
         agent_data: Dict[str, Any],
         repeat_idx: int,
     ) -> Dict[str, Any]:
-        """Execute a single task repetition with timeout handling.
+        """Execute a single task repetition, retrying failed attempts as configured in ``task.protocol``.
 
-        This method encapsulates the complete execution of one task repetition,
-        including setup, execution, trace collection, and evaluation. It is
-        designed to be called from both sequential and parallel execution paths.
+        Called from both sequential and parallel execution paths.
 
         Args:
             task: The task to execute.
             agent_data: Agent configuration for this task.
             repeat_idx: Repetition index (0 to n_task_repeats-1).
+
+        Returns:
+            Report of the last attempt, with ``attempts`` listing every attempt.
+        """
+        protocol = task.protocol
+        timeout_seconds = protocol.timeout_seconds
+        attempts: List[Dict[str, Any]] = []
+        failure_retries = 0
+        timeout_retried = False
+
+        while True:
+            report = self._execute_task_attempt(task, agent_data, repeat_idx, timeout_seconds)
+            attempts.append(
+                {
+                    "status": report["status"],
+                    "error": report["error"],
+                    "usage": report["usage"],
+                    "timeout_seconds": timeout_seconds,
+                }
+            )
+            status = TaskExecutionStatus(report["status"])
+
+            if status in _RETRYABLE_STATUSES and failure_retries < protocol.max_retries:
+                # Infrastructure failure: retry up to max_retries
+                failure_retries += 1
+            elif status is TaskExecutionStatus.TASK_TIMEOUT and protocol.timeout_action is not TimeoutAction.SKIP and not timeout_retried:
+                # Timeout: retry once, EXTEND doubles the timeout
+                timeout_retried = True
+                if protocol.timeout_action is TimeoutAction.EXTEND and timeout_seconds is not None:
+                    timeout_seconds *= 2
+            else:
+                report["attempts"] = attempts
+                return report
+
+    def _execute_task_attempt(
+        self,
+        task: Task,
+        agent_data: Dict[str, Any],
+        repeat_idx: int,
+        timeout_seconds: Optional[float],
+    ) -> Dict[str, Any]:
+        """Execute a single attempt of a task repetition with timeout handling.
+
+        This method encapsulates the complete execution of one attempt,
+        including setup, execution, trace collection, and evaluation.
+
+        Args:
+            task: The task to execute.
+            agent_data: Agent configuration for this task.
+            repeat_idx: Repetition index (0 to n_task_repeats-1).
+            timeout_seconds: Timeout for this attempt, or None for no timeout.
 
         Returns:
             Report dictionary containing execution results.
@@ -1097,8 +1158,7 @@ class Benchmark(ABC):
         agents_dict: Dict[str, AgentAdapter] = {}
 
         # Create execution context with optional timeout
-        timeout = task.protocol.timeout_seconds
-        context = TaskContext(deadline=timeout)
+        context = TaskContext(deadline=timeout_seconds)
 
         # Create scoped seed generator for this task+repetition
         task_seed_gen = self._seed_generator.for_task(str(task.id)).for_repetition(repeat_idx)

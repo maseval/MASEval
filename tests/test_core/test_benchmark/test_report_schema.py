@@ -25,7 +25,7 @@ from conftest import DummyBenchmark
 
 
 # Canonical top-level keys every report must carry.
-REPORT_KEYS = {"task_id", "repeat_idx", "status", "error", "traces", "config", "usage", "eval", "task"}
+REPORT_KEYS = {"task_id", "repeat_idx", "status", "error", "traces", "config", "usage", "eval", "attempts", "task"}
 ERROR_KEYS = {"error_type", "error_message", "traceback"}
 
 

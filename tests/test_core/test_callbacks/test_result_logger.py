@@ -135,18 +135,20 @@ class TestResultLogger:
         assert "eval" in filtered
 
     def test_filter_report_preserves_status_and_error(self):
-        """Test that status and error fields are always included in filtered reports.
+        """Test that status, error, and attempts fields are always included in filtered reports.
 
         These are core metadata fields (like task_id and repeat_idx) that must
         always be present so persisted results can distinguish successes from failures.
         """
         logger = MockResultLogger(include_traces=False, include_config=False, include_eval=False)
 
+        attempts = [{"status": "agent_error", "error": {"type": "AgentError"}, "usage": None, "timeout_seconds": None}]
         report = {
             "task_id": "task_0",
             "repeat_idx": 0,
             "status": "agent_error",
             "error": {"type": "AgentError", "message": "Tool call failed"},
+            "attempts": attempts,
             "traces": {"agent": "trace_data"},
             "config": {"model": "gpt-4"},
             "eval": {"score": 0.0},
@@ -156,6 +158,7 @@ class TestResultLogger:
 
         assert filtered["status"] == "agent_error"
         assert filtered["error"] == {"type": "AgentError", "message": "Tool call failed"}
+        assert filtered["attempts"] == attempts
         assert "traces" not in filtered
         assert "config" not in filtered
         assert "eval" not in filtered

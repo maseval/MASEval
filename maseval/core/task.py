@@ -19,11 +19,14 @@ from .callback import BenchmarkCallback
 
 
 class TimeoutAction(Enum):
-    """Action to take when a task timeout occurs."""
+    """Action to take when a task timeout occurs.
+
+    A timed-out task is retried at most once, independent of `TaskProtocol.max_retries`.
+    """
 
     SKIP = "skip"  # Mark as timed out, continue to next task
     RETRY = "retry"  # Retry once with same timeout
-    EXTEND = "extend"  # Double timeout and retry
+    EXTEND = "extend"  # Double timeout and retry once
 
 
 @dataclass
@@ -34,6 +37,10 @@ class TaskProtocol:
     task content (query, environment_data, etc.). It controls the
     interface between the task and MASEval's execution engine.
 
+    A retry reruns the full task repetition with the same seeds. Every attempt is
+    listed in the report's `attempts` field. With a benchmark `fail_on_*` flag set,
+    errors are raised without retrying.
+
     Note:
         Timeout checking is cooperative and currently only occurs at execution phase
         boundaries (after setup, before execution, before evaluation). Timeout detection
@@ -41,10 +48,15 @@ class TaskProtocol:
 
     Attributes:
         timeout_seconds: Maximum execution time for this task. None means no timeout.
-        timeout_action: Action to take when timeout occurs.
-        max_retries: Maximum retry attempts for transient failures (not timeouts).
+        timeout_action: Action to take when timeout occurs. See `TimeoutAction`.
+        max_retries: Maximum retries after a failure outside the agent's control (`setup_failed`,
+            `environment_error`, `user_error`, `unknown_execution_error`). Agent errors and
+            evaluation failures are never retried.
         priority: Execution priority (higher = sooner). Used by adaptive task queues.
         tags: Arbitrary tags for filtering or grouping tasks.
+
+    Raises:
+        ValueError: If `max_retries` is negative.
     """
 
     timeout_seconds: Optional[float] = None
@@ -52,6 +64,10 @@ class TaskProtocol:
     max_retries: int = 0
     priority: int = 0
     tags: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.max_retries < 0:
+            raise ValueError(f"TaskProtocol.max_retries must be 0 or greater, got {self.max_retries}.")
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to a JSON-serializable dictionary.
